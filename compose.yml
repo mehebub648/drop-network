@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    container_name: drop-dev
+    command: npm run dev
+    environment:
+      NODE_ENV: development
+      CHOKIDAR_USE_POLLING: "true"
+      VITE_USE_POLLING: "true"
+    ports:
+      - "${DEV_PORT:-3000}:3000"
+    volumes:
+      - .:/app
+      - drop_node_modules:/app/node_modules
+      - drop_lancedb_dev:/app/.lancedb
+    stdin_open: true
+    tty: true
+
+  app-prod:
+    profiles:
+      - production
+    build:
+      context: .
+      target: production
+    container_name: drop-prod
+    environment:
+      NODE_ENV: production
+    ports:
+      - "${PROD_PORT:-3001}:3000"
+    volumes:
+      - drop_lancedb_prod:/app/.lancedb
+    restart: unless-stopped
+
+volumes:
+  drop_node_modules:
+  drop_lancedb_dev:
+  drop_lancedb_prod:

@@ -1,0 +1,27 @@
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+import { defineConfig } from 'vite';
+
+export default defineConfig(() => {
+  const usePolling = process.env.VITE_USE_POLLING === 'true' || process.env.CHOKIDAR_USE_POLLING === 'true';
+
+  return {
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
+    },
+    server: {
+      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      hmr: process.env.DISABLE_HMR !== 'true',
+      watch: usePolling
+        ? {
+            usePolling: true,
+            interval: 300,
+          }
+        : undefined,
+    },
+  };
+});

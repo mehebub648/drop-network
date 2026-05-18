@@ -1,0 +1,8 @@
+{
+  "name": "Drop Network",
+  "description": "A rapid blood donation platform that matches recipients with donors instantly based on required time and location.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
