@@ -5,6 +5,7 @@ import path from 'path';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions } from './db';
+import { getSmsProvider, isSmsConfigured, FALLBACK_OTP } from './sms';
 
 const app = express();
 const configuredPort = Number(process.env.PORT || process.env.PROD_PORT || 3000);
@@ -291,19 +292,33 @@ function publicRequestPayload(request: BloodRequest) {
 // Mock OTP Store
 const otpStore: Record<string, OtpEntry> = {};
 
-app.post('/api/auth/send-otp', (req, res) => {
+app.post('/api/auth/send-otp', async (req, res) => {
   const phone = cleanString(req.body?.phone, 30);
   if (!phone) return validationError(res, 'Valid phone number is required');
-  
+
   const otp = String(Math.floor(100000 + Math.random() * 900000));
   otpStore[phone] = {
     code: otp,
     expires_at: Date.now() + OTP_TTL_MS
   };
-  
+
+  const smsProvider = getSmsProvider();
+  if (smsProvider) {
+    try {
+      await smsProvider.sendOtp(phone, otp);
+    } catch (err) {
+      console.error(`Failed to send OTP via ${smsProvider.name}:`, err);
+      delete otpStore[phone];
+      return res.status(502).json({ error: 'Failed to send OTP' });
+    }
+  }
+
+  // When no SMS provider is configured we can't deliver the code, so surface a
+  // hint that the fallback OTP can be used for testing.
   res.json({
     success: true,
-    message: 'OTP generated successfully',
+    message: smsProvider ? 'OTP sent successfully' : 'OTP generated successfully',
+    ...(smsProvider ? {} : { sms_disabled: true }),
     ...(process.env.NODE_ENV !== 'production' ? { dev_otp: otp } : {})
   });
 });
@@ -314,7 +329,13 @@ app.post('/api/auth/verify-otp', (req, res) => {
   if (!phone || !otp) return validationError(res, 'Phone and OTP are required');
 
   const storedOtp = otpStore[phone];
-  if (storedOtp && storedOtp.code === otp && storedOtp.expires_at > Date.now()) {
+  const matchesGenerated = !!storedOtp && storedOtp.code === otp && storedOtp.expires_at > Date.now();
+  // Without a real SMS gateway the generated code can't reach the user, so also
+  // accept the fallback OTP for testing. Disabled automatically once a provider
+  // is configured.
+  const matchesFallback = !isSmsConfigured() && otp === FALLBACK_OTP;
+
+  if (matchesGenerated || matchesFallback) {
     delete otpStore[phone];
     res.json({ success: true });
   } else {

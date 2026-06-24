@@ -39,13 +39,16 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
-COPY server.ts db.ts ./
+COPY server.ts db.ts docker-entrypoint.sh ./
 
-# Create the data directory and run as the unprivileged "node" user so the
-# mounted volume is writable without root.
-RUN mkdir -p /data/lancedb && chown -R node:node /data /app
-USER node
+# Create the data directory owned by the unprivileged "node" user. The
+# container starts as root so the entrypoint can fix ownership of the mounted
+# volume (which may pre-exist with foreign ownership), then drops to "node".
+RUN mkdir -p /data/lancedb \
+    && chown -R node:node /data /app \
+    && chmod +x docker-entrypoint.sh
 
 EXPOSE 3000
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["npm", "start"]
