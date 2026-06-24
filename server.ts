@@ -1,15 +1,38 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
-import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb } from './db';
+import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions } from './db';
 
 const app = express();
-const PORT = 3000;
+const configuredPort = Number(process.env.PORT || process.env.PROD_PORT || 3000);
+const PORT = Number.isFinite(configuredPort) ? configuredPort : 3000;
+const DEFAULT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
+const OTP_TTL_MS = 10 * 60 * 1000;
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+const REQUEST_STATUSES = ['ACTIVE', 'FULFILLED', 'CANCELLED'] as const;
+const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
+const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
+const allowedCorsOrigins = new Set(
+  (process.env.CORS_ORIGIN || process.env.APP_URL || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(origin => origin && origin !== 'MY_APP_URL')
+);
 
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedCorsOrigins.size === 0) {
+      return callback(null, process.env.NODE_ENV !== 'production');
+    }
+    return callback(null, allowedCorsOrigins.has(origin));
+  }
+}));
+app.use(express.json({ limit: '32kb' }));
 
 // IN-MEMORY DATABASE MOCK
 type DonationRecord = {
@@ -38,6 +61,15 @@ type User = {
   is_verified: boolean;
   donor_profile?: DonorProfile;
   recipient_profile?: RecipientProfile;
+};
+
+type AuthSession = {
+  id: string;
+  token: string;
+  user_id: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at?: string;
 };
 
 type ContactDetail = {
@@ -69,6 +101,11 @@ type BloodRequest = {
   comments?: Comment[];
 };
 
+type OtpEntry = {
+  code: string;
+  expires_at: number;
+};
+
 const BD_LOCATIONS = [
   { area: 'Dhaka', lat: 23.8103, lng: 90.4125 },
   { area: 'Chittagong', lat: 22.3569, lng: 91.7832 },
@@ -88,14 +125,85 @@ const BD_LOCATIONS = [
   { area: "Cox's Bazar", lat: 21.4272, lng: 92.0058 }
 ];
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function cleanString(value: unknown, maxLength: number) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > maxLength) return null;
+  return trimmed;
+}
+
+function optionalCleanString(value: unknown, maxLength: number) {
+  if (value === undefined || value === null || value === '') return undefined;
+  return cleanString(value, maxLength);
+}
+
+function isOneOf<T extends readonly string[]>(value: unknown, values: T): value is T[number] {
+  return typeof value === 'string' && values.includes(value);
+}
+
+function parseDate(value: unknown) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function parseLocation(value: unknown) {
+  if (!isPlainObject(value)) return null;
+  const lat = Number(value.lat);
+  const lng = Number(value.lng);
+  const areaName = cleanString(value.area_name, 80);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !areaName) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng, area_name: areaName };
+}
+
+function parseContacts(value: unknown) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 8) return null;
+
+  const contacts: ContactDetail[] = [];
+  for (const item of value) {
+    if (!isPlainObject(item)) return null;
+    const name = cleanString(item.name, 80);
+    const phone = cleanString(item.phone, 30);
+    if (!name || !phone || !isOneOf(item.type, CONTACT_TYPES)) return null;
+    contacts.push({ name, phone, type: item.type });
+  }
+  return contacts;
+}
+
+function parseDonationHistory(value: unknown) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 100) return null;
+
+  const records: DonationRecord[] = [];
+  for (const item of value) {
+    if (!isPlainObject(item)) return null;
+    const id = optionalCleanString(item.id, 80) || uuidv4();
+    const date = parseDate(item.date);
+    const organization = cleanString(item.organization, 120);
+    if (!date || !organization) return null;
+    records.push({ id, date: date.slice(0, 10), organization });
+  }
+  return records;
+}
+
+function validationError(res: express.Response, message: string) {
+  return res.status(400).json({ error: message });
+}
+
 const generateDonors = () => {
-  const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
   const names = ['Rakib Hossain', 'Sumon Ali', 'Tariqur Rahman', 'Nusrat Jahan', 'Farhana Islam', 'Abdul Karim', 'Sajid Mahmud', 'Mehejabin Oyshee', 'Robiul Islam', 'Sharmin Akter'];
   const generated: User[] = [];
   
   for (let i = 0; i < 40; i++) {
     const loc = BD_LOCATIONS[Math.floor(Math.random() * BD_LOCATIONS.length)];
-    const bg = bloodGroups[Math.floor(Math.random() * bloodGroups.length)];
+    const bg = BLOOD_GROUPS[Math.floor(Math.random() * BLOOD_GROUPS.length)];
     const name = names[Math.floor(Math.random() * names.length)] + ` (${i})`;
     const isAvailable = Math.random() > 0.3;
     
@@ -103,7 +211,7 @@ const generateDonors = () => {
       id: `donor-${i + 1}`,
       phone: `+88017${Math.floor(10000000 + Math.random() * 90000000)}`,
       name,
-      password: 'password',
+      password: process.env.DEMO_SEED_PASSWORD || uuidv4(),
       is_verified: true,
       donor_profile: {
         blood_group: bg,
@@ -122,9 +230,9 @@ const generateDonors = () => {
 // Seed Data
 let users: User[] = [];
 let requests: BloodRequest[] = [];
+let sessions: AuthSession[] = [];
 
 const generateRequests = () => {
-  const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
   const generated: BloodRequest[] = [];
   
   for (let i = 0; i < 20; i++) {
@@ -133,7 +241,7 @@ const generateRequests = () => {
     generated.push({
         id: `req-${i}`,
         user_id: users[Math.floor(Math.random() * users.length)]?.id || 'sys',
-        blood_group: bloodGroups[Math.floor(Math.random() * bloodGroups.length)],
+        blood_group: BLOOD_GROUPS[Math.floor(Math.random() * BLOOD_GROUPS.length)],
         location: { lat: loc.lat, lng: loc.lng, area_name: loc.area },
         created_at: new Date(Date.now() - Math.random() * 100000000).toISOString(),
         expires_at: new Date(Date.now() + 86400000).toISOString(),
@@ -152,11 +260,20 @@ const generateRequests = () => {
   return generated;
 };
 
+function shouldSeedDemoData() {
+  if (process.env.SEED_DEMO_DATA !== undefined) {
+    return process.env.SEED_DEMO_DATA === 'true';
+  }
+  return process.env.NODE_ENV !== 'production';
+}
+
 async function initDbData() {
   users = await getAllFromTable('common_users');
   requests = await getAllFromTable('common_requests');
+  sessions = await getAllFromTable('common_sessions');
+  await enforceExpiredRequests();
 
-  if (users.length === 0) {
+  if (users.length === 0 && shouldSeedDemoData()) {
     users = generateDonors();
     for (const u of users) {
       await saveToTable('common_users', u);
@@ -166,7 +283,7 @@ async function initDbData() {
     }
   }
 
-  if (requests.length === 0) {
+  if (requests.length === 0 && users.length > 0 && shouldSeedDemoData()) {
     requests = generateRequests();
     for (const r of requests) {
       await saveToTable('common_requests', r, [r.location.lng, r.location.lat]);
@@ -174,9 +291,22 @@ async function initDbData() {
   }
 }
 
-// Pseudo distance calculation (Euclidean for simplicity)
+async function enforceExpiredRequests() {
+  const now = Date.now();
+  const expiredRequests = requests.filter(r =>
+    r.status === 'ACTIVE' &&
+    r.expires_at &&
+    new Date(r.expires_at).getTime() <= now
+  );
+
+  for (const request of expiredRequests) {
+    request.status = 'CANCELLED';
+    await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+  }
+}
+
+// Haversine distance calculation in kilometers.
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  // Very rough approximation for UI purposes
   const R = 6371; // km
   const dLat = (lat2-lat1) * Math.PI / 180;
   const dLon = (lon2-lon1) * Math.PI / 180;
@@ -189,24 +319,101 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 
 const commentTimestamps: Record<string, number[]> = {};
 
+function getBearerToken(req: express.Request) {
+  const token = req.headers.authorization?.split(' ')[1];
+  return token && token !== 'undefined' && token !== 'anonymous' ? token : '';
+}
+
+function getFingerprint(req: express.Request) {
+  return cleanString(req.headers['x-fingerprint'], 120) || '';
+}
+
+function getCurrentAuth(req: express.Request) {
+  const token = getBearerToken(req);
+  if (!token) return null;
+
+  const now = Date.now();
+  const session = sessions.find(s =>
+    s.token === token &&
+    !s.revoked_at &&
+    new Date(s.expires_at).getTime() > now
+  );
+  if (!session) return null;
+
+  const user = users.find(u => u.id === session.user_id);
+  return user ? { user, session } : null;
+}
+
+async function issueSession(userId: string) {
+  const now = Date.now();
+  const session: AuthSession = {
+    id: uuidv4(),
+    token: uuidv4(),
+    user_id: userId,
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + SESSION_TTL_MS).toISOString()
+  };
+  sessions.push(session);
+  await saveToTable('common_sessions', session);
+  return session.token;
+}
+
+async function revokeSession(req: express.Request) {
+  const auth = getCurrentAuth(req);
+  if (!auth) return;
+  auth.session.revoked_at = new Date().toISOString();
+  await saveToTable('common_sessions', auth.session);
+}
+
+function getActorId(req: express.Request) {
+  const auth = getCurrentAuth(req);
+  return auth?.user.id || getFingerprint(req) || '';
+}
+
+function isRequestOwner(request: BloodRequest, req: express.Request) {
+  const actorId = getActorId(req);
+  return Boolean(actorId && request.user_id === actorId);
+}
+
+function publicRequestPayload(request: BloodRequest) {
+  const requester = users.find(u => u.id === request.user_id);
+  const { contacts, comments, ...safeRequest } = request;
+  return {
+    ...safeRequest,
+    requester_name: request.requester_name || requester?.name || 'Anonymous',
+    comment_count: comments?.length || 0
+  };
+}
+
 // API Routes
 
 // Mock OTP Store
-const otpStore: Record<string, string> = {};
+const otpStore: Record<string, OtpEntry> = {};
 
 app.post('/api/auth/send-otp', (req, res) => {
-  const { phone } = req.body;
-  if (!phone) return res.status(400).json({ error: 'Phone number is required' });
+  const phone = cleanString(req.body?.phone, 30);
+  if (!phone) return validationError(res, 'Valid phone number is required');
   
-  const otp = '123456'; // Mock OTP for development
-  otpStore[phone] = otp;
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  otpStore[phone] = {
+    code: otp,
+    expires_at: Date.now() + OTP_TTL_MS
+  };
   
-  res.json({ success: true, message: 'OTP sent successfully (Use 123456)' });
+  res.json({
+    success: true,
+    message: 'OTP generated successfully',
+    ...(process.env.NODE_ENV !== 'production' ? { dev_otp: otp } : {})
+  });
 });
 
 app.post('/api/auth/verify-otp', (req, res) => {
-  const { phone, otp } = req.body;
-  if (otpStore[phone] === otp || otp === '123456') { // Allowing 123456 by default for ease
+  const phone = cleanString(req.body?.phone, 30);
+  const otp = cleanString(req.body?.otp, 6);
+  if (!phone || !otp) return validationError(res, 'Phone and OTP are required');
+
+  const storedOtp = otpStore[phone];
+  if (storedOtp && storedOtp.code === otp && storedOtp.expires_at > Date.now()) {
     delete otpStore[phone];
     res.json({ success: true });
   } else {
@@ -216,7 +423,11 @@ app.post('/api/auth/verify-otp', (req, res) => {
 
 // Mock login
 app.post('/api/auth/login', async (req, res) => {
-  const { phone, password, fingerprint } = req.body;
+  const phone = cleanString(req.body?.phone, 30);
+  const password = cleanString(req.body?.password, 128);
+  const fingerprint = optionalCleanString(req.body?.fingerprint, 120);
+  if (!phone || !password) return validationError(res, 'Phone and password are required');
+
   let user = users.find(u => u.phone === phone);
   
   if (!user || user.password !== password) {
@@ -246,11 +457,23 @@ app.post('/api/auth/login', async (req, res) => {
     }
   }
 
-  res.json({ token: user.id, user });
+  const token = await issueSession(user.id);
+  res.json({ token, user });
 });
 
 app.post('/api/auth/register', async (req, res) => {
-  const { phone, name, password, fingerprint, blood_group, location } = req.body;
+  const phone = cleanString(req.body?.phone, 30);
+  const name = cleanString(req.body?.name, 100);
+  const password = cleanString(req.body?.password, 128);
+  const fingerprint = optionalCleanString(req.body?.fingerprint, 120);
+  const blood_group = req.body?.blood_group;
+  const location = req.body?.location === undefined ? undefined : parseLocation(req.body.location);
+
+  if (!phone || !name || !password) return validationError(res, 'Phone, name, and password are required');
+  if (password.length < 6) return validationError(res, 'Password must be at least 6 characters');
+  if (blood_group !== undefined && !isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
+  if (req.body?.location !== undefined && !location) return validationError(res, 'Valid location is required');
+  if ((blood_group && !location) || (!blood_group && location)) return validationError(res, 'Blood group and location must be provided together');
   
   if (users.find(u => u.phone === phone)) {
     return res.status(400).json({ error: 'Phone already registered' });
@@ -259,7 +482,7 @@ app.post('/api/auth/register', async (req, res) => {
   const user: User = {
     id: uuidv4(),
     phone,
-    name: name || `User-${phone.slice(-4)}`,
+    name,
     password,
     is_verified: true,
   };
@@ -302,22 +525,26 @@ app.post('/api/auth/register', async (req, res) => {
     }
   }
 
-  res.json({ token: user.id, user });
+  const token = await issueSession(user.id);
+  res.json({ token, user });
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  await revokeSession(req);
+  res.json({ success: true });
 });
 
 app.get('/api/me', (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  const user = users.find(u => u.id === token);
-  if (user) {
-    res.json(user);
-  } else {
-    res.status(401).json({ error: 'Unauthorized' });
-  }
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  res.json(auth.user);
 });
 
-app.get('/api/me/requests', (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  const userRequests = requests.filter(r => r.user_id === token);
+app.get('/api/me/requests', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  await enforceExpiredRequests();
+  const userRequests = requests.filter(r => r.user_id === auth.user.id);
   const sortedRequests = [...userRequests].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const enrichedRequests = sortedRequests.map(r => {
       const requester = users.find(u => u.id === r.user_id);
@@ -331,16 +558,36 @@ app.get('/api/me/requests', (req, res) => {
 });
 
 app.post('/api/me/donor-profile', async (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  const userIndex = users.findIndex(u => u.id === token);
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const blood_group = req.body?.blood_group;
+  const availability_status = req.body?.availability_status;
+  const location = parseLocation(req.body?.location);
+  const last_donation_date = parseDate(req.body?.last_donation_date);
+  const donation_history = parseDonationHistory(req.body?.donation_history);
+
+  if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
+  if (!isOneOf(availability_status, AVAILABILITY_STATUSES)) return validationError(res, 'Valid availability status is required');
+  if (!location) return validationError(res, 'Valid location is required');
+  if (!last_donation_date) return validationError(res, 'Valid last donation date is required');
+  if (donation_history === null) return validationError(res, 'Valid donation history is required');
+
+  const userIndex = users.findIndex(u => u.id === auth.user.id);
   if (userIndex !== -1) {
-    users[userIndex].donor_profile = { ...users[userIndex].donor_profile, ...req.body };
+    users[userIndex].donor_profile = {
+      ...users[userIndex].donor_profile,
+      blood_group,
+      availability_status,
+      location,
+      last_donation_date,
+      donation_history: donation_history || users[userIndex].donor_profile?.donation_history || []
+    };
     await saveToTable('common_users', users[userIndex]);
+    await removeDonorFromAllPartitions(users[userIndex].id);
     if (users[userIndex].donor_profile?.availability_status === 'AVAILABLE') {
       await syncDonorToPartition(users[userIndex]);
     }
-    // Theoretically if user changes district/blood group, we should remove from old partition. 
-    // This simple mock covers the basic update flow.
     res.json(users[userIndex]);
   } else {
     res.status(401).json({ error: 'Unauthorized' });
@@ -349,11 +596,17 @@ app.post('/api/me/donor-profile', async (req, res) => {
 
 // Create search request and return matches
 app.post('/api/requests', async (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  const fingerprint = req.headers['x-fingerprint'] as string;
-  const user_id = (token && token !== 'undefined' && token !== 'anonymous') ? token : fingerprint;
-  
-  const { blood_group, location, needed_by } = req.body;
+  const auth = getCurrentAuth(req);
+  const fingerprint = getFingerprint(req);
+  const user_id = auth?.user.id || fingerprint || 'anonymous';
+
+  const blood_group = req.body?.blood_group;
+  const location = parseLocation(req.body?.location);
+  const needed_by = parseDate(req.body?.needed_by);
+
+  if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
+  if (!location) return validationError(res, 'Valid location is required');
+  if (needed_by === null) return validationError(res, 'Valid needed-by date is required');
   
   const newRequest: BloodRequest = {
     id: uuidv4(),
@@ -362,7 +615,7 @@ app.post('/api/requests', async (req, res) => {
     location,
     needed_by,
     created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    expires_at: new Date(Date.now() + DEFAULT_REQUEST_TTL_MS).toISOString(),
     status: 'ACTIVE',
     contacts: [],
     comments: []
@@ -389,7 +642,7 @@ app.post('/api/requests', async (req, res) => {
 
   // Filter out self and unavailable, map to UI schema
   const matches = dbMatches
-    .filter(u => u.id !== token)
+    .filter(u => u.id !== user_id)
     .filter(u => u.donor_profile!.availability_status === 'AVAILABLE')
     .map(u => {
       const dist = getDistance(
@@ -415,23 +668,17 @@ app.post('/api/requests', async (req, res) => {
   });
 });
 
-app.get('/api/requests', (req, res) => {
-  // Return requests with pseudo-contact info for the responding user to see
-  const sortedRequests = [...requests].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  const enrichedRequests = sortedRequests.map(r => {
-      const requester = users.find(u => u.id === r.user_id);
-      return {
-          ...r,
-          requester_name: r.requester_name || requester?.name || 'Anonymous',
-          requester_phone: requester?.phone || '+8800000000'
-      };
-  });
-  res.json(enrichedRequests);
+app.get('/api/requests', async (req, res) => {
+  await enforceExpiredRequests();
+  const sortedRequests = requests
+    .filter(r => r.status === 'ACTIVE')
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  res.json(sortedRequests.map(publicRequestPayload));
 });
 
 app.get('/api/requests/:id', async (req, res) => {
   const { id } = req.params;
-  const token = req.headers.authorization?.split(' ')[1] || 'anonymous';
+  await enforceExpiredRequests();
   const request = requests.find(r => r.id === id);
   
   if (!request) {
@@ -439,10 +686,11 @@ app.get('/api/requests/:id', async (req, res) => {
   }
 
   const requester = users.find(u => u.id === request.user_id);
+  const requestOwner = isRequestOwner(request, req);
   const enrichedRequest = {
     ...request,
     requester_name: request.requester_name || requester?.name || 'Anonymous',
-    requester_phone: requester?.phone || '+8800000000'
+    ...(requestOwner ? { requester_phone: requester?.phone || '+8800000000' } : {})
   };
 
   // Find matches from partition
@@ -488,7 +736,20 @@ app.patch('/api/requests/:id/details', async (req, res) => {
   const { id } = req.params;
   const requestIndex = requests.findIndex(r => r.id === id);
   if (requestIndex !== -1) {
-    const { patient_name, requester_name, needed_by, contacts } = req.body;
+    if (!isRequestOwner(requests[requestIndex], req)) {
+      return res.status(403).json({ error: 'Only the request owner can update details' });
+    }
+
+    const patient_name = optionalCleanString(req.body?.patient_name, 120);
+    const requester_name = optionalCleanString(req.body?.requester_name, 120);
+    const needed_by = parseDate(req.body?.needed_by);
+    const contacts = parseContacts(req.body?.contacts);
+
+    if (req.body?.patient_name !== undefined && patient_name === null) return validationError(res, 'Valid patient name is required');
+    if (req.body?.requester_name !== undefined && requester_name === null) return validationError(res, 'Valid requester name is required');
+    if (needed_by === null) return validationError(res, 'Valid needed-by date is required');
+    if (contacts === null) return validationError(res, 'Valid contacts are required');
+
     requests[requestIndex] = {
       ...requests[requestIndex],
       patient_name: patient_name !== undefined ? patient_name : requests[requestIndex].patient_name,
@@ -505,17 +766,21 @@ app.patch('/api/requests/:id/details', async (req, res) => {
 
 app.post('/api/requests/:id/comments', async (req, res) => {
   const { id } = req.params;
-  const token = req.headers.authorization?.split(' ')[1];
-  const fingerprint = req.headers['x-fingerprint'] as string;
-  const { text, anonymous_name } = req.body;
+  const fingerprint = getFingerprint(req);
+  const text = cleanString(req.body?.text, 1000);
+  const anonymous_name = optionalCleanString(req.body?.anonymous_name, 80);
 
-  const validToken = token && token !== 'undefined' && token !== 'anonymous';
-  const user = validToken ? users.find(u => u.id === token) : null;
+  if (!text) return validationError(res, 'Comment text is required');
+
+  const auth = getCurrentAuth(req);
+  const user = auth?.user || null;
   const requestIndex = requests.findIndex(r => r.id === id);
 
   if (requestIndex === -1) {
     return res.status(404).json({ error: 'Request not found' });
   }
+
+  if (!user && !anonymous_name) return validationError(res, 'Anonymous name is required');
 
   // Rate Limiting for anonymous users
   if (!user && fingerprint) {
@@ -541,7 +806,7 @@ app.post('/api/requests/:id/comments', async (req, res) => {
     id: uuidv4(),
     user_id: user ? user.id : (fingerprint || 'anon'),
     user_name: user ? user.name : (anonymous_name || 'Anonymous'),
-    text: text,
+    text,
     created_at: new Date().toISOString()
   };
   
@@ -555,9 +820,7 @@ app.post('/api/requests/:id/comments', async (req, res) => {
 
 app.delete('/api/requests/:id/comments/:commentId', async (req, res) => {
   const { id, commentId } = req.params;
-  const token = req.headers.authorization?.split(' ')[1];
-  const fingerprint = req.headers['x-fingerprint'] as string;
-  const userId = (token && token !== 'undefined' && token !== 'anonymous') ? token : fingerprint;
+  const userId = getActorId(req);
 
   const request = requests.find(r => r.id === id);
   if (!request) return res.status(404).json({ error: 'Request not found' });
@@ -578,8 +841,13 @@ app.delete('/api/requests/:id/comments/:commentId', async (req, res) => {
 app.patch('/api/requests/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
+  if (!isOneOf(status, REQUEST_STATUSES)) return validationError(res, 'Valid request status is required');
+
   const requestIndex = requests.findIndex(r => r.id === id);
   if (requestIndex !== -1) {
+    if (!isRequestOwner(requests[requestIndex], req)) {
+      return res.status(403).json({ error: 'Only the request owner can update status' });
+    }
     requests[requestIndex].status = status;
     await saveToTable('common_requests', requests[requestIndex], [requests[requestIndex].location.lng, requests[requestIndex].location.lat]);
     res.json(requests[requestIndex]);

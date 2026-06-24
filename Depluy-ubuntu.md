@@ -41,6 +41,7 @@ cp .env.example .env
 ```
 
 If port `3000` or `3001` is already busy, set `PORT` or `DEV_PORT` in `.env`.
+Leave `SEED_DEMO_DATA` set to `false` for production-style runs.
 
 ## 3. Default Docker Run
 
@@ -138,6 +139,9 @@ DEV_PORT="3101"
 ```
 
 Then recreate the relevant service.
+
+For cross-origin browser clients, set `CORS_ORIGIN` to a comma-separated list of
+allowed origins. Same-origin Docker deployments can leave it empty.
 
 ### Development file changes are not detected
 

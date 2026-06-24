@@ -18,6 +18,12 @@ const getHeaders = (token?: string) => {
 
 export { BROWSER_FINGERPRINT };
 
+async function readJsonOrThrow(res: Response, fallbackMessage: string) {
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(result.error || fallbackMessage);
+  return result;
+}
+
 export const api = {
   async login(phone: string, password?: string) {
     const res = await fetch(`${API_BASE}/auth/login`, {
@@ -26,10 +32,18 @@ export const api = {
       body: JSON.stringify({ phone, password, fingerprint: BROWSER_FINGERPRINT })
     });
     if (!res.ok) {
-      const error = await res.json();
+      const error = await res.json().catch(() => ({}));
       throw new Error(error.error || 'Failed to login');
     }
     return res.json();
+  },
+
+  async logout(token: string) {
+    const res = await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      headers: getHeaders(token)
+    });
+    return readJsonOrThrow(res, 'Failed to logout');
   },
 
   async sendOtp(phone: string) {
@@ -39,8 +53,8 @@ export const api = {
       body: JSON.stringify({ phone })
     });
     if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to send OTP');
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.error || 'Failed to send OTP');
     }
     return res.json();
   },
@@ -52,8 +66,8 @@ export const api = {
       body: JSON.stringify({ phone, otp })
     });
     if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to verify OTP');
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.error || 'Failed to verify OTP');
     }
     return res.json();
   },
@@ -65,8 +79,8 @@ export const api = {
       body: JSON.stringify({ phone, name, password, blood_group, location, fingerprint: BROWSER_FINGERPRINT })
     });
     if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to register');
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.error || 'Failed to register');
     }
     return res.json();
   },
@@ -85,7 +99,7 @@ export const api = {
       headers: getHeaders(token),
       body: JSON.stringify(profile)
     });
-    return res.json();
+    return readJsonOrThrow(res, 'Failed to update donor profile');
   },
 
   async requestBlood(token: string, requestData: any) {
@@ -94,17 +108,17 @@ export const api = {
       headers: getHeaders(token),
       body: JSON.stringify(requestData)
     });
-    return res.json();
+    return readJsonOrThrow(res, 'Failed to create request');
   },
 
   async getMyRequests(token: string) {
     const res = await fetch(`${API_BASE}/me/requests`, { headers: getHeaders(token) });
-    return res.json();
+    return readJsonOrThrow(res, 'Failed to load requests');
   },
 
   async getRequests() {
     const res = await fetch(`${API_BASE}/requests`, { headers: getHeaders() });
-    return res.json();
+    return readJsonOrThrow(res, 'Failed to load requests');
   },
 
   async getRequestDetails(id: string, token: string) {
@@ -119,7 +133,7 @@ export const api = {
       headers: getHeaders(token),
       body: JSON.stringify({ status })
     });
-    return res.json();
+    return readJsonOrThrow(res, 'Failed to update request status');
   },
 
   async updateRequestDetails(token: string, id: string, data: any) {
@@ -128,7 +142,7 @@ export const api = {
       headers: getHeaders(token),
       body: JSON.stringify(data)
     });
-    return res.json();
+    return readJsonOrThrow(res, 'Failed to update request details');
   },
 
   async addComment(token: string, id: string, text: string, anonymousName?: string) {

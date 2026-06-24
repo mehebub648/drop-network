@@ -14,10 +14,57 @@ function cn(...inputs: ClassValue[]) {
 let globalToken = localStorage.getItem('auth_token') || '';
 
 const BD_LOCATIONS = [
-  'Dhaka', 'Chittagong', 'Sylhet', 'Rajshahi', 'Khulna', 
-  'Barisal', 'Rangpur', 'Mymensingh', 'Comilla', 'Narayanganj', 
-  'Gazipur', 'Bogra', 'Jessore', 'Dinajpur', 'Pabna', "Cox's Bazar"
+  { area: 'Dhaka', lat: 23.8103, lng: 90.4125 },
+  { area: 'Chittagong', lat: 22.3569, lng: 91.7832 },
+  { area: 'Sylhet', lat: 24.8949, lng: 91.8687 },
+  { area: 'Rajshahi', lat: 24.3636, lng: 88.6241 },
+  { area: 'Khulna', lat: 22.8456, lng: 89.5403 },
+  { area: 'Barisal', lat: 22.7010, lng: 90.3535 },
+  { area: 'Rangpur', lat: 25.7439, lng: 89.2752 },
+  { area: 'Mymensingh', lat: 24.7471, lng: 90.4203 },
+  { area: 'Comilla', lat: 23.4607, lng: 91.1809 },
+  { area: 'Narayanganj', lat: 23.6337, lng: 90.5000 },
+  { area: 'Gazipur', lat: 23.9999, lng: 90.4203 },
+  { area: 'Bogra', lat: 24.8465, lng: 89.3778 },
+  { area: 'Jessore', lat: 23.1634, lng: 89.2182 },
+  { area: 'Dinajpur', lat: 25.6217, lng: 88.6355 },
+  { area: 'Pabna', lat: 24.0044, lng: 89.2504 },
+  { area: "Cox's Bazar", lat: 21.4272, lng: 92.0058 }
 ];
+
+const BD_LOCATION_NAMES = BD_LOCATIONS.map(location => location.area);
+
+function getLocationByName(name: string) {
+  const normalized = name.trim().toLowerCase();
+  const location = BD_LOCATIONS.find(item => item.area.toLowerCase() === normalized);
+  return location ? { lat: location.lat, lng: location.lng, area_name: location.area } : null;
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  declare props: Readonly<{ children: React.ReactNode }>;
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-[60vh] flex items-center justify-center px-6">
+          <div className="theme-card p-10 text-center border border-slate-100 max-w-md">
+            <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+            <h1 className="text-xl font-bold text-slate-900 mb-2">Something went wrong</h1>
+            <p className="text-slate-500 font-medium">Refresh the page or return to the request list.</p>
+            <Link to="/requests" className="inline-block mt-5 text-primary font-bold hover:underline">View requests</Link>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function LoginPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
   const navigate = useNavigate();
@@ -99,6 +146,7 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
   const [password, setPassword] = useState('');
   const [bloodGroup, setBloodGroup] = useState('O+');
   const [selectedLocation, setSelectedLocation] = useState('Dhaka');
+  const [devOtp, setDevOtp] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -108,7 +156,8 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
     setLoading(true);
     setError('');
     try {
-      await api.sendOtp(phone);
+      const otpResponse = await api.sendOtp(phone);
+      setDevOtp(otpResponse.dev_otp || '');
       setStep('OTP');
     } catch (e: any) {
       setError(e.message || 'Failed to send OTP');
@@ -134,13 +183,8 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
     setLoading(true);
     setError('');
     try {
-      let lat = 23.8103;
-      let lng = 90.4125;
-      if (selectedLocation === 'Chittagong') { lat = 22.3569; lng = 91.7832; }
-      if (selectedLocation === 'Sylhet') { lat = 24.8949; lng = 91.8687; }
-      if (selectedLocation === 'Rajshahi') { lat = 24.3636; lng = 88.6241; }
-
-      const location = { lat, lng, area_name: selectedLocation };
+      const location = getLocationByName(selectedLocation);
+      if (!location) throw new Error('Choose a supported district');
 
       const res = await api.register(phone, name, password, bloodGroup, location);
       localStorage.setItem('auth_token', res.token);
@@ -197,7 +241,7 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
                 value={otp}
                 onChange={e => setOtp(e.target.value)}
               />
-              <p className="text-xs text-center text-slate-400 mt-2 font-medium">Use 123456 for testing</p>
+              {devOtp && <p className="text-xs text-center text-slate-400 mt-2 font-medium">Development OTP: {devOtp}</p>}
             </div>
             <button disabled={loading} className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg shadow-lg shadow-rose-200 active:scale-[0.98] transition-transform mt-2 disabled:opacity-50">
               {loading ? 'Verifying...' : 'Verify OTP'}
@@ -253,7 +297,7 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
                   onChange={e => setSelectedLocation(e.target.value)}
                   className="w-full px-4 py-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary font-medium outline-none appearance-none"
                 >
-                  {BD_LOCATIONS.map(loc => (
+                  {BD_LOCATION_NAMES.map(loc => (
                     <option key={loc} value={loc}>{loc}</option>
                   ))}
                 </select>
@@ -282,6 +326,7 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
   const [status, setStatus] = useState(user?.donor_profile?.availability_status || 'AVAILABLE');
   const [selectedLocation, setSelectedLocation] = useState(user?.donor_profile?.location?.area_name || 'Dhaka');
   const [loading, setLoading] = useState(false);
+  const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [myRequests, setMyRequests] = useState<any[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
 
@@ -308,22 +353,23 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
 
   const handleSave = async () => {
     setLoading(true);
-    // Rough coordinates mapping based on selected area name
-    let lat = 23.8103;
-    let lng = 90.4125;
-    if (selectedLocation === 'Chittagong') { lat = 22.3569; lng = 91.7832; }
-    if (selectedLocation === 'Sylhet') { lat = 24.8949; lng = 91.8687; }
-    if (selectedLocation === 'Rajshahi') { lat = 24.3636; lng = 88.6241; }
-    
-    await api.updateDonorProfile(globalToken, {
-      blood_group: bloodGroup,
-      availability_status: status,
-      location: { lat, lng, area_name: selectedLocation },
-      last_donation_date: user?.donor_profile?.last_donation_date || new Date().toISOString(),
-      donation_history: donationHistory
-    });
-    alert('Profile updated successfully!');
-    onUpdate();
+    setProfileMessage(null);
+    try {
+      const location = getLocationByName(selectedLocation);
+      if (!location) throw new Error('Choose a supported district');
+
+      await api.updateDonorProfile(globalToken, {
+        blood_group: bloodGroup,
+        availability_status: status,
+        location,
+        last_donation_date: user?.donor_profile?.last_donation_date || new Date().toISOString(),
+        donation_history: donationHistory
+      });
+      setProfileMessage({ type: 'success', text: 'Profile updated successfully.' });
+      onUpdate();
+    } catch (err: any) {
+      setProfileMessage({ type: 'error', text: err.message || 'Failed to update profile.' });
+    }
     setLoading(false);
   };
 
@@ -336,25 +382,27 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
     };
     const updatedHistory = [...donationHistory, newRecord];
     setDonationHistory(updatedHistory);
-    
-    let lat = 23.8103;
-    let lng = 90.4125;
-    if (selectedLocation === 'Chittagong') { lat = 22.3569; lng = 91.7832; }
-    if (selectedLocation === 'Sylhet') { lat = 24.8949; lng = 91.8687; }
-    if (selectedLocation === 'Rajshahi') { lat = 24.3636; lng = 88.6241; }
+    setProfileMessage(null);
+    try {
+      const location = getLocationByName(selectedLocation);
+      if (!location) throw new Error('Choose a supported district');
 
-    await api.updateDonorProfile(globalToken, {
-      blood_group: bloodGroup,
-      availability_status: status,
-      location: { lat, lng, area_name: selectedLocation },
-      last_donation_date: user?.donor_profile?.last_donation_date || new Date().toISOString(),
-      donation_history: updatedHistory
-    });
-    
-    setNewDonationDate('');
-    setNewDonationOrg('');
-    setShowAddDonation(false);
-    onUpdate();
+      await api.updateDonorProfile(globalToken, {
+        blood_group: bloodGroup,
+        availability_status: status,
+        location,
+        last_donation_date: user?.donor_profile?.last_donation_date || new Date().toISOString(),
+        donation_history: updatedHistory
+      });
+      setNewDonationDate('');
+      setNewDonationOrg('');
+      setShowAddDonation(false);
+      setProfileMessage({ type: 'success', text: 'Donation history updated.' });
+      onUpdate();
+    } catch (err: any) {
+      setDonationHistory(donationHistory);
+      setProfileMessage({ type: 'error', text: err.message || 'Failed to update donation history.' });
+    }
   };
 
   return (
@@ -396,7 +444,7 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
                   onChange={e => setSelectedLocation(e.target.value)}
                   className="w-full px-4 py-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary font-medium outline-none"
                 >
-                  {BD_LOCATIONS.map(loc => (
+                  {BD_LOCATION_NAMES.map(loc => (
                     <option key={loc} value={loc}>{loc}</option>
                   ))}
                 </select>
@@ -415,6 +463,15 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
                 </select>
               </div>
             </div>
+
+            {profileMessage && (
+              <div className={cn(
+                "px-4 py-3 rounded-xl text-sm font-bold",
+                profileMessage.type === 'success' ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
+              )}>
+                {profileMessage.text}
+              </div>
+            )}
 
             <button 
               onClick={handleSave}
@@ -541,6 +598,7 @@ function LandingPage({ user }: { user: any }) {
   const [selectedLocation, setSelectedLocation] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [matches, setMatches] = useState<any[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [revealedContacts, setRevealedContacts] = useState<Record<string, boolean>>({});
@@ -549,18 +607,27 @@ function LandingPage({ user }: { user: any }) {
 
   const handleSearch = async () => {
     setSearching(true);
+    setSearchError('');
     try {
+      const requestedLocation = selectedLocation || locationSearch || 'Dhaka';
+      const location = getLocationByName(requestedLocation);
+      if (!location) {
+        setSearchError('Choose a supported district from the list.');
+        setSearching(false);
+        return;
+      }
+
       const res = await api.requestBlood(globalToken || 'anonymous', {
         blood_group: bloodGroup,
         needed_by: neededBy ? new Date(neededBy).toISOString() : undefined,
-        location: { lat: 23.8103, lng: 90.4125, area_name: selectedLocation || locationSearch || 'Dhaka, Bangladesh' }
+        location
       });
       setTimeout(() => {
         setSearching(false);
         navigate(`/request/${res.request.id}`);
       }, 800);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setSearchError(e.message || 'Unable to create request.');
       setSearching(false);
     }
   };
@@ -670,7 +737,7 @@ function LandingPage({ user }: { user: any }) {
               
               {isDropdownOpen && (
                 <div className="absolute z-50 w-full mt-2 bg-white border border-slate-100 shadow-xl rounded-2xl max-h-60 overflow-y-auto left-0 md:-left-2 md:w-[calc(100%+16px)]">
-                  {BD_LOCATIONS.filter(loc => loc.toLowerCase().includes(locationSearch.toLowerCase())).map(loc => (
+                  {BD_LOCATION_NAMES.filter(loc => loc.toLowerCase().includes(locationSearch.toLowerCase())).map(loc => (
                     <button
                       key={loc}
                       type="button"
@@ -685,7 +752,7 @@ function LandingPage({ user }: { user: any }) {
                       {loc}
                     </button>
                   ))}
-                  {BD_LOCATIONS.filter(loc => loc.toLowerCase().includes(locationSearch.toLowerCase())).length === 0 && (
+                  {BD_LOCATION_NAMES.filter(loc => loc.toLowerCase().includes(locationSearch.toLowerCase())).length === 0 && (
                     <div className="px-5 py-4 text-sm text-slate-500 text-center font-medium">No districts found</div>
                   )}
                 </div>
@@ -757,6 +824,11 @@ function LandingPage({ user }: { user: any }) {
             </div>
           </div>
         </div>
+        {searchError && (
+          <div className="max-w-4xl mx-auto mt-3 px-5 py-3 bg-red-50 text-red-600 rounded-2xl text-sm font-bold">
+            {searchError}
+          </div>
+        )}
         <p className="text-center text-sm text-slate-500 font-medium">
           <CheckCircle2 className="w-4 h-4 inline text-emerald-500 mr-1 -mt-0.5" /> Matches are realtime and location-based
         </p>
@@ -775,7 +847,7 @@ function LandingPage({ user }: { user: any }) {
               <Search className="w-7 h-7" />
             </div>
             <h3 className="text-xl font-bold mb-3 text-slate-900">1. Real-time Search</h3>
-            <p className="text-slate-500 text-sm leading-relaxed">Instantly scan across 64 districts in Bangladesh to find active donors rather than broadcasting open pleas.</p>
+            <p className="text-slate-500 text-sm leading-relaxed">Search supported Bangladesh districts to find active donors rather than broadcasting open pleas.</p>
           </div>
           
           <div className="theme-card p-8 text-center hover:-translate-y-1 transition-transform duration-300">
@@ -791,7 +863,7 @@ function LandingPage({ user }: { user: any }) {
               <Shield className="w-7 h-7" />
             </div>
             <h3 className="text-xl font-bold mb-3 text-slate-900">3. Secure Contact</h3>
-            <p className="text-slate-500 text-sm leading-relaxed">Connect directly with verified donors. Phone numbers remain masked until mutual acceptance.</p>
+            <p className="text-slate-500 text-sm leading-relaxed">Review request details first, then contact available donors directly when you are ready to respond.</p>
           </div>
         </div>
       </section>
@@ -801,24 +873,24 @@ function LandingPage({ user }: { user: any }) {
           <Droplet className="w-64 h-64 text-primary" />
         </div>
         <div className="relative z-10 max-w-2xl">
-          <h2 className="text-3xl font-bold mb-6 text-white">Building Bangladesh's largest live donor network.</h2>
+          <h2 className="text-3xl font-bold mb-6 text-white">Building a live donor network for urgent requests.</h2>
           <p className="text-slate-400 text-lg mb-8 leading-relaxed">
-            Every day, thousands of requests go unanswered across major hospitals in Dhaka, Chittagong, and beyond. By registering as a donor, you keep your status hidden until someone near you needs exactly your blood type.
+            Keep your donor status current so matching can prioritize the right blood group, district, and availability when a nearby request is created.
           </p>
           <div className="flex flex-wrap gap-6 items-center">
             <div className="flex items-center gap-3">
               <Users className="w-10 h-10 text-primary" />
               <div>
-                <div className="text-3xl font-extrabold leading-none text-white">12,000+</div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Active Donors</div>
+                <div className="text-3xl font-extrabold leading-none text-white">Live</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Donor Status</div>
               </div>
             </div>
             <div className="h-12 w-px bg-slate-800 hidden sm:block"></div>
             <div className="flex items-center gap-3">
               <Activity className="w-10 h-10 text-primary" />
               <div>
-                <div className="text-3xl font-extrabold leading-none text-white">4,500+</div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Lives Saved</div>
+                <div className="text-3xl font-extrabold leading-none text-white">24h</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Request Window</div>
               </div>
             </div>
           </div>
@@ -831,8 +903,6 @@ function LandingPage({ user }: { user: any }) {
 function RequestsPage() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [revealedRequests, setRevealedRequests] = useState<Record<string, boolean>>({});
-  const navigate = useNavigate();
 
   useEffect(() => {
     async function loadRequests() {
@@ -847,14 +917,6 @@ function RequestsPage() {
     }
     loadRequests();
   }, []);
-
-  const handleRespond = (reqId: string) => {
-    if (!globalToken) {
-      navigate('/login');
-    } else {
-      setRevealedRequests(prev => ({ ...prev, [reqId]: true }));
-    }
-  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 fade-in">
@@ -897,25 +959,13 @@ function RequestsPage() {
                     <MapPin className="w-4 h-4 text-slate-400" />
                     {req.location.area_name}
                   </h3>
-                  
-                  {revealedRequests[req.id] && (
-                    <div className="mt-4 p-4 bg-rose-50 rounded-xl border border-rose-100 fade-in w-full md:w-auto">
-                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Patient/Requester Contact</p>
-                      <p className="text-slate-900 font-bold mb-1">{req.requester_name}</p>
-                      <a href={`tel:${req.requester_phone}`} className="text-primary font-bold text-lg tracking-wide hover:underline inline-flex items-center gap-2">
-                        {req.requester_phone}
-                      </a>
-                    </div>
-                  )}
                 </div>
               </div>
-              {!revealedRequests[req.id] && (
-                <div className="flex-shrink-0 md:w-32">
-                  <Link to={`/request/${req.id}`} className="w-full block text-center px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform hover:bg-slate-800">
-                    View Details
-                  </Link>
-                </div>
-              )}
+              <div className="flex-shrink-0 md:w-32">
+                <Link to={`/request/${req.id}`} className="w-full block text-center px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform hover:bg-slate-800">
+                  View Details
+                </Link>
+              </div>
             </div>
           ))}
         </div>
@@ -972,6 +1022,8 @@ function RequestDetailsPage({ user }: { user: any }) {
   const navigate = useNavigate();
   const [data, setData] = useState<{ request: any, matches: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
   // UI States
   const [revealedContacts, setRevealedContacts] = useState<Record<string, boolean>>({});
@@ -996,7 +1048,7 @@ function RequestDetailsPage({ user }: { user: any }) {
         });
       } catch (e) {
         console.error(e);
-        navigate('/');
+        setLoadError('This request could not be loaded.');
       } finally {
         setLoading(false);
       }
@@ -1006,8 +1058,14 @@ function RequestDetailsPage({ user }: { user: any }) {
 
   const handleUpdateStatus = async (status: string) => {
     if (data?.request) {
-      const updated = await api.updateRequestStatus(globalToken || 'anonymous', data.request.id, status);
-      setData({ ...data, request: { ...data.request, status: updated.status } });
+      setActionMessage(null);
+      try {
+        const updated = await api.updateRequestStatus(globalToken || 'anonymous', data.request.id, status);
+        setData({ ...data, request: { ...data.request, status: updated.status } });
+        setActionMessage({ type: 'success', text: 'Request status updated.' });
+      } catch (err: any) {
+        setActionMessage({ type: 'error', text: err.message || 'Failed to update request status.' });
+      }
     }
   };
 
@@ -1017,16 +1075,22 @@ function RequestDetailsPage({ user }: { user: any }) {
         ...editData,
         needed_by: editData.needed_by ? new Date(editData.needed_by).toISOString() : undefined
       };
-      const updated = await api.updateRequestDetails(globalToken || 'anonymous', data.request.id, formattedData);
-      setData({ ...data, request: { ...data.request, ...updated } });
-      setIsEditing(false);
+      setActionMessage(null);
+      try {
+        const updated = await api.updateRequestDetails(globalToken || 'anonymous', data.request.id, formattedData);
+        setData({ ...data, request: { ...data.request, ...updated } });
+        setIsEditing(false);
+        setActionMessage({ type: 'success', text: 'Request details updated.' });
+      } catch (err: any) {
+        setActionMessage({ type: 'error', text: err.message || 'Failed to update request details.' });
+      }
     }
   };
 
   const submitComment = async () => {
     if (!newComment.trim() || !data) return;
     if (!user && !anonName.trim()) {
-      alert("Please provide a name to comment.");
+      setActionMessage({ type: 'error', text: 'Please provide a name to comment.' });
       return;
     }
     
@@ -1040,8 +1104,9 @@ function RequestDetailsPage({ user }: { user: any }) {
         }
       });
       setNewComment('');
+      setActionMessage({ type: 'success', text: 'Comment posted.' });
     } catch (err: any) {
-      alert(err.message || "Failed to submit comment.");
+      setActionMessage({ type: 'error', text: err.message || 'Failed to submit comment.' });
     }
   };
 
@@ -1057,11 +1122,18 @@ function RequestDetailsPage({ user }: { user: any }) {
         }
       });
     } catch (err: any) {
-      alert(err.message || "Failed to delete comment.");
+      setActionMessage({ type: 'error', text: err.message || 'Failed to delete comment.' });
     }
   };
 
   if (loading) return <div className="flex justify-center p-12"><div className="w-10 h-10 border-[3px] border-rose-100 border-t-primary rounded-full animate-spin"></div></div>;
+  if (loadError) return (
+    <div className="max-w-3xl mx-auto theme-card p-10 text-center border border-slate-100">
+      <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+      <p className="font-bold text-slate-900">{loadError}</p>
+      <Link to="/requests" className="inline-block mt-4 text-primary font-bold hover:underline">Back to requests</Link>
+    </div>
+  );
   if (!data) return null;
 
   const { request, matches } = data;
@@ -1075,6 +1147,15 @@ function RequestDetailsPage({ user }: { user: any }) {
         </Link>
         <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">Request Dashboard</h2>
       </div>
+
+      {actionMessage && (
+        <div className={cn(
+          "px-5 py-3 rounded-2xl text-sm font-bold",
+          actionMessage.type === 'success' ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
+        )}>
+          {actionMessage.text}
+        </div>
+      )}
 
       {/* Main Request Header */}
       <div className="theme-card p-6 md:p-8 bg-rose-50/50 border border-rose-100 shadow-sm relative overflow-hidden">
@@ -1396,6 +1477,19 @@ function RequestDetailsPage({ user }: { user: any }) {
   );
 }
 
+function NotFoundPage() {
+  return (
+    <div className="max-w-2xl mx-auto theme-card p-10 text-center border border-slate-100">
+      <AlertCircle className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+      <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 mb-2">Page not found</h1>
+      <p className="text-slate-500 font-medium mb-6">The page you requested does not exist.</p>
+      <Link to="/" className="inline-flex items-center justify-center px-5 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-slate-800">
+        Find Blood
+      </Link>
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -1420,7 +1514,15 @@ export default function App() {
     fetchUser();
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = globalToken;
+    if (token) {
+      try {
+        await api.logout(token);
+      } catch (e) {
+        console.error(e);
+      }
+    }
     localStorage.removeItem('auth_token');
     globalToken = '';
     setUser(null);
@@ -1434,16 +1536,19 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Layout user={user} onLogout={handleLogout}>
-        <Routes>
-          <Route path="/" element={<LandingPage user={user} />} />
-          <Route path="/request/:id" element={<RequestDetailsPage user={user} />} />
-          <Route path="/requests" element={<RequestsPage />} />
-          <Route path="/login" element={!user ? <LoginPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
-          <Route path="/register" element={!user ? <RegisterPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
-          <Route path="/profile" element={user ? <DonorProfile user={user} onUpdate={fetchUser} /> : <Navigate to="/login" />} />
-        </Routes>
-      </Layout>
+      <ErrorBoundary>
+        <Layout user={user} onLogout={handleLogout}>
+          <Routes>
+            <Route path="/" element={<LandingPage user={user} />} />
+            <Route path="/request/:id" element={<RequestDetailsPage user={user} />} />
+            <Route path="/requests" element={<RequestsPage />} />
+            <Route path="/login" element={!user ? <LoginPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
+            <Route path="/register" element={!user ? <RegisterPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
+            <Route path="/profile" element={user ? <DonorProfile user={user} onUpdate={fetchUser} /> : <Navigate to="/login" />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Layout>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

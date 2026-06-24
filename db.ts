@@ -9,6 +9,10 @@ if (!fs.existsSync(DB_DIR)) {
 
 let db: lancedb.Connection;
 
+function idFilter(id: string) {
+  return `id = ${JSON.stringify(String(id))}`;
+}
+
 export async function getDb() {
   if (!db) {
     db = await lancedb.connect(DB_DIR);
@@ -22,7 +26,7 @@ export async function ensureTable(name: string) {
   if (!tables.includes(name)) {
     // create with dummy data to infer schema, then delete it
     const table = await conn.createTable(name, [{ vector: [0, 0], id: "dummy", doc: "{}" }]);
-    await table.delete('id = "dummy"');
+    await table.delete(idFilter('dummy'));
     return table;
   }
   return await conn.openTable(name);
@@ -41,7 +45,7 @@ export async function syncDonorToPartition(user: any) {
   
   // Remove if exists to replace it
   try {
-    await table.delete(`id = '${user.id}'`);
+    await table.delete(idFilter(user.id));
   } catch (e) {}
 
   await table.add([{
@@ -49,6 +53,19 @@ export async function syncDonorToPartition(user: any) {
     id: user.id,
     doc: JSON.stringify(user)
   }]);
+}
+
+export async function removeDonorFromAllPartitions(userId: string) {
+  const conn = await getDb();
+  const tables = await conn.tableNames();
+  const donorTables = tables.filter(name => name.startsWith('donors_'));
+
+  for (const name of donorTables) {
+    try {
+      const table = await conn.openTable(name);
+      await table.delete(idFilter(userId));
+    } catch (e) {}
+  }
 }
 
 export async function getAllFromTable(name: string) {
@@ -71,7 +88,7 @@ export async function getAllFromTable(name: string) {
 export async function saveToTable(name: string, obj: any, vector: number[] = [0,0]) {
   const table = await ensureTable(name);
   try {
-    await table.delete(`id = '${obj.id}'`);
+    await table.delete(idFilter(obj.id));
   } catch (e) {}
   await table.add([{ vector, id: obj.id, doc: JSON.stringify(obj) }]);
 }

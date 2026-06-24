@@ -1,7 +1,7 @@
 {
-  "name": "react-example",
+  "name": "drop-network",
   "private": true,
-  "version": "0.0.4",
+  "version": "0.0.28",
   "type": "module",
   "scripts": {
     "dev": "tsx watch server.ts",
