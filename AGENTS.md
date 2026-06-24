@@ -2,8 +2,10 @@
 
 ## Project Context
 - This is a Node/TypeScript React app with an Express server.
-- Read [ARCHITECTURE.md](./docs/ARCHITECTURE.md) before making structural or cross-cutting changes.
-- Use PowerShell-safe commands on Windows, including `npm.cmd` and `npx.cmd`.
+- Read [ARCHITECTURE.md](./ARCHITECTURE.md) before making structural or cross-cutting changes.
+- Docker Compose is the supported way to run, build, lint, and validate this project.
+- Do not run Node, npm, npx, Vite, or TSX directly on the host. If an npm script is needed, run it inside a Docker Compose service.
+- Use PowerShell-safe Docker commands on Windows.
 - Prefer the existing structure and scripts in `package.json` before adding new tooling.
 
 ## Plan File (PLAN.md)
@@ -19,18 +21,20 @@
 - Keep explanations concise and focus on changed files, validation performed, and remaining blockers.
 
 ## Commands
-- Install dependencies: `npm.cmd install`
-- Type-check/lint: `npm.cmd run lint`
-- Build: `npm.cmd run build`
-- Start app: `npm.cmd run start`
-- Dev server: `npm.cmd run dev`
-- Preview build: `npm.cmd run preview`
+- Build production image: `docker compose build app`
+- Start production-style app: `docker compose up --build app`
+- Start development service: `docker compose --profile development up --build app-dev`
+- Type-check/lint: `docker compose --profile development run --rm app-dev npm run lint`
+- Build frontend/server bundle: `docker compose --profile development run --rm app-dev npm run build`
+- Run another package script: `docker compose --profile development run --rm app-dev npm run <script>`
+- Open a dev container shell: `docker compose --profile development exec app-dev sh`
+- Stop services: `docker compose --profile development down`
 
 ## Validation Policy
 - For minor documentation, copy, or narrowly scoped style changes, do not run non-critical tests after building.
-- For TypeScript or server changes, run `npm.cmd run lint` when practical.
+- For TypeScript or server changes, run `docker compose --profile development run --rm app-dev npm run lint` when practical.
 - For frontend behavior changes, run the narrowest useful browser or build check.
-- For dependency, routing, or production-impacting changes, run `npm.cmd run build` unless the user asks to skip it.
+- For dependency, routing, or production-impacting changes, run `docker compose build app` unless the user asks to skip it.
 
 ## Process Cleanup
 - Avoid detached/background processes unless they are required.

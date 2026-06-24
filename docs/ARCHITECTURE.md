@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.29`
+Current application version: `0.0.30`
 
 ## Overview
 
@@ -8,8 +8,8 @@ Drop Network is a single Node.js application for urgent blood donation matching.
 
 - A React 19 single-page frontend in `src/`.
 - An Express API in `server/server.ts`.
-- A LanceDB data store whose location is set by `LANCEDB_PATH` (a persistent
-  volume in Docker, or a local `.lancedb/` directory for direct runs).
+- A LanceDB data store under `/data/lancedb` inside Docker, backed by persistent
+  Docker volumes.
 - Vite middleware in development and static `dist/` serving in production.
 - Docker targets for development, build, and production runtime.
 
@@ -121,7 +121,9 @@ Donor search is partitioned by district and blood group. Request creation and re
 
 ## Deployment
 
-Docker is the primary runtime path.
+Docker is the supported runtime path. Agents and developers should not run
+Node, npm, Vite, or TSX directly on the host for this project; package scripts
+are run inside Docker Compose services.
 
 Files:
 
@@ -134,13 +136,12 @@ Ports:
 
 - Production-style app: container `3000`, host `${PORT:-3000}`.
 - Development profile: container `3000`, host `${DEV_PORT:-3001}`.
-- Direct local server runs read `PORT` first, then `PROD_PORT`, then `3000`.
 
 Environment:
 
 - `CORS_ORIGIN` optionally lists allowed cross-origin browser origins.
-- `LANCEDB_PATH` sets the datastore directory. Docker sets it to `/data/lancedb`;
-  direct local runs fall back to `./.lancedb`.
+- `LANCEDB_PATH` sets the datastore directory inside the container. Docker
+  Compose sets it to `/data/lancedb`.
 
 Persistent Docker volumes:
 

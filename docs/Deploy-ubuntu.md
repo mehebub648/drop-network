@@ -41,8 +41,8 @@ cp .env.example .env
 ```
 
 If port `3000` or `3001` is already busy, set `PORT` or `DEV_PORT` in `.env`.
-The datastore starts empty; no demo data is generated. To store LanceDB data
-outside the default volume, set `LANCEDB_PATH`.
+The datastore starts empty; no demo data is generated. Docker Compose stores
+LanceDB in named volumes by default.
 
 ## 3. Default Docker Run
 

@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.29`
+Current version: `0.0.30`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -18,7 +18,7 @@ View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c
 - Plan / backlog: [PLAN.md](./docs/PLAN.md)
 - Changelogs: [changelog/](./changelog/)
 
-## Run Locally
+## Run With Docker
 
 **Prerequisites:** Docker
 
@@ -38,12 +38,12 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 
 ## Runtime Configuration
 
-- `PORT` controls direct local server runs and the Docker production host port.
+- `PORT` controls the Docker production host port.
 - `DEV_PORT` controls the Docker development host port.
 - `CORS_ORIGIN` can list allowed cross-origin browser origins; same-origin
   production requests do not need it.
-- `LANCEDB_PATH` sets the datastore directory. Docker uses `/data/lancedb`
-  (a persistent volume); direct local runs fall back to `./.lancedb`.
+- `LANCEDB_PATH` is set inside Docker Compose to `/data/lancedb`, backed by a
+  persistent Docker volume.
 - Development OTP responses include a one-time `dev_otp`; production still
   needs a real SMS provider before phone verification is useful.
 
