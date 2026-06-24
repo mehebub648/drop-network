@@ -2,12 +2,12 @@
 
 ## Project Context
 - This is a Node/TypeScript React app with an Express server.
-- Read [ARCHITECTURE.md](./ARCHITECTURE.md) before making structural or cross-cutting changes.
+- Read [ARCHITECTURE.md](./docs/ARCHITECTURE.md) before making structural or cross-cutting changes.
 - Use PowerShell-safe commands on Windows, including `npm.cmd` and `npx.cmd`.
 - Prefer the existing structure and scripts in `package.json` before adding new tooling.
 
 ## Plan File (PLAN.md)
-- Read [PLAN.md](./PLAN.md) before starting work and check whether any planned item covers the current task.
+- Read [PLAN.md](./docs/PLAN.md) before starting work and check whether any planned item covers the current task.
 - When you finish a planned item, remove it from `PLAN.md` in the same change.
 - When you discover new work worth tracking (bugs, missing features, follow-ups, tech debt), add it to `PLAN.md` instead of leaving it implicit.
 - Keep `PLAN.md` items short, actionable, and grouped under the existing buckets; include file/line references where useful.

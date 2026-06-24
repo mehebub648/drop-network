@@ -12,8 +12,10 @@ View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c
 
 ## Documentation
 
-- Architecture: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- Architecture: [ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- Deployment: [Windows](./docs/Deploy-windows.md) · [Ubuntu](./docs/Deploy-ubuntu.md)
 - Agent instructions: [AGENTS.md](./AGENTS.md)
+- Plan / backlog: [PLAN.md](./docs/PLAN.md)
 - Changelogs: [changelog/](./changelog/)
 
 ## Run Locally

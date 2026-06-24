@@ -7,7 +7,7 @@ Current application version: `0.0.29`
 Drop Network is a single Node.js application for urgent blood donation matching. It combines:
 
 - A React 19 single-page frontend in `src/`.
-- An Express API in `server.ts`.
+- An Express API in `server/server.ts`.
 - A LanceDB data store whose location is set by `LANCEDB_PATH` (a persistent
   volume in Docker, or a local `.lancedb/` directory for direct runs).
 - Vite middleware in development and static `dist/` serving in production.
@@ -17,7 +17,7 @@ The app is currently self-contained. There is no external auth provider, SMS gat
 
 ## Runtime Flow
 
-1. The server starts from `server.ts`.
+1. The server starts from `server/server.ts`.
 2. `initDbData()` loads users, sessions, and blood requests from LanceDB tables.
 3. Active requests with past `expires_at` timestamps are marked `CANCELLED`.
 4. No data is seeded; the datastore starts empty and is populated only by real
@@ -54,7 +54,7 @@ Client state:
 
 ## Backend
 
-`server.ts` owns the API, an in-memory write-through runtime cache, session issuance, request validation, and static serving.
+`server/server.ts` owns the API, an in-memory write-through runtime cache, session issuance, request validation, and static serving. SMS/OTP delivery lives in `server/sms.ts`.
 
 Main data types:
 
@@ -86,7 +86,7 @@ API routes:
 
 ## Data Storage
 
-`db.ts` wraps LanceDB access.
+`server/db.ts` wraps LanceDB access.
 
 Tables:
 
@@ -128,7 +128,7 @@ Files:
 - `Dockerfile` defines `dev`, `build`, and `production` stages.
 - `compose.yml` defines the default `app` service and optional `app-dev` profile.
 - `README.md` gives the shortest run instructions.
-- `Deploy-windows.md` and `Depluy-ubuntu.md` document platform-specific Docker setup.
+- `docs/Deploy-windows.md` and `docs/Deploy-ubuntu.md` document platform-specific Docker setup.
 
 Ports:
 

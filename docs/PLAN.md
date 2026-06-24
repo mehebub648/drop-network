@@ -60,9 +60,9 @@ These cannot be finished by editing code alone.
 
 - [ ] **Real OTP / phone verification** - SMS gateway account + API key (Twilio,
   Vonage, or a BD provider such as SSL Wireless / bulksmsbd). Replaces the local
-  development-only OTP response. `server.ts`
+  development-only OTP response. `server/server.ts`
 - [ ] **Password security** - hashing (bcrypt/argon2) + a managed session/JWT
-  secret. Currently plaintext. `server.ts`
+  secret. Currently plaintext. `server/server.ts`
 - [ ] **Geocoding / maps** - Google Maps / Mapbox / OSM-Nominatim key to convert
   districts and GPS into real coordinates and render a map.
 - [ ] **Browser geolocation** - HTTPS origin + permission flow wired into search.

@@ -39,7 +39,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
-COPY server.ts db.ts docker-entrypoint.sh ./
+COPY server ./server
+COPY docker-entrypoint.sh ./
 
 # Create the data directory owned by the unprivileged "node" user. The
 # container starts as root so the entrypoint can fix ownership of the mounted
