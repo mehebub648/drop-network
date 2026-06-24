@@ -6,15 +6,30 @@
 
 This contains everything you need to run your app locally.
 
+Current version: `0.0.2`
+
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
+
+## Documentation
+
+- Architecture: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- Agent instructions: [AGENTS.md](./AGENTS.md)
+- Changelogs: [changelog/](./changelog/)
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
+**Prerequisites:** Docker
 
+1. Copy `.env.example` to `.env` and adjust values if needed.
+2. Build and run the production-style container:
+   `docker compose up --build`
 
-1. Install dependencies:
-   `npm install`
-2. Copy `.env.example` to `.env` or `.env.local` and adjust values if needed
-3. Run the app:
-   `npm run dev`
+The frontend is built from source inside Docker during the image build. Local
+`node_modules/` and `dist/` are not required.
+
+For live development:
+
+`docker compose --profile development up --build app-dev`
+
+The default app runs on `http://localhost:3000`; the dev profile runs on
+`http://localhost:3001` unless you override `PORT` or `DEV_PORT`.

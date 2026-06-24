@@ -1,22 +1,13 @@
 # Drop Deployment Guide for Ubuntu
 
-This document covers how to run the project on Ubuntu with Docker Compose for both development and a production-style deployment.
+This project runs as one Node.js server:
 
-## 1. What the Stack Looks Like
-
-The app runs as a single Node.js server:
-
-1. Express handles the API.
+1. Express serves the API.
 2. Vite runs in middleware mode during development.
-3. The server switches to static file serving in production.
-4. LanceDB persists local data under `.lancedb`.
+3. Production serves Docker-built frontend files from `dist/`.
+4. LanceDB data is stored in Docker named volumes.
 
-Compose exposes two services:
-
-1. `app` for development on port `3000`
-2. `app-prod` for production on port `3001` using the `production` profile
-
-## 2. Prerequisites
+## 1. Prerequisites
 
 Install Docker Engine and the Compose plugin:
 
@@ -41,14 +32,7 @@ sudo usermod -aG docker $USER
 newgrp docker
 ```
 
-Verify installation:
-
-```bash
-docker compose version
-docker version
-```
-
-## 3. Project Setup
+## 2. Project Setup
 
 Move into the project directory and create the environment file:
 
@@ -56,17 +40,17 @@ Move into the project directory and create the environment file:
 cp .env.example .env
 ```
 
-Most local setups can keep the default values unchanged.
+If port `3000` or `3001` is already busy, set `PORT` or `DEV_PORT` in `.env`.
 
-If ports `3000` or `3001` are already in use on the host, set `DEV_PORT` or `PROD_PORT` in `.env` before starting the services.
+## 3. Default Docker Run
 
-## 4. Start Development Mode
-
-Build and run the dev service:
+Build and run the app:
 
 ```bash
-docker compose up --build app
+docker compose up --build
 ```
+
+This builds the `production` Docker target. The frontend is built from source inside Docker with `npm run build`; local `node_modules/` and `dist/` are not required or copied into the image.
 
 Open:
 
@@ -74,118 +58,24 @@ Open:
 http://localhost:3000
 ```
 
-Development behavior:
-
-1. Frontend changes under `src/` reload through Vite HMR.
-2. Backend changes in `server.ts` and `db.ts` reload through `tsx watch`.
-3. The project directory is bind-mounted into the container.
-4. Dependency files and LanceDB data are stored in named volumes.
-
-## 5. Why Reload Works Without Manual Restart
-
-The development container is configured with two important pieces:
-
-1. `tsx watch server.ts` for backend restarts
-2. Polling-based file watching for Vite and chokidar on mounted filesystems
-
-Those settings are applied through environment variables in `compose.yml`:
-
-```dotenv
-CHOKIDAR_USE_POLLING=true
-VITE_USE_POLLING=true
-```
-
-## 6. Daily Development Commands
-
-Run in the foreground:
-
-```bash
-docker compose up app
-```
-
-Run in the background:
-
-```bash
-docker compose up --build -d app
-```
-
-Follow logs:
+Useful commands:
 
 ```bash
 docker compose logs -f app
-```
-
-Open a shell in the running container:
-
-```bash
-docker compose exec app sh
-```
-
-Stop the service:
-
-```bash
+docker compose restart app
 docker compose stop app
-```
-
-Shut everything down:
-
-```bash
 docker compose down
 ```
 
-## 7. Handling Small Operational Tasks
+## 4. Development Mode
 
-If you change only source files, Compose should not need a rebuild.
-
-If you change one of these files, rebuild the image:
-
-1. `package.json`
-2. `package-lock.json`
-3. `Dockerfile`
-4. `compose.yml`
-
-Rebuild command:
+Use the development profile when you need live reload:
 
 ```bash
-docker compose up --build app
+docker compose --profile development up --build app-dev
 ```
 
-If you want a full clean reset:
-
-```bash
-docker compose down -v
-docker compose up --build app
-```
-
-## 8. Managing Persistent Data
-
-The project uses named volumes for:
-
-1. development `node_modules`
-2. development LanceDB data
-3. production LanceDB data
-
-List the volumes:
-
-```bash
-docker volume ls
-```
-
-Remove all Compose volumes for this project:
-
-```bash
-docker compose down -v
-```
-
-Use that only when you intentionally want to reset state.
-
-## 9. Start Production Mode
-
-Build and start the production service:
-
-```bash
-docker compose --profile production up --build -d app-prod
-```
+This mounts the repository into `/app`, stores container `node_modules` in a named volume, and runs `npm run dev`.
 
 Open:
 
@@ -193,75 +83,82 @@ Open:
 http://localhost:3001
 ```
 
-Useful production operations:
-
-Follow logs:
+Useful dev commands:
 
 ```bash
-docker compose logs -f app-prod
+docker compose --profile development logs -f app-dev
+docker compose --profile development exec app-dev sh
+docker compose --profile development restart app-dev
+docker compose --profile development stop app-dev
 ```
 
-Restart:
+## 5. Persistent Data
+
+Named volumes hold runtime data:
+
+1. `drop_lancedb` for the default production-style service.
+2. `drop_lancedb_dev` for development.
+3. `drop_node_modules` for development dependencies.
+
+To remove containers and volumes:
 
 ```bash
-docker compose restart app-prod
+docker compose --profile development down -v
 ```
 
-Stop:
+Use that only when you intentionally want to reset local state.
+
+## 6. Updating After Code Changes
+
+For the default Docker run:
 
 ```bash
-docker compose --profile production stop app-prod
+docker compose up --build
 ```
 
-Remove containers:
+For development mode:
 
 ```bash
-docker compose --profile production down
+docker compose --profile development up --build app-dev
 ```
 
-## 10. Updating Production After Code Changes
-
-Whenever the source changes:
-
-```bash
-docker compose --profile production up --build -d app-prod
-```
-
-That rebuilds the image, recreates the container, and keeps the production LanceDB volume mounted.
-
-## 11. Troubleshooting
+## 7. Troubleshooting
 
 ### Permission denied when running Docker
 
 Your user is probably not in the `docker` group yet. Either use `sudo` temporarily or add your user to the group and start a new shell session.
 
-### The port is already occupied
+### Port 3000 or 3001 is already in use
 
-Update `DEV_PORT` or `PROD_PORT` in `.env`, then recreate the relevant service.
-
-Example:
+Set a different port in `.env`:
 
 ```dotenv
-DEV_PORT="3100"
-PROD_PORT="3101"
+PORT="3100"
+DEV_PORT="3101"
 ```
 
-### The app starts but code changes do not reload
+Then recreate the relevant service.
 
-1. Confirm you started the `app` service, not `app-prod`.
-2. Confirm the service is using the bind mount from the repo root.
-3. Check logs with `docker compose logs -f app`.
-4. Recreate the dev container if needed.
+### Development file changes are not detected
+
+Confirm that both polling variables remain enabled in `compose.yml`:
+
+```dotenv
+CHOKIDAR_USE_POLLING=true
+VITE_USE_POLLING=true
+```
+
+Then recreate the dev container:
 
 ```bash
-docker compose down
-docker compose up --build app
+docker compose --profile development down
+docker compose --profile development up --build app-dev
 ```
 
-### Production service serves an old UI
+### Default service serves an old UI
 
 The image was likely not rebuilt. Run:
 
 ```bash
-docker compose --profile production up --build -d app-prod
+docker compose up --build
 ```
