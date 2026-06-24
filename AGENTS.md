@@ -6,6 +6,12 @@
 - Use PowerShell-safe commands on Windows, including `npm.cmd` and `npx.cmd`.
 - Prefer the existing structure and scripts in `package.json` before adding new tooling.
 
+## Plan File (PLAN.md)
+- Read [PLAN.md](./PLAN.md) before starting work and check whether any planned item covers the current task.
+- When you finish a planned item, remove it from `PLAN.md` in the same change.
+- When you discover new work worth tracking (bugs, missing features, follow-ups, tech debt), add it to `PLAN.md` instead of leaving it implicit.
+- Keep `PLAN.md` items short, actionable, and grouped under the existing buckets; include file/line references where useful.
+
 ## Token Efficiency
 - Inspect only the files needed for the current task.
 - Use `rg` or `rg --files` for search instead of broad directory reads.
