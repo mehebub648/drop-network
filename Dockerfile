@@ -31,6 +31,8 @@ FROM node:22-bookworm-slim AS production
 WORKDIR /app
 
 ENV NODE_ENV=production
+# Persistent datastore location, backed by a Docker volume in compose.yml.
+ENV LANCEDB_PATH=/data/lancedb
 
 COPY package.json package-lock.json ./
 
@@ -38,6 +40,11 @@ RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
 COPY server.ts db.ts ./
+
+# Create the data directory and run as the unprivileged "node" user so the
+# mounted volume is writable without root.
+RUN mkdir -p /data/lancedb && chown -R node:node /data /app
+USER node
 
 EXPOSE 3000
 

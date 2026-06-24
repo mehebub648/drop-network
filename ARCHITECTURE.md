@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.28`
+Current application version: `0.0.29`
 
 ## Overview
 
@@ -8,7 +8,8 @@ Drop Network is a single Node.js application for urgent blood donation matching.
 
 - A React 19 single-page frontend in `src/`.
 - An Express API in `server.ts`.
-- A local LanceDB data store in `.lancedb/`.
+- A LanceDB data store whose location is set by `LANCEDB_PATH` (a persistent
+  volume in Docker, or a local `.lancedb/` directory for direct runs).
 - Vite middleware in development and static `dist/` serving in production.
 - Docker targets for development, build, and production runtime.
 
@@ -19,7 +20,8 @@ The app is currently self-contained. There is no external auth provider, SMS gat
 1. The server starts from `server.ts`.
 2. `initDbData()` loads users, sessions, and blood requests from LanceDB tables.
 3. Active requests with past `expires_at` timestamps are marked `CANCELLED`.
-4. Demo donors and requests are generated only when `SEED_DEMO_DATA=true` or in development with no explicit seed setting.
+4. No data is seeded; the datastore starts empty and is populated only by real
+   user activity.
 5. In development, Express mounts Vite middleware for the React app.
 6. In production, Express serves the built frontend from `dist/`.
 7. The frontend talks to the backend through relative `/api` routes.
@@ -52,7 +54,7 @@ Client state:
 
 ## Backend
 
-`server.ts` owns the API, in-memory runtime cache, optional demo seed data, session issuance, request validation, and static serving.
+`server.ts` owns the API, an in-memory write-through runtime cache, session issuance, request validation, and static serving.
 
 Main data types:
 
@@ -137,21 +139,26 @@ Ports:
 Environment:
 
 - `CORS_ORIGIN` optionally lists allowed cross-origin browser origins.
-- `SEED_DEMO_DATA=true` enables generated demo data.
-- `DEMO_SEED_PASSWORD` optionally sets a password for generated demo donors.
+- `LANCEDB_PATH` sets the datastore directory. Docker sets it to `/data/lancedb`;
+  direct local runs fall back to `./.lancedb`.
 
 Persistent Docker volumes:
 
-- `drop_lancedb`
-- `drop_lancedb_dev`
-- `drop_node_modules`
+- `drop_lancedb` mounted at `/data/lancedb` for the production service.
+- `drop_lancedb_dev` mounted at `/data/lancedb` for the development service.
+- `drop_node_modules` holds development dependencies.
+
+The production image runs as the unprivileged `node` user and owns
+`/data/lancedb`.
 
 ## Current Constraints
 
 - Production OTP generation still needs an SMS provider; local development exposes `dev_otp` in the API response.
 - Passwords are stored directly in local records.
 - Session tokens are persisted, but this is still a lightweight local auth model.
-- User and request data are cached in server memory after startup.
+- User and request data are held in a server-memory write-through cache that
+  mirrors LanceDB; the cache is per-process and rebuilt from the datastore on
+  startup, so this still assumes a single instance.
 - Anonymous comment rate limits are in memory and reset on server restart.
 - Most UI logic is concentrated in `src/App.tsx`.
 

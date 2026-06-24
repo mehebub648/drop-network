@@ -2,7 +2,14 @@ import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 import fs from 'fs';
 
-const DB_DIR = path.join(process.cwd(), '.lancedb');
+// Storage location for the LanceDB data files.
+// In production, set LANCEDB_PATH to a path backed by a persistent volume
+// (e.g. /data/lancedb). Falls back to a local .lancedb directory for
+// direct local runs.
+const DB_DIR = process.env.LANCEDB_PATH
+  ? path.resolve(process.env.LANCEDB_PATH)
+  : path.join(process.cwd(), '.lancedb');
+
 if (!fs.existsSync(DB_DIR)) {
   fs.mkdirSync(DB_DIR, { recursive: true });
 }

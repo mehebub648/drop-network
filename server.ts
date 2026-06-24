@@ -106,25 +106,6 @@ type OtpEntry = {
   expires_at: number;
 };
 
-const BD_LOCATIONS = [
-  { area: 'Dhaka', lat: 23.8103, lng: 90.4125 },
-  { area: 'Chittagong', lat: 22.3569, lng: 91.7832 },
-  { area: 'Sylhet', lat: 24.8949, lng: 91.8687 },
-  { area: 'Rajshahi', lat: 24.3636, lng: 88.6241 },
-  { area: 'Khulna', lat: 22.8456, lng: 89.5403 },
-  { area: 'Barisal', lat: 22.7010, lng: 90.3535 },
-  { area: 'Rangpur', lat: 25.7439, lng: 89.2752 },
-  { area: 'Mymensingh', lat: 24.7471, lng: 90.4203 },
-  { area: 'Comilla', lat: 23.4607, lng: 91.1809 },
-  { area: 'Narayanganj', lat: 23.6337, lng: 90.5000 },
-  { area: 'Gazipur', lat: 23.9999, lng: 90.4203 },
-  { area: 'Bogra', lat: 24.8465, lng: 89.3778 },
-  { area: 'Jessore', lat: 23.1634, lng: 89.2182 },
-  { area: 'Dinajpur', lat: 25.6217, lng: 88.6355 },
-  { area: 'Pabna', lat: 24.0044, lng: 89.2504 },
-  { area: "Cox's Bazar", lat: 21.4272, lng: 92.0058 }
-];
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -197,98 +178,18 @@ function validationError(res: express.Response, message: string) {
   return res.status(400).json({ error: message });
 }
 
-const generateDonors = () => {
-  const names = ['Rakib Hossain', 'Sumon Ali', 'Tariqur Rahman', 'Nusrat Jahan', 'Farhana Islam', 'Abdul Karim', 'Sajid Mahmud', 'Mehejabin Oyshee', 'Robiul Islam', 'Sharmin Akter'];
-  const generated: User[] = [];
-  
-  for (let i = 0; i < 40; i++) {
-    const loc = BD_LOCATIONS[Math.floor(Math.random() * BD_LOCATIONS.length)];
-    const bg = BLOOD_GROUPS[Math.floor(Math.random() * BLOOD_GROUPS.length)];
-    const name = names[Math.floor(Math.random() * names.length)] + ` (${i})`;
-    const isAvailable = Math.random() > 0.3;
-    
-    generated.push({
-      id: `donor-${i + 1}`,
-      phone: `+88017${Math.floor(10000000 + Math.random() * 90000000)}`,
-      name,
-      password: process.env.DEMO_SEED_PASSWORD || uuidv4(),
-      is_verified: true,
-      donor_profile: {
-        blood_group: bg,
-        last_donation_date: new Date(Date.now() - Math.random() * 10000000000).toISOString(),
-        location: { lat: loc.lat + (Math.random() * 0.05 - 0.025), lng: loc.lng + (Math.random() * 0.05 - 0.025), area_name: loc.area },
-        availability_status: isAvailable ? 'AVAILABLE' : 'NOT_AVAILABLE',
-        donation_history: Math.random() > 0.5 ? [
-          { id: `don-${Math.random()}`, date: new Date(Date.now() - Math.random() * 5000000000).toISOString().slice(0,10), organization: 'Red Crescent Society' }
-        ] : []
-      }
-    });
-  }
-  return generated;
-};
-
-// Seed Data
+// Runtime write-through cache. Data is loaded from LanceDB on startup and
+// every mutation is persisted back to the datastore, so these arrays always
+// mirror the persisted tables for the lifetime of the process.
 let users: User[] = [];
 let requests: BloodRequest[] = [];
 let sessions: AuthSession[] = [];
-
-const generateRequests = () => {
-  const generated: BloodRequest[] = [];
-  
-  for (let i = 0; i < 20; i++) {
-    const loc = BD_LOCATIONS[Math.floor(Math.random() * BD_LOCATIONS.length)];
-    const hr = Math.floor(Math.random() * 72);
-    generated.push({
-        id: `req-${i}`,
-        user_id: users[Math.floor(Math.random() * users.length)]?.id || 'sys',
-        blood_group: BLOOD_GROUPS[Math.floor(Math.random() * BLOOD_GROUPS.length)],
-        location: { lat: loc.lat, lng: loc.lng, area_name: loc.area },
-        created_at: new Date(Date.now() - Math.random() * 100000000).toISOString(),
-        expires_at: new Date(Date.now() + 86400000).toISOString(),
-        status: 'ACTIVE',
-        patient_name: Math.random() > 0.5 ? 'Abdul Kuddus' : undefined,
-        needed_by: new Date(Date.now() + hr * 3600000).toISOString(),
-        contacts: [
-          { name: 'Brother', phone: '+8801700000000', type: 'RELATIVE' },
-          { name: 'City Hospital', phone: '+88028888888', type: 'HOSPITAL' }
-        ],
-        comments: [
-          { id: uuidv4(), user_id: 'sys', user_name: 'Dr. Zaman', text: 'Please ensure donors have had breakfast.', created_at: new Date().toISOString() }
-        ]
-    });
-  }
-  return generated;
-};
-
-function shouldSeedDemoData() {
-  if (process.env.SEED_DEMO_DATA !== undefined) {
-    return process.env.SEED_DEMO_DATA === 'true';
-  }
-  return process.env.NODE_ENV !== 'production';
-}
 
 async function initDbData() {
   users = await getAllFromTable('common_users');
   requests = await getAllFromTable('common_requests');
   sessions = await getAllFromTable('common_sessions');
   await enforceExpiredRequests();
-
-  if (users.length === 0 && shouldSeedDemoData()) {
-    users = generateDonors();
-    for (const u of users) {
-      await saveToTable('common_users', u);
-      if (u.donor_profile?.availability_status === 'AVAILABLE') {
-         await syncDonorToPartition(u);
-      }
-    }
-  }
-
-  if (requests.length === 0 && users.length > 0 && shouldSeedDemoData()) {
-    requests = generateRequests();
-    for (const r of requests) {
-      await saveToTable('common_requests', r, [r.location.lng, r.location.lat]);
-    }
-  }
 }
 
 async function enforceExpiredRequests() {

@@ -41,7 +41,8 @@ cp .env.example .env
 ```
 
 If port `3000` or `3001` is already busy, set `PORT` or `DEV_PORT` in `.env`.
-Leave `SEED_DEMO_DATA` set to `false` for production-style runs.
+The datastore starts empty; no demo data is generated. To store LanceDB data
+outside the default volume, set `LANCEDB_PATH`.
 
 ## 3. Default Docker Run
 
@@ -97,8 +98,8 @@ docker compose --profile development stop app-dev
 
 Named volumes hold runtime data:
 
-1. `drop_lancedb` for the default production-style service.
-2. `drop_lancedb_dev` for development.
+1. `drop_lancedb` mounted at `/data/lancedb` for the default production-style service.
+2. `drop_lancedb_dev` mounted at `/data/lancedb` for development.
 3. `drop_node_modules` for development dependencies.
 
 To remove containers and volumes:
