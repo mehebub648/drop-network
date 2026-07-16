@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route, Link, useNavigate, Navigate, useParams } from 'react-router-dom';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api, BROWSER_FINGERPRINT } from './lib/api';
-import { Droplet, Heart, User as UserIcon, LogOut, CheckCircle2, MapPin, Search, Activity, ChevronDown, ChevronLeft, ChevronRight, Shield, Zap, Users, AlertCircle, Clock, MessageCircle, Plus, Trash2, Calendar, Edit2, Phone } from 'lucide-react';
+import { BLOOD_GROUPS, compatibleDonorsFor, getUrgency, URGENCY_ORDER, getEligibility, DONATION_INTERVAL_DAYS, type Urgency } from './lib/blood';
+import { Droplet, Heart, User as UserIcon, LogOut, CheckCircle2, MapPin, Search, Activity, ChevronDown, ChevronLeft, ChevronRight, Shield, Zap, Users, AlertCircle, Clock, MessageCircle, Plus, Trash2, Calendar, Edit2, Phone, Share2, Copy, Filter } from 'lucide-react';
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { formatDistanceToNow } from 'date-fns';
@@ -9,9 +10,6 @@ import { formatDistanceToNow } from 'date-fns';
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
-
-// Global Auth State
-let globalToken = localStorage.getItem('auth_token') || '';
 
 const BD_LOCATIONS = [
   { area: 'Dhaka', lat: 23.8103, lng: 90.4125 },
@@ -38,6 +36,22 @@ function getLocationByName(name: string) {
   const normalized = name.trim().toLowerCase();
   const location = BD_LOCATIONS.find(item => item.area.toLowerCase() === normalized);
   return location ? { lat: location.lat, lng: location.lng, area_name: location.area } : null;
+}
+
+const URGENCY_STYLES: Record<Urgency, { label: string; className: string }> = {
+  CRITICAL: { label: 'Critical', className: 'bg-red-100 text-red-700' },
+  URGENT: { label: 'Urgent', className: 'bg-amber-100 text-amber-700' },
+  SCHEDULED: { label: 'Scheduled', className: 'bg-sky-100 text-sky-700' }
+};
+
+function UrgencyBadge({ neededBy }: { neededBy?: string | null }) {
+  const urgency = getUrgency(neededBy);
+  const { label, className } = URGENCY_STYLES[urgency];
+  return (
+    <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider', className)}>
+      {label}{!neededBy && ' · ASAP'}
+    </span>
+  );
 }
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
@@ -78,9 +92,7 @@ function LoginPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
     setLoading(true);
     setError('');
     try {
-      const res = await api.login(phone, password);
-      localStorage.setItem('auth_token', res.token);
-      globalToken = res.token;
+      await api.login(phone, password);
       await onLogin();
       navigate('/profile');
     } catch (e: any) {
@@ -138,45 +150,14 @@ function LoginPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
 
 function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'PHONE' | 'OTP' | 'INFO'>('PHONE');
-  
   const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [bloodGroup, setBloodGroup] = useState('O+');
   const [selectedLocation, setSelectedLocation] = useState('Dhaka');
-  const [devOtp, setDevOtp] = useState('');
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      const otpResponse = await api.sendOtp(phone);
-      setDevOtp(otpResponse.dev_otp || '');
-      setStep('OTP');
-    } catch (e: any) {
-      setError(e.message || 'Failed to send OTP');
-    }
-    setLoading(false);
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      await api.verifyOtp(phone, otp);
-      setStep('INFO');
-    } catch (e: any) {
-      setError(e.message || 'Invalid OTP');
-    }
-    setLoading(false);
-  };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,9 +167,7 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
       const location = getLocationByName(selectedLocation);
       if (!location) throw new Error('Choose a supported district');
 
-      const res = await api.register(phone, name, password, bloodGroup, location);
-      localStorage.setItem('auth_token', res.token);
-      globalToken = res.token;
+      await api.register(phone, name, password, bloodGroup, location);
       await onLogin();
       navigate('/profile');
     } catch (e: any) {
@@ -207,14 +186,13 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-center mb-2">Join Drop</h2>
         <p className="text-slate-500 text-center mb-8">Create your donor account</p>
-        
-        {step === 'PHONE' && (
-          <form onSubmit={handleSendOtp} className="space-y-4 fade-in">
+
+        <form onSubmit={handleRegister} className="space-y-4 fade-in">
             {error && <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm font-bold text-center">{error}</div>}
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Phone Number</label>
-              <input 
-                type="tel" 
+              <input
+                type="tel"
                 required
                 className="w-full px-5 py-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary font-medium outline-none transition-all"
                 placeholder="+880 1712 345678"
@@ -222,39 +200,6 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
                 onChange={e => setPhone(e.target.value)}
               />
             </div>
-            <button disabled={loading} className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg shadow-lg shadow-rose-200 active:scale-[0.98] transition-transform mt-2 disabled:opacity-50">
-              {loading ? 'Sending OTP...' : 'Send OTP'}
-            </button>
-          </form>
-        )}
-
-        {step === 'OTP' && (
-          <form onSubmit={handleVerifyOtp} className="space-y-4 fade-in">
-            {error && <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm font-bold text-center">{error}</div>}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Enter OTP</label>
-              <input 
-                type="text" 
-                required
-                className="w-full px-5 py-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary font-medium outline-none transition-all text-center tracking-[0.5em] text-lg"
-                placeholder="123456"
-                value={otp}
-                onChange={e => setOtp(e.target.value)}
-              />
-              {devOtp && <p className="text-xs text-center text-slate-400 mt-2 font-medium">Development OTP: {devOtp}</p>}
-            </div>
-            <button disabled={loading} className="w-full py-4 bg-primary text-white rounded-2xl font-bold text-lg shadow-lg shadow-rose-200 active:scale-[0.98] transition-transform mt-2 disabled:opacity-50">
-              {loading ? 'Verifying...' : 'Verify OTP'}
-            </button>
-            <button type="button" onClick={() => setStep('PHONE')} className="w-full py-2 text-slate-500 font-bold text-sm hover:underline mt-2">
-              Change Phone Number
-            </button>
-          </form>
-        )}
-
-        {step === 'INFO' && (
-          <form onSubmit={handleRegister} className="space-y-4 fade-in">
-            {error && <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm font-bold text-center">{error}</div>}
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Full Name</label>
               <input 
@@ -268,11 +213,12 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
             </div>
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Password</label>
-              <input 
-                type="password" 
+              <input
+                type="password"
                 required
+                minLength={8}
                 className="w-full px-5 py-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary font-medium outline-none transition-all"
-                placeholder="••••••••"
+                placeholder="At least 8 characters"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
               />
@@ -304,16 +250,13 @@ function RegisterPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
               </div>
             </div>
             <button disabled={loading} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg shadow-lg active:scale-[0.98] transition-transform mt-4 disabled:opacity-50">
-              {loading ? 'Creating...' : 'Complete Profile'}
+              {loading ? 'Creating...' : 'Create Account'}
             </button>
-          </form>
-        )}
+        </form>
 
-        {step === 'PHONE' && (
-          <p className="text-center mt-6 text-sm font-medium text-slate-500">
-            Already have an account? <Link to="/login" className="text-primary hover:underline">Log in</Link>
-          </p>
-        )}
+        <p className="text-center mt-6 text-sm font-medium text-slate-500">
+          Already have an account? <Link to="/login" className="text-primary hover:underline">Log in</Link>
+        </p>
       </div>
     </div>
   );
@@ -338,9 +281,9 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
 
   useEffect(() => {
     async function loadRequests() {
-      if (!globalToken) return;
+      if (!user) return;
       try {
-        const reqs = await api.getMyRequests(globalToken);
+        const reqs = await api.getMyRequests();
         setMyRequests(reqs);
       } catch (err) {
         console.error(err);
@@ -358,7 +301,7 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
       const location = getLocationByName(selectedLocation);
       if (!location) throw new Error('Choose a supported district');
 
-      await api.updateDonorProfile(globalToken, {
+      await api.updateDonorProfile({
         blood_group: bloodGroup,
         availability_status: status,
         location,
@@ -387,7 +330,7 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
       const location = getLocationByName(selectedLocation);
       if (!location) throw new Error('Choose a supported district');
 
-      await api.updateDonorProfile(globalToken, {
+      await api.updateDonorProfile({
         blood_group: bloodGroup,
         availability_status: status,
         location,
@@ -405,8 +348,54 @@ function DonorProfile({ user, onUpdate }: { user: any, onUpdate: () => void }) {
     }
   };
 
+  // Eligibility is based on the most recent donation we know about, whether
+  // from the profile field or the manually tracked history.
+  const lastDonation = [user?.donor_profile?.last_donation_date, ...donationHistory.map((r: any) => r.date)]
+    .filter(Boolean)
+    .sort()
+    .pop();
+  const eligibility = getEligibility(lastDonation);
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
+      {user?.donor_profile && (
+        <div className={cn(
+          'theme-card p-6 border shadow-sm flex flex-col sm:flex-row sm:items-center gap-5',
+          eligibility.eligible ? 'border-emerald-100 bg-emerald-50/40' : 'border-slate-100'
+        )}>
+          <div className={cn(
+            'w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0',
+            eligibility.eligible ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-50 text-primary'
+          )}>
+            {eligibility.eligible ? <CheckCircle2 className="w-7 h-7" /> : <Clock className="w-7 h-7" />}
+          </div>
+          <div className="flex-1">
+            {eligibility.eligible ? (
+              <>
+                <h3 className="font-bold text-slate-900 text-lg">You're eligible to donate again!</h3>
+                <p className="text-sm font-medium text-slate-500 mt-0.5">
+                  {status === 'AVAILABLE'
+                    ? 'Your status is set to available — nearby requests can find you.'
+                    : 'Set your availability below so nearby requests can find you.'}
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="font-bold text-slate-900 text-lg">
+                  {eligibility.daysLeft} day{eligibility.daysLeft === 1 ? '' : 's'} until you can donate again
+                </h3>
+                <p className="text-sm font-medium text-slate-500 mt-0.5">
+                  Bodies need about {DONATION_INTERVAL_DAYS} days between whole-blood donations.
+                  {eligibility.nextEligibleDate && ` Eligible from ${eligibility.nextEligibleDate.toLocaleDateString('en-GB')}.`}
+                </p>
+                <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden max-w-sm">
+                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${Math.round(eligibility.progress * 100)}%` }}></div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <div className="grid md:grid-cols-2 gap-8">
         <div className="theme-card p-8 border border-slate-100 h-fit">
           <div className="flex items-center space-x-4 mb-6">
@@ -603,7 +592,12 @@ function LandingPage({ user }: { user: any }) {
   const [showResults, setShowResults] = useState(false);
   const [revealedContacts, setRevealedContacts] = useState<Record<string, boolean>>({});
   const [activeRequest, setActiveRequest] = useState<any>(null);
+  const [stats, setStats] = useState<{ registered_donors: number; available_donors: number; active_requests: number; fulfilled_requests: number } | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    api.getStats().then(setStats).catch(() => setStats(null));
+  }, []);
 
   const handleSearch = async () => {
     setSearching(true);
@@ -617,7 +611,7 @@ function LandingPage({ user }: { user: any }) {
         return;
       }
 
-      const res = await api.requestBlood(globalToken || 'anonymous', {
+      const res = await api.requestBlood({
         blood_group: bloodGroup,
         needed_by: neededBy ? new Date(neededBy).toISOString() : undefined,
         location
@@ -872,28 +866,100 @@ function LandingPage({ user }: { user: any }) {
         <div className="absolute top-0 right-0 p-8 opacity-10">
           <Droplet className="w-64 h-64 text-primary" />
         </div>
-        <div className="relative z-10 max-w-2xl">
+        <div className="relative z-10 max-w-3xl">
           <h2 className="text-3xl font-bold mb-6 text-white">Building a live donor network for urgent requests.</h2>
           <p className="text-slate-400 text-lg mb-8 leading-relaxed">
             Keep your donor status current so matching can prioritize the right blood group, district, and availability when a nearby request is created.
           </p>
-          <div className="flex flex-wrap gap-6 items-center">
-            <div className="flex items-center gap-3">
-              <Users className="w-10 h-10 text-primary" />
-              <div>
-                <div className="text-3xl font-extrabold leading-none text-white">Live</div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Donor Status</div>
+          <div className="flex flex-wrap gap-x-10 gap-y-6 items-center">
+            {[
+              { icon: Users, value: stats?.registered_donors, label: 'Registered Donors' },
+              { icon: Zap, value: stats?.available_donors, label: 'Available Now' },
+              { icon: Activity, value: stats?.active_requests, label: 'Active Requests' },
+              { icon: Heart, value: stats?.fulfilled_requests, label: 'Fulfilled' }
+            ].map(({ icon: Icon, value, label }) => (
+              <div key={label} className="flex items-center gap-3">
+                <Icon className="w-10 h-10 text-primary" />
+                <div>
+                  <div className="text-3xl font-extrabold leading-none text-white">{value ?? '—'}</div>
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">{label}</div>
+                </div>
               </div>
-            </div>
-            <div className="h-12 w-px bg-slate-800 hidden sm:block"></div>
-            <div className="flex items-center gap-3">
-              <Activity className="w-10 h-10 text-primary" />
-              <div>
-                <div className="text-3xl font-extrabold leading-none text-white">24h</div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">Request Window</div>
-              </div>
-            </div>
+            ))}
           </div>
+          {!user && (
+            <Link to="/register" className="inline-block mt-10 px-8 py-4 bg-primary text-white rounded-2xl font-bold text-lg shadow-lg shadow-rose-900/40 active:scale-[0.98] transition-transform">
+              Become a Donor
+            </Link>
+          )}
+        </div>
+      </section>
+
+      {/* Blood Compatibility Chart */}
+      <section className="fade-in">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900 mb-4">Who Can Donate to Whom?</h2>
+          <p className="text-slate-500 font-medium max-w-lg mx-auto">
+            You don't need an exact match — these groups are medically compatible. Drop's matching already includes them automatically.
+          </p>
+        </div>
+        <div className="theme-card border border-slate-100 shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/50">
+                <th className="text-left px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-400">Patient</th>
+                <th className="text-left px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-400">Can receive from</th>
+              </tr>
+            </thead>
+            <tbody>
+              {BLOOD_GROUPS.map(group => (
+                <tr key={group} className="border-b border-slate-50 last:border-0 hover:bg-rose-50/30 transition-colors">
+                  <td className="px-6 py-3.5">
+                    <span className="inline-flex items-center justify-center w-11 h-9 bg-rose-50 border border-rose-100 rounded-lg text-primary font-extrabold">{group}</span>
+                    {group === 'AB+' && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full">Universal recipient</span>}
+                  </td>
+                  <td className="px-6 py-3.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {compatibleDonorsFor(group).map(d => (
+                        <span key={d} className={cn(
+                          'px-2 py-0.5 rounded-md font-bold text-xs border',
+                          d === 'O-' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-50 border-slate-100 text-slate-600'
+                        )}>{d}</span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-center text-xs text-slate-400 font-medium mt-3">
+          <span className="text-emerald-600 font-bold">O−</span> is the universal donor and works for every patient.
+        </p>
+      </section>
+
+      {/* Eligibility FAQ */}
+      <section className="fade-in max-w-3xl mx-auto">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900 mb-4">Can I Donate?</h2>
+          <p className="text-slate-500 font-medium">Quick answers to the most common questions from donors in Bangladesh.</p>
+        </div>
+        <div className="space-y-3">
+          {[
+            { q: 'Who can donate blood?', a: 'Generally healthy adults aged 18–60, weighing at least 50 kg, with no recent serious illness. A quick screening at the donation point makes the final call.' },
+            { q: 'How often can I donate?', a: `Whole blood can be donated safely about every ${DONATION_INTERVAL_DAYS} days (roughly 3–4 months). Your body fully replaces the donated blood well within that window.` },
+            { q: 'Does donating hurt or make me weak?', a: 'Only a brief pinch. The donation takes 10–15 minutes, and most donors are back to normal the same day. Rest, drink water, and avoid heavy lifting for a few hours.' },
+            { q: 'Should I eat before donating?', a: 'Yes — have a proper meal and plenty of water within 3 hours before donating. Avoid donating on an empty stomach.' },
+            { q: 'Is my information safe on Drop?', a: 'Your phone number is only shown to logged-in members responding to a request, and you control your availability status at all times.' }
+          ].map(({ q, a }) => (
+            <details key={q} className="theme-card border border-slate-100 shadow-sm group">
+              <summary className="px-6 py-4 font-bold text-slate-900 cursor-pointer list-none flex items-center justify-between hover:text-primary transition-colors">
+                {q}
+                <ChevronDown className="w-4 h-4 text-slate-400 group-open:rotate-180 transition-transform" />
+              </summary>
+              <p className="px-6 pb-5 text-sm text-slate-500 leading-relaxed font-medium">{a}</p>
+            </details>
+          ))}
         </div>
       </section>
     </div>
@@ -903,6 +969,9 @@ function LandingPage({ user }: { user: any }) {
 function RequestsPage() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [groupFilter, setGroupFilter] = useState('');
+  const [districtFilter, setDistrictFilter] = useState('');
+  const [urgentOnly, setUrgentOnly] = useState(false);
 
   useEffect(() => {
     async function loadRequests() {
@@ -918,6 +987,20 @@ function RequestsPage() {
     loadRequests();
   }, []);
 
+  const filtered = useMemo(() => {
+    return requests
+      .filter(r => !groupFilter || r.blood_group === groupFilter)
+      .filter(r => !districtFilter || r.location.area_name === districtFilter)
+      .filter(r => !urgentOnly || getUrgency(r.needed_by) !== 'SCHEDULED')
+      .sort((a, b) => {
+        const urgencyDiff = URGENCY_ORDER[getUrgency(a.needed_by)] - URGENCY_ORDER[getUrgency(b.needed_by)];
+        if (urgencyDiff !== 0) return urgencyDiff;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+  }, [requests, groupFilter, districtFilter, urgentOnly]);
+
+  const hasFilters = Boolean(groupFilter || districtFilter || urgentOnly);
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 fade-in">
       <div>
@@ -925,30 +1008,84 @@ function RequestsPage() {
         <p className="text-slate-500 font-medium">Real-time feed of patients needing urgent blood donors across Bangladesh.</p>
       </div>
 
+      <div className="theme-card p-4 border border-slate-100 shadow-sm flex flex-wrap items-center gap-3">
+        <span className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5 mr-1">
+          <Filter className="w-3.5 h-3.5" /> Filter
+        </span>
+        <select
+          value={groupFilter}
+          onChange={e => setGroupFilter(e.target.value)}
+          className="px-4 py-2.5 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary font-bold text-sm text-slate-700 outline-none appearance-none cursor-pointer"
+        >
+          <option value="">All groups</option>
+          {BLOOD_GROUPS.map(bg => <option key={bg} value={bg}>{bg}</option>)}
+        </select>
+        <select
+          value={districtFilter}
+          onChange={e => setDistrictFilter(e.target.value)}
+          className="px-4 py-2.5 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary font-bold text-sm text-slate-700 outline-none appearance-none cursor-pointer"
+        >
+          <option value="">All districts</option>
+          {BD_LOCATION_NAMES.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <button
+          onClick={() => setUrgentOnly(!urgentOnly)}
+          className={cn(
+            'px-4 py-2.5 rounded-xl font-bold text-sm transition-colors',
+            urgentOnly ? 'bg-red-600 text-white' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+          )}
+        >
+          Urgent only
+        </button>
+        {hasFilters && (
+          <button
+            onClick={() => { setGroupFilter(''); setDistrictFilter(''); setUrgentOnly(false); }}
+            className="px-3 py-2.5 text-sm font-bold text-primary hover:underline"
+          >
+            Clear
+          </button>
+        )}
+        {!loading && (
+          <span className="ml-auto text-sm font-semibold text-slate-400">
+            {filtered.length} of {requests.length} request{requests.length === 1 ? '' : 's'}
+          </span>
+        )}
+      </div>
+
       {loading ? (
-        <div className="flex justify-center p-12">
-          <div className="w-10 h-10 border-[3px] border-rose-100 border-t-primary rounded-full animate-spin"></div>
+        <div className="grid gap-4">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="theme-card p-6 border border-slate-100 shadow-sm animate-pulse flex items-center gap-6">
+              <div className="w-16 h-16 rounded-2xl bg-slate-100 flex-shrink-0"></div>
+              <div className="flex-1 space-y-3">
+                <div className="h-3 bg-slate-100 rounded w-1/3"></div>
+                <div className="h-4 bg-slate-100 rounded w-1/2"></div>
+              </div>
+            </div>
+          ))}
         </div>
-      ) : requests.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="theme-card p-12 text-center border border-slate-100 shadow-sm">
           <Activity className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-600 font-bold">No active requests right now.</p>
-          <p className="text-slate-400 text-sm mt-2">The network is currently clear.</p>
+          <p className="text-slate-600 font-bold">
+            {hasFilters ? 'No requests match these filters.' : 'No active requests right now.'}
+          </p>
+          <p className="text-slate-400 text-sm mt-2">
+            {hasFilters ? 'Try widening your search.' : 'The network is currently clear.'}
+          </p>
         </div>
       ) : (
         <div className="grid gap-4">
-          {requests.map((req, i) => (
-            <div key={i} className="theme-card p-6 flex flex-col md:flex-row md:items-center gap-6 hover:border-rose-200 border border-transparent transition-colors shadow-sm">
+          {filtered.map(req => (
+            <div key={req.id} className="theme-card p-6 flex flex-col md:flex-row md:items-center gap-6 hover:border-rose-200 border border-transparent transition-colors shadow-sm">
               <div className="flex items-center gap-6 flex-1">
                 <div className="w-16 h-16 rounded-2xl overflow-hidden bg-rose-50 flex-shrink-0 flex items-center justify-center text-primary text-2xl font-extrabold shadow-sm border border-rose-100">
                   {req.blood_group}
                 </div>
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={cn(
-                      "text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider",
-                      "bg-rose-100 text-rose-700"
-                    )}>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <UrgencyBadge neededBy={req.needed_by} />
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-rose-100 text-rose-700">
                       Needed: {req.needed_by ? new Date(req.needed_by).toLocaleDateString() : 'ASAP'}
                     </span>
                     <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">
@@ -959,6 +1096,11 @@ function RequestsPage() {
                     <MapPin className="w-4 h-4 text-slate-400" />
                     {req.location.area_name}
                   </h3>
+                  {req.comment_count > 0 && (
+                    <p className="text-xs font-semibold text-slate-400 mt-1 flex items-center gap-1">
+                      <MessageCircle className="w-3 h-3" /> {req.comment_count} update{req.comment_count === 1 ? '' : 's'}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex-shrink-0 md:w-32">
@@ -1030,6 +1172,24 @@ function RequestDetailsPage({ user }: { user: any }) {
   const [isEditing, setIsEditing] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [anonName, setAnonName] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const shareRequest = (target: 'copy' | 'whatsapp') => {
+    if (!data) return;
+    const url = window.location.href;
+    const neededText = data.request.needed_by
+      ? `by ${new Date(data.request.needed_by).toLocaleDateString('en-GB')}`
+      : 'ASAP';
+    const text = `URGENT: ${data.request.blood_group} blood needed in ${data.request.location.area_name} ${neededText}. Details & contact: ${url}`;
+    if (target === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+    } else {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  };
 
   // Editing State
   const [editData, setEditData] = useState<any>({ patient_name: '', requester_name: '', needed_by: '', contacts: [] });
@@ -1038,7 +1198,7 @@ function RequestDetailsPage({ user }: { user: any }) {
     async function load() {
       if (!id) return;
       try {
-        const payload = await api.getRequestDetails(id, globalToken || 'anonymous');
+        const payload = await api.getRequestDetails(id);
         setData(payload);
         setEditData({
           patient_name: payload.request.patient_name || '',
@@ -1060,7 +1220,7 @@ function RequestDetailsPage({ user }: { user: any }) {
     if (data?.request) {
       setActionMessage(null);
       try {
-        const updated = await api.updateRequestStatus(globalToken || 'anonymous', data.request.id, status);
+        const updated = await api.updateRequestStatus(data.request.id, status);
         setData({ ...data, request: { ...data.request, status: updated.status } });
         setActionMessage({ type: 'success', text: 'Request status updated.' });
       } catch (err: any) {
@@ -1077,7 +1237,7 @@ function RequestDetailsPage({ user }: { user: any }) {
       };
       setActionMessage(null);
       try {
-        const updated = await api.updateRequestDetails(globalToken || 'anonymous', data.request.id, formattedData);
+        const updated = await api.updateRequestDetails(data.request.id, formattedData);
         setData({ ...data, request: { ...data.request, ...updated } });
         setIsEditing(false);
         setActionMessage({ type: 'success', text: 'Request details updated.' });
@@ -1095,7 +1255,7 @@ function RequestDetailsPage({ user }: { user: any }) {
     }
     
     try {
-      const comment = await api.addComment(globalToken, data.request.id, newComment, user ? undefined : anonName);
+      const comment = await api.addComment(data.request.id, newComment, user ? undefined : anonName);
       setData({
         ...data,
         request: {
@@ -1113,7 +1273,7 @@ function RequestDetailsPage({ user }: { user: any }) {
   const handleDeleteComment = async (commentId: string) => {
     if (!data) return;
     try {
-      await api.deleteComment(globalToken, data.request.id, commentId);
+      await api.deleteComment(data.request.id, commentId);
       setData({
         ...data,
         request: {
@@ -1185,10 +1345,11 @@ function RequestDetailsPage({ user }: { user: any }) {
                {request.blood_group}
              </div>
              <div>
-                <div className="flex items-center gap-3 mb-1">
+                <div className="flex items-center gap-3 mb-1 flex-wrap">
                   <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm border border-emerald-200">
                     <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div> Active
                   </span>
+                  <UrgencyBadge neededBy={request.needed_by} />
                   <span className="text-xs font-bold text-slate-400">ID: #{request.id.split('-')[1]}</span>
                 </div>
                 <h3 className="font-bold text-xl md:text-2xl text-slate-900 mt-2 flex items-center gap-1.5">
@@ -1196,8 +1357,14 @@ function RequestDetailsPage({ user }: { user: any }) {
                   {request.location.area_name}
                 </h3>
                 <p className="text-sm font-semibold text-slate-500 flex items-center gap-1.5 mt-2">
-                  <Calendar className="w-4 h-4 text-emerald-500" /> 
+                  <Calendar className="w-4 h-4 text-emerald-500" />
                   Needed: <span className="text-slate-700">{request.needed_by ? new Date(request.needed_by).toLocaleDateString() : 'ASAP'}</span>
+                </p>
+                <p className="text-xs font-semibold text-slate-500 mt-2 flex items-center gap-1.5 flex-wrap">
+                  <Droplet className="w-3.5 h-3.5 text-primary" /> Compatible donors:
+                  {compatibleDonorsFor(request.blood_group).map(g => (
+                    <span key={g} className="px-1.5 py-0.5 bg-white border border-rose-100 rounded-md text-primary font-bold text-[11px]">{g}</span>
+                  ))}
                 </p>
              </div>
           </div>
@@ -1212,6 +1379,24 @@ function RequestDetailsPage({ user }: { user: any }) {
             </div>
           )}
         </div>
+
+        {request.status === 'ACTIVE' && (
+          <div className="flex items-center gap-3 mt-6 pt-5 border-t border-rose-100 relative z-0">
+            <span className="text-xs font-bold uppercase tracking-widest text-slate-400 mr-1">Spread the word</span>
+            <button
+              onClick={() => shareRequest('whatsapp')}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center gap-2"
+            >
+              <Share2 className="w-4 h-4" /> WhatsApp
+            </button>
+            <button
+              onClick={() => shareRequest('copy')}
+              className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold text-sm transition-colors flex items-center gap-2"
+            >
+              <Copy className="w-4 h-4" /> {copied ? 'Copied!' : 'Copy link'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Patient & Contact Details Section */}
@@ -1337,7 +1522,11 @@ function RequestDetailsPage({ user }: { user: any }) {
             
             <div className="sm:col-span-2 border-t border-slate-100 pt-4 mt-2">
                <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Contact Details</p>
-               {(!request.contacts || request.contacts.length === 0) && (
+               {request.contacts === undefined ? (
+                 <p className="text-sm font-medium text-slate-500 italic">
+                   <Link to="/login" className="text-primary font-bold hover:underline not-italic">Log in</Link> to see contact details.
+                 </p>
+               ) : request.contacts.length === 0 && (
                  <p className="text-sm font-medium text-slate-500 italic">No secondary contacts provided. Respond through normal channels to reveal primary phone number.</p>
                )}
                <div className="grid gap-3">
@@ -1495,16 +1684,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   const fetchUser = async () => {
-    if (!globalToken) {
-      setLoading(false);
-      return;
-    }
     try {
-      const u = await api.getMe(globalToken);
+      const u = await api.getMe();
       setUser(u);
     } catch {
-      localStorage.removeItem('auth_token');
-      globalToken = '';
       setUser(null);
     }
     setLoading(false);
@@ -1515,16 +1698,11 @@ export default function App() {
   }, []);
 
   const handleLogout = async () => {
-    const token = globalToken;
-    if (token) {
-      try {
-        await api.logout(token);
-      } catch (e) {
-        console.error(e);
-      }
+    try {
+      await api.logout();
+    } catch (e) {
+      console.error(e);
     }
-    localStorage.removeItem('auth_token');
-    globalToken = '';
     setUser(null);
   };
 

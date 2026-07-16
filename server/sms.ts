@@ -1,22 +1,20 @@
 // SMS provider abstraction.
 //
-// Today no real SMS gateway is wired up, so `getSmsProvider()` returns null and
-// the auth routes fall back to accepting FALLBACK_OTP ("123456") for testing.
+// No real SMS gateway is wired up yet, so `getSmsProvider()` returns null and
+// the app currently runs without phone verification (the OTP endpoints were
+// removed in 0.0.31; accounts start with `is_verified: false`).
 //
 // To add a real provider later:
 //   1. Implement the SmsProvider interface (see the Twilio sketch below).
 //   2. Add a `case` for it in `getSmsProvider()`, keyed off SMS_PROVIDER.
 //   3. Set SMS_PROVIDER (and the provider's credentials) in the environment.
-// Once a provider is configured, the fallback OTP is automatically disabled and
-// only the real generated OTP is accepted.
+//   4. Reintroduce OTP endpoints in server/server.ts and gate registration on
+//      a successful verification.
 
 export interface SmsProvider {
   name: string;
   sendOtp(phone: string, code: string): Promise<void>;
 }
-
-// OTP accepted only when no SMS provider is configured (local/dev/testing).
-export const FALLBACK_OTP = '123456';
 
 /**
  * Returns the active SMS provider, or null if none is configured.

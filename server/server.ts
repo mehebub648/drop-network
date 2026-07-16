@@ -3,17 +3,38 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
+import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions } from './db';
-import { getSmsProvider, isSmsConfigured, FALLBACK_OTP } from './sms';
 
 const app = express();
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const configuredPort = Number(process.env.PORT || process.env.PROD_PORT || 3000);
 const PORT = Number.isFinite(configuredPort) ? configuredPort : 3000;
 const DEFAULT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
-const OTP_TTL_MS = 10 * 60 * 1000;
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_COOKIE = 'drop_session';
+// Anonymous fingerprints shorter than this are rejected so trivial values
+// (e.g. "anon") can't collide with comment author ids or claim ownership.
+const MIN_FINGERPRINT_LENGTH = 16;
+const BCRYPT_ROUNDS = 10;
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+type BloodGroup = (typeof BLOOD_GROUPS)[number];
+// For each recipient group, the donor groups whose blood they can receive.
+// Kept in sync with src/lib/blood.ts.
+const COMPATIBLE_DONORS: Record<BloodGroup, BloodGroup[]> = {
+  'A+': ['A+', 'A-', 'O+', 'O-'],
+  'A-': ['A-', 'O-'],
+  'B+': ['B+', 'B-', 'O+', 'O-'],
+  'B-': ['B-', 'O-'],
+  'AB+': ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+  'AB-': ['A-', 'B-', 'AB-', 'O-'],
+  'O+': ['O+', 'O-'],
+  'O-': ['O-']
+};
 const REQUEST_STATUSES = ['ACTIVE', 'FULFILLED', 'CANCELLED'] as const;
 const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
 const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
@@ -24,16 +45,57 @@ const allowedCorsOrigins = new Set(
     .filter(origin => origin && origin !== 'MY_APP_URL')
 );
 
+// Behind a TLS-terminating reverse proxy in production; needed so
+// express-rate-limit sees the real client IP instead of the proxy's.
+app.set('trust proxy', 1);
+
+// CSP is disabled in development because Vite's middleware-mode HMR relies on
+// inline scripts and websocket connections.
+app.use(helmet({
+  contentSecurityPolicy: IS_PRODUCTION
+    ? {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:'],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"]
+        }
+      }
+    : false
+}));
+
 app.use(cors({
+  credentials: true,
   origin(origin, callback) {
     if (!origin) return callback(null, true);
     if (allowedCorsOrigins.size === 0) {
-      return callback(null, process.env.NODE_ENV !== 'production');
+      return callback(null, !IS_PRODUCTION);
     }
     return callback(null, allowedCorsOrigins.has(origin));
   }
 }));
 app.use(express.json({ limit: '32kb' }));
+app.use(cookieParser());
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later' }
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' }
+});
+
+app.use('/api', apiLimiter);
 
 // IN-MEMORY DATABASE MOCK
 type DonationRecord = {
@@ -102,10 +164,13 @@ type BloodRequest = {
   comments?: Comment[];
 };
 
-type OtpEntry = {
-  code: string;
-  expires_at: number;
-};
+type PublicUser = Omit<User, 'password'>;
+
+// Never serialize the password hash to clients.
+function sanitizeUser(user: User): PublicUser {
+  const { password, ...publicUser } = user;
+  return publicUser;
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -207,6 +272,71 @@ async function enforceExpiredRequests() {
   }
 }
 
+type DonorRecord = Pick<User, 'id' | 'name' | 'phone'> & { donor_profile: DonorProfile };
+
+type DonorMatch = {
+  user_id: string;
+  name: string;
+  phone?: string;
+  blood_group: string;
+  distance_km: number;
+  availability_status: DonorProfile['availability_status'];
+  last_donation_date: string;
+};
+
+// Searches the District x Group partitions of every blood group that is
+// medically compatible with the recipient's group (e.g. an A+ patient also
+// matches A-, O+, and O- donors). Phone numbers are included only when
+// `includePhone` is true (authenticated callers / request owners).
+async function findDonorMatches(
+  location: { lat: number; lng: number; area_name: string },
+  bloodGroup: string,
+  excludeUserId: string,
+  includePhone: boolean
+): Promise<DonorMatch[]> {
+  const donorGroups = COMPATIBLE_DONORS[bloodGroup as BloodGroup] || [bloodGroup];
+  const dbMatches: DonorRecord[] = [];
+  const seenIds = new Set<string>();
+  try {
+    const db = await getDb();
+    const tables = await db.tableNames();
+    for (const group of donorGroups) {
+      const pName = await getPartitionName(location.area_name, group);
+      if (!tables.includes(pName)) continue;
+      const table = await db.openTable(pName);
+      const results = await table.search([location.lng, location.lat]).limit(50).toArray();
+      for (const r of results as { doc: string }[]) {
+        const donor = JSON.parse(r.doc) as DonorRecord;
+        if (seenIds.has(donor.id)) continue;
+        seenIds.add(donor.id);
+        dbMatches.push(donor);
+      }
+    }
+  } catch (e) {
+    console.error('LanceDB donor search error:', e);
+  }
+
+  return dbMatches
+    .filter(u => u.id !== excludeUserId)
+    .filter(u => u.donor_profile.availability_status === 'AVAILABLE')
+    .map(u => {
+      const dist = getDistance(
+        location.lat, location.lng,
+        u.donor_profile.location.lat, u.donor_profile.location.lng
+      );
+      return {
+        user_id: u.id,
+        name: u.name,
+        ...(includePhone ? { phone: u.phone } : {}),
+        blood_group: u.donor_profile.blood_group,
+        distance_km: Math.round(dist * 10) / 10,
+        availability_status: u.donor_profile.availability_status,
+        last_donation_date: u.donor_profile.last_donation_date
+      };
+    })
+    .sort((a, b) => a.distance_km - b.distance_km);
+}
+
 // Haversine distance calculation in kilometers.
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; // km
@@ -221,17 +351,32 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 
 const commentTimestamps: Record<string, number[]> = {};
 
-function getBearerToken(req: express.Request) {
-  const token = req.headers.authorization?.split(' ')[1];
-  return token && token !== 'undefined' && token !== 'anonymous' ? token : '';
+function getSessionToken(req: express.Request) {
+  const token = req.cookies?.[SESSION_COOKIE];
+  return typeof token === 'string' && token ? token : '';
+}
+
+function normalizeFingerprint(value: unknown) {
+  const fingerprint = cleanString(value, 120);
+  return fingerprint && fingerprint.length >= MIN_FINGERPRINT_LENGTH ? fingerprint : '';
 }
 
 function getFingerprint(req: express.Request) {
-  return cleanString(req.headers['x-fingerprint'], 120) || '';
+  return normalizeFingerprint(req.headers['x-fingerprint']);
+}
+
+function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: IS_PRODUCTION,
+    maxAge: SESSION_TTL_MS,
+    path: '/'
+  };
 }
 
 function getCurrentAuth(req: express.Request) {
-  const token = getBearerToken(req);
+  const token = getSessionToken(req);
   if (!token) return null;
 
   const now = Date.now();
@@ -289,73 +434,36 @@ function publicRequestPayload(request: BloodRequest) {
 
 // API Routes
 
-// Mock OTP Store
-const otpStore: Record<string, OtpEntry> = {};
-
-app.post('/api/auth/send-otp', async (req, res) => {
-  const phone = cleanString(req.body?.phone, 30);
-  if (!phone) return validationError(res, 'Valid phone number is required');
-
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
-  otpStore[phone] = {
-    code: otp,
-    expires_at: Date.now() + OTP_TTL_MS
-  };
-
-  const smsProvider = getSmsProvider();
-  if (smsProvider) {
-    try {
-      await smsProvider.sendOtp(phone, otp);
-    } catch (err) {
-      console.error(`Failed to send OTP via ${smsProvider.name}:`, err);
-      delete otpStore[phone];
-      return res.status(502).json({ error: 'Failed to send OTP' });
-    }
-  }
-
-  // When no SMS provider is configured we can't deliver the code, so surface a
-  // hint that the fallback OTP can be used for testing.
-  res.json({
-    success: true,
-    message: smsProvider ? 'OTP sent successfully' : 'OTP generated successfully',
-    ...(smsProvider ? {} : { sms_disabled: true }),
-    ...(process.env.NODE_ENV !== 'production' ? { dev_otp: otp } : {})
-  });
-});
-
-app.post('/api/auth/verify-otp', (req, res) => {
-  const phone = cleanString(req.body?.phone, 30);
-  const otp = cleanString(req.body?.otp, 6);
-  if (!phone || !otp) return validationError(res, 'Phone and OTP are required');
-
-  const storedOtp = otpStore[phone];
-  const matchesGenerated = !!storedOtp && storedOtp.code === otp && storedOtp.expires_at > Date.now();
-  // Without a real SMS gateway the generated code can't reach the user, so also
-  // accept the fallback OTP for testing. Disabled automatically once a provider
-  // is configured.
-  const matchesFallback = !isSmsConfigured() && otp === FALLBACK_OTP;
-
-  if (matchesGenerated || matchesFallback) {
-    delete otpStore[phone];
-    res.json({ success: true });
-  } else {
-    res.status(400).json({ error: 'Invalid OTP code' });
-  }
-});
-
-// Mock login
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const phone = cleanString(req.body?.phone, 30);
   const password = cleanString(req.body?.password, 128);
-  const fingerprint = optionalCleanString(req.body?.fingerprint, 120);
+  // Only honor a fingerprint the same client also presents as its own header;
+  // stops replaying someone else's leaked fingerprint from a different client.
+  const bodyFingerprint = normalizeFingerprint(req.body?.fingerprint);
+  const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
   if (!phone || !password) return validationError(res, 'Phone and password are required');
 
   let user = users.find(u => u.phone === phone);
-  
-  if (!user || user.password !== password) {
+
+  if (!user || !user.password) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
-  
+
+  const isBcryptHash = user.password.startsWith('$2');
+  if (isBcryptHash) {
+    if (!(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+  } else {
+    // Legacy record with a plaintext password: verify directly, then upgrade
+    // the stored value to a bcrypt hash.
+    if (user.password !== password) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    user.password = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    await saveToTable('common_users', user);
+  }
+
   // Reassign ownership from fingerprint to verified user
   if (fingerprint) {
     for (let r of requests) {
@@ -380,19 +488,21 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   const token = await issueSession(user.id);
-  res.json({ token, user });
+  res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
+  res.json({ user: sanitizeUser(user) });
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   const phone = cleanString(req.body?.phone, 30);
   const name = cleanString(req.body?.name, 100);
   const password = cleanString(req.body?.password, 128);
-  const fingerprint = optionalCleanString(req.body?.fingerprint, 120);
+  const bodyFingerprint = normalizeFingerprint(req.body?.fingerprint);
+  const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
   const blood_group = req.body?.blood_group;
   const location = req.body?.location === undefined ? undefined : parseLocation(req.body.location);
 
   if (!phone || !name || !password) return validationError(res, 'Phone, name, and password are required');
-  if (password.length < 6) return validationError(res, 'Password must be at least 6 characters');
+  if (password.length < 8) return validationError(res, 'Password must be at least 8 characters');
   if (blood_group !== undefined && !isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (req.body?.location !== undefined && !location) return validationError(res, 'Valid location is required');
   if ((blood_group && !location) || (!blood_group && location)) return validationError(res, 'Blood group and location must be provided together');
@@ -405,8 +515,10 @@ app.post('/api/auth/register', async (req, res) => {
     id: uuidv4(),
     phone,
     name,
-    password,
-    is_verified: true,
+    password: await bcrypt.hash(password, BCRYPT_ROUNDS),
+    // Phone verification is not wired up yet (no SMS provider); accounts start
+    // unverified until a real OTP flow exists.
+    is_verified: false,
   };
 
   if (blood_group && location) {
@@ -448,18 +560,20 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   const token = await issueSession(user.id);
-  res.json({ token, user });
+  res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
+  res.json({ user: sanitizeUser(user) });
 });
 
 app.post('/api/auth/logout', async (req, res) => {
   await revokeSession(req);
+  res.clearCookie(SESSION_COOKIE, { path: '/' });
   res.json({ success: true });
 });
 
 app.get('/api/me', (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  res.json(auth.user);
+  res.json(sanitizeUser(auth.user));
 });
 
 app.get('/api/me/requests', async (req, res) => {
@@ -510,7 +624,7 @@ app.post('/api/me/donor-profile', async (req, res) => {
     if (users[userIndex].donor_profile?.availability_status === 'AVAILABLE') {
       await syncDonorToPartition(users[userIndex]);
     }
-    res.json(users[userIndex]);
+    res.json(sanitizeUser(users[userIndex]));
   } else {
     res.status(401).json({ error: 'Unauthorized' });
   }
@@ -545,48 +659,25 @@ app.post('/api/requests', async (req, res) => {
   
   requests.push(newRequest);
   await saveToTable('common_requests', newRequest, [location.lng, location.lat]);
-  
-  // Find matching donors from specific District x Group partition
-  let dbMatches: any[] = [];
-  try {
-    const pName = await getPartitionName(location.area_name, blood_group);
-    const db = await getDb();
-    const tables = await db.tableNames();
-    if (tables.includes(pName)) {
-      const table = await db.openTable(pName);
-      // @ts-ignore
-      const results = await table.search([location.lng, location.lat]).limit(50).toArray();
-      dbMatches = results.map(r => JSON.parse(r.doc));
-    }
-  } catch(e) {
-    console.error('LanceDB search error:', e);
-  }
 
-  // Filter out self and unavailable, map to UI schema
-  const matches = dbMatches
-    .filter(u => u.id !== user_id)
-    .filter(u => u.donor_profile!.availability_status === 'AVAILABLE')
-    .map(u => {
-      const dist = getDistance(
-        location.lat, location.lng,
-        u.donor_profile!.location.lat, u.donor_profile!.location.lng
-      );
-      return {
-        user_id: u.id,
-        name: u.name,
-        phone: u.phone,
-        blood_group: u.donor_profile!.blood_group,
-        distance_km: Math.round(dist * 10) / 10,
-        availability_status: u.donor_profile!.availability_status,
-        last_donation_date: u.donor_profile!.last_donation_date
-      };
-    })
-    .sort((a, b) => a.distance_km - b.distance_km);
+  // The creator sees donor contact details for their own freshly created
+  // request, whether authenticated or anonymous-with-fingerprint.
+  const matches = await findDonorMatches(location, blood_group, user_id, true);
 
-  // Return matches to create the illusion of search
   res.json({
     request: newRequest,
     matches
+  });
+});
+
+// Public network stats for the landing page.
+app.get('/api/stats', async (req, res) => {
+  await enforceExpiredRequests();
+  res.json({
+    registered_donors: users.filter(u => u.donor_profile).length,
+    available_donors: users.filter(u => u.donor_profile?.availability_status === 'AVAILABLE').length,
+    active_requests: requests.filter(r => r.status === 'ACTIVE').length,
+    fulfilled_requests: requests.filter(r => r.status === 'FULFILLED').length
   });
 });
 
@@ -609,47 +700,18 @@ app.get('/api/requests/:id', async (req, res) => {
 
   const requester = users.find(u => u.id === request.user_id);
   const requestOwner = isRequestOwner(request, req);
+  // Contact details (patient/relative/hospital phone numbers) and donor phone
+  // numbers are PII: visible to logged-in users and the request owner only.
+  const canSeeContacts = Boolean(getCurrentAuth(req)) || requestOwner;
+  const { contacts, ...safeRequest } = request;
   const enrichedRequest = {
-    ...request,
+    ...safeRequest,
+    ...(canSeeContacts ? { contacts: contacts || [] } : {}),
     requester_name: request.requester_name || requester?.name || 'Anonymous',
     ...(requestOwner ? { requester_phone: requester?.phone || '+8800000000' } : {})
   };
 
-  // Find matches from partition
-  let dbMatches: any[] = [];
-  try {
-    const pName = await getPartitionName(request.location.area_name, request.blood_group);
-    const db = await getDb();
-    const tables = await db.tableNames();
-    if (tables.includes(pName)) {
-      const table = await db.openTable(pName);
-      // @ts-ignore
-      const results = await table.search([request.location.lng, request.location.lat]).limit(50).toArray();
-      dbMatches = results.map(r => JSON.parse(r.doc));
-    }
-  } catch(e) {
-    console.error('LanceDB details search error:', e);
-  }
-
-  const matches = dbMatches
-    .filter(u => u.id !== request.user_id)
-    .filter(u => u.donor_profile!.availability_status === 'AVAILABLE')
-    .map(u => {
-      const dist = getDistance(
-        request.location.lat, request.location.lng,
-        u.donor_profile!.location.lat, u.donor_profile!.location.lng
-      );
-      return {
-        user_id: u.id,
-        name: u.name,
-        phone: u.phone,
-        blood_group: u.donor_profile!.blood_group,
-        distance_km: Math.round(dist * 10) / 10,
-        availability_status: u.donor_profile!.availability_status,
-        last_donation_date: u.donor_profile!.last_donation_date
-      };
-    })
-    .sort((a, b) => a.distance_km - b.distance_km);
+  const matches = await findDonorMatches(request.location, request.blood_group, request.user_id, canSeeContacts);
 
   res.json({ request: enrichedRequest, matches });
 });

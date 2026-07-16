@@ -1,20 +1,27 @@
 const API_BASE = '/api';
 
-// Create or retrieve browser fingerprint
+// Create or retrieve browser fingerprint. The server rejects fingerprints
+// shorter than 16 characters, so regenerate any legacy short value.
+function generateFingerprint() {
+  let value = '';
+  while (value.length < 24) {
+    value += Math.random().toString(36).substring(2, 15);
+  }
+  return value;
+}
+
 let BROWSER_FINGERPRINT = localStorage.getItem('drop_fingerprint');
-if (!BROWSER_FINGERPRINT) {
-  BROWSER_FINGERPRINT = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+if (!BROWSER_FINGERPRINT || BROWSER_FINGERPRINT.length < 16) {
+  BROWSER_FINGERPRINT = generateFingerprint();
   localStorage.setItem('drop_fingerprint', BROWSER_FINGERPRINT);
 }
 
-const getHeaders = (token?: string) => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'x-fingerprint': BROWSER_FINGERPRINT!
-  };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return headers;
-};
+// Auth uses an httpOnly session cookie set by the server; same-origin fetches
+// send it automatically, so no Authorization header is needed.
+const getHeaders = () => ({
+  'Content-Type': 'application/json',
+  'x-fingerprint': BROWSER_FINGERPRINT!
+});
 
 export { BROWSER_FINGERPRINT };
 
@@ -31,88 +38,54 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify({ phone, password, fingerprint: BROWSER_FINGERPRINT })
     });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
-      throw new Error(error.error || 'Failed to login');
-    }
-    return res.json();
+    return readJsonOrThrow(res, 'Failed to login');
   },
 
-  async logout(token: string) {
+  async logout() {
     const res = await fetch(`${API_BASE}/auth/logout`, {
       method: 'POST',
-      headers: getHeaders(token)
+      headers: getHeaders()
     });
     return readJsonOrThrow(res, 'Failed to logout');
   },
 
-  async sendOtp(phone: string) {
-    const res = await fetch(`${API_BASE}/auth/send-otp`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ phone })
-    });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
-      throw new Error(error.error || 'Failed to send OTP');
-    }
-    return res.json();
-  },
-
-  async verifyOtp(phone: string, otp: string) {
-    const res = await fetch(`${API_BASE}/auth/verify-otp`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ phone, otp })
-    });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
-      throw new Error(error.error || 'Failed to verify OTP');
-    }
-    return res.json();
-  },
-
-  async register(phone: string, name: string, password?: string, blood_group?: string, location?: any) {
+  async register(phone: string, name: string, password?: string, blood_group?: string, location?: { lat: number; lng: number; area_name: string }) {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ phone, name, password, blood_group, location, fingerprint: BROWSER_FINGERPRINT })
     });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
-      throw new Error(error.error || 'Failed to register');
-    }
-    return res.json();
+    return readJsonOrThrow(res, 'Failed to register');
   },
-  
-  async getMe(token: string) {
+
+  async getMe() {
     const res = await fetch(`${API_BASE}/me`, {
-      headers: getHeaders(token)
+      headers: getHeaders()
     });
     if (!res.ok) throw new Error('Unauthorized');
     return res.json();
   },
 
-  async updateDonorProfile(token: string, profile: any) {
+  async updateDonorProfile(profile: any) {
     const res = await fetch(`${API_BASE}/me/donor-profile`, {
       method: 'POST',
-      headers: getHeaders(token),
+      headers: getHeaders(),
       body: JSON.stringify(profile)
     });
     return readJsonOrThrow(res, 'Failed to update donor profile');
   },
 
-  async requestBlood(token: string, requestData: any) {
+  async requestBlood(requestData: any) {
     const res = await fetch(`${API_BASE}/requests`, {
       method: 'POST',
-      headers: getHeaders(token),
+      headers: getHeaders(),
       body: JSON.stringify(requestData)
     });
     return readJsonOrThrow(res, 'Failed to create request');
   },
 
-  async getMyRequests(token: string) {
-    const res = await fetch(`${API_BASE}/me/requests`, { headers: getHeaders(token) });
+  async getMyRequests() {
+    const res = await fetch(`${API_BASE}/me/requests`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load requests');
   },
 
@@ -121,48 +94,49 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load requests');
   },
 
-  async getRequestDetails(id: string, token: string) {
-    const res = await fetch(`${API_BASE}/requests/${id}`, { headers: getHeaders(token) });
+  async getStats() {
+    const res = await fetch(`${API_BASE}/stats`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load stats');
+  },
+
+  async getRequestDetails(id: string) {
+    const res = await fetch(`${API_BASE}/requests/${id}`, { headers: getHeaders() });
     if (!res.ok) throw new Error('Not found');
     return res.json();
   },
 
-  async updateRequestStatus(token: string, id: string, status: string) {
+  async updateRequestStatus(id: string, status: string) {
     const res = await fetch(`${API_BASE}/requests/${id}/status`, {
       method: 'PATCH',
-      headers: getHeaders(token),
+      headers: getHeaders(),
       body: JSON.stringify({ status })
     });
     return readJsonOrThrow(res, 'Failed to update request status');
   },
 
-  async updateRequestDetails(token: string, id: string, data: any) {
+  async updateRequestDetails(id: string, data: any) {
     const res = await fetch(`${API_BASE}/requests/${id}/details`, {
       method: 'PATCH',
-      headers: getHeaders(token),
+      headers: getHeaders(),
       body: JSON.stringify(data)
     });
     return readJsonOrThrow(res, 'Failed to update request details');
   },
 
-  async addComment(token: string, id: string, text: string, anonymousName?: string) {
+  async addComment(id: string, text: string, anonymousName?: string) {
     const res = await fetch(`${API_BASE}/requests/${id}/comments`, {
       method: 'POST',
-      headers: getHeaders(token),
+      headers: getHeaders(),
       body: JSON.stringify({ text, anonymous_name: anonymousName })
     });
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || 'Failed to submit comment');
-    return result;
+    return readJsonOrThrow(res, 'Failed to submit comment');
   },
 
-  async deleteComment(token: string, id: string, commentId: string) {
+  async deleteComment(id: string, commentId: string) {
     const res = await fetch(`${API_BASE}/requests/${id}/comments/${commentId}`, {
       method: 'DELETE',
-      headers: getHeaders(token)
+      headers: getHeaders()
     });
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || 'Failed to delete comment');
-    return result;
+    return readJsonOrThrow(res, 'Failed to delete comment');
   }
 };
