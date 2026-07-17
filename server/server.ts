@@ -104,12 +104,18 @@ type DonationRecord = {
   organization: string;
 };
 
+type AvailabilityHistoryEntry = {
+  status: 'AVAILABLE' | 'SICK' | 'TRAVELING' | 'NOT_AVAILABLE';
+  changed_at: string;
+};
+
 type DonorProfile = {
   blood_group: string;
   last_donation_date: string;
   location: { lat: number, lng: number, area_name: string };
   availability_status: 'AVAILABLE' | 'SICK' | 'TRAVELING' | 'NOT_AVAILABLE';
   donation_history?: DonationRecord[];
+  availability_history?: AvailabilityHistoryEntry[];
 };
 
 type RecipientProfile = {
@@ -122,6 +128,7 @@ type User = {
   name: string;
   password?: string;
   is_verified: boolean;
+  created_at?: string;
   donor_profile?: DonorProfile;
   recipient_profile?: RecipientProfile;
 };
@@ -235,6 +242,7 @@ function parseDonationHistory(value: unknown) {
     const date = parseDate(item.date);
     const organization = cleanString(item.organization, 120);
     if (!date || !organization) return null;
+    if (new Date(date).getTime() > Date.now()) return null;
     records.push({ id, date: date.slice(0, 10), organization });
   }
   return records;
@@ -272,7 +280,7 @@ async function enforceExpiredRequests() {
   }
 }
 
-type DonorRecord = Pick<User, 'id' | 'name' | 'phone'> & { donor_profile: DonorProfile };
+type DonorRecord = Pick<User, 'id' | 'name' | 'phone' | 'is_verified'> & { donor_profile: DonorProfile };
 
 type DonorMatch = {
   user_id: string;
@@ -282,6 +290,7 @@ type DonorMatch = {
   distance_km: number;
   availability_status: DonorProfile['availability_status'];
   last_donation_date: string;
+  is_verified: boolean;
 };
 
 // Searches the District x Group partitions of every blood group that is
@@ -331,7 +340,8 @@ async function findDonorMatches(
         blood_group: u.donor_profile.blood_group,
         distance_km: Math.round(dist * 10) / 10,
         availability_status: u.donor_profile.availability_status,
-        last_donation_date: u.donor_profile.last_donation_date
+        last_donation_date: u.donor_profile.last_donation_date,
+        is_verified: Boolean(u.is_verified)
       };
     })
     .sort((a, b) => a.distance_km - b.distance_km);
@@ -519,6 +529,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     // Phone verification is not wired up yet (no SMS provider); accounts start
     // unverified until a real OTP flow exists.
     is_verified: false,
+    created_at: new Date().toISOString(),
   };
 
   if (blood_group && location) {
@@ -526,7 +537,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       blood_group,
       location,
       last_donation_date: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
-      availability_status: 'AVAILABLE'
+      availability_status: 'AVAILABLE',
+      availability_history: [{ status: 'AVAILABLE', changed_at: new Date().toISOString() }]
     };
   }
 
@@ -576,6 +588,57 @@ app.get('/api/me', (req, res) => {
   res.json(sanitizeUser(auth.user));
 });
 
+app.patch('/api/me', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const hasName = req.body?.name !== undefined;
+  const hasPhone = req.body?.phone !== undefined;
+  if (!hasName && !hasPhone) return validationError(res, 'Name or phone is required');
+
+  const name = hasName ? cleanString(req.body.name, 100) : auth.user.name;
+  const phone = hasPhone ? cleanString(req.body.phone, 30) : auth.user.phone;
+  if (!name || !phone) return validationError(res, 'Valid name and phone are required');
+
+  const duplicate = users.find(user => user.id !== auth.user.id && user.phone === phone);
+  if (duplicate) return res.status(409).json({ error: 'Phone already registered' });
+
+  const userIndex = users.findIndex(user => user.id === auth.user.id);
+  if (userIndex === -1) return res.status(401).json({ error: 'Unauthorized' });
+
+  users[userIndex] = { ...users[userIndex], name, phone };
+  await saveToTable('common_users', users[userIndex]);
+
+  if (users[userIndex].donor_profile) {
+    await removeDonorFromAllPartitions(users[userIndex].id);
+    if (users[userIndex].donor_profile?.availability_status === 'AVAILABLE') {
+      await syncDonorToPartition(users[userIndex]);
+    }
+  }
+
+  res.json(sanitizeUser(users[userIndex]));
+});
+
+app.post('/api/me/change-password', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const currentPassword = cleanString(req.body?.current_password, 128);
+  const newPassword = cleanString(req.body?.new_password, 128);
+  if (!currentPassword || !newPassword) return validationError(res, 'Current and new passwords are required');
+  if (newPassword.length < 8) return validationError(res, 'New password must be at least 8 characters');
+  if (!auth.user.password) return res.status(400).json({ error: 'Password login is not available for this account' });
+
+  const matches = auth.user.password.startsWith('$2')
+    ? await bcrypt.compare(currentPassword, auth.user.password)
+    : currentPassword === auth.user.password;
+  if (!matches) return res.status(400).json({ error: 'Current password is incorrect' });
+
+  auth.user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  await saveToTable('common_users', auth.user);
+  res.json({ success: true });
+});
+
 app.get('/api/me/requests', async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
@@ -607,17 +670,24 @@ app.post('/api/me/donor-profile', async (req, res) => {
   if (!isOneOf(availability_status, AVAILABILITY_STATUSES)) return validationError(res, 'Valid availability status is required');
   if (!location) return validationError(res, 'Valid location is required');
   if (!last_donation_date) return validationError(res, 'Valid last donation date is required');
+  if (new Date(last_donation_date).getTime() > Date.now()) return validationError(res, 'Last donation date cannot be in the future');
   if (donation_history === null) return validationError(res, 'Valid donation history is required');
 
   const userIndex = users.findIndex(u => u.id === auth.user.id);
   if (userIndex !== -1) {
+    const existingProfile = users[userIndex].donor_profile;
+    const availabilityHistory = [...(existingProfile?.availability_history || [])];
+    if (!existingProfile || existingProfile.availability_status !== availability_status) {
+      availabilityHistory.push({ status: availability_status, changed_at: new Date().toISOString() });
+    }
     users[userIndex].donor_profile = {
-      ...users[userIndex].donor_profile,
+      ...existingProfile,
       blood_group,
       availability_status,
       location,
       last_donation_date,
-      donation_history: donation_history || users[userIndex].donor_profile?.donation_history || []
+      donation_history: donation_history || existingProfile?.donation_history || [],
+      availability_history: availabilityHistory.slice(-50)
     };
     await saveToTable('common_users', users[userIndex]);
     await removeDonorFromAllPartitions(users[userIndex].id);

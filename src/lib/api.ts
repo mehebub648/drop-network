@@ -66,6 +66,24 @@ export const api = {
     return res.json();
   },
 
+  async updateMe(data: { name?: string; phone?: string }) {
+    const res = await fetch(`${API_BASE}/me`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    });
+    return readJsonOrThrow(res, 'Failed to update account');
+  },
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    const res = await fetch(`${API_BASE}/me/change-password`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+    });
+    return readJsonOrThrow(res, 'Failed to change password');
+  },
+
   async updateDonorProfile(profile: any) {
     const res = await fetch(`${API_BASE}/me/donor-profile`, {
       method: 'POST',

@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.32`
+Current application version: `0.0.35`
 
 ## Overview
 
@@ -31,7 +31,16 @@ The app is currently self-contained. There is no external auth provider, SMS gat
 Entry points:
 
 - `src/main.tsx` mounts React into `#root`.
-- `src/App.tsx` contains the current route tree and most UI logic.
+- `src/App.tsx` owns application auth state and wires the route tree.
+- `src/pages/` contains route-level screens; each existing public, auth,
+  request, and profile screen lives in its own module.
+- `src/pages/profile/` contains the shared member-area layout plus account,
+  donor, request, donation-history, security, and settings screens.
+- `src/components/` contains shared layout, error-boundary, and status UI.
+- The shared layout supplies the site header and institutional footer. The
+  footer links product, company, legal, and safety routes.
+- `src/lib/locations.ts`, `src/lib/urgency.ts`, and `src/lib/utils.ts` contain
+  shared frontend constants and utilities.
 - `src/lib/api.ts` wraps all fetch calls to `/api`.
 - `src/lib/blood.ts` holds blood-domain helpers: the compatibility maps,
   urgency derivation from the needed-by date, and the 90-day donor
@@ -47,7 +56,23 @@ Routes:
 - `/request/:id` shows one request, donor matches, patient/contact details, and comments.
 - `/login` logs in an existing user.
 - `/register` creates an account with phone, name, and password (no OTP step).
-- `/profile` shows donor settings, donation history, and the user's requests.
+- `/profile` redirects authenticated members to `/profile/donor`.
+- `/profile/account` edits the member name and phone and shows joined and
+  verification information.
+- `/profile/donor` manages blood group, district, availability, eligibility,
+  and recent availability history.
+- `/profile/requests` filters and updates requests owned by the member.
+- `/profile/history` adds, edits, and deletes validated donation records.
+- `/profile/security` changes the password after current-password verification.
+- `/profile/settings` stores device-local preferences and exports the current
+  account record. Automated hard deletion remains disabled.
+- `/about` explains the service mission, matching model, and limitations.
+- `/contact` provides placeholder support and safety-report email links.
+- `/privacy` documents current data collection, visibility, storage, cookies,
+  local ownership fingerprints, and verification limitations.
+- `/terms` sets the acceptable-use and service-disclaimer draft.
+- `/safety` gives clinical-setting, anti-payment, screening, and aftercare
+  guidance.
 - `*` shows a not-found view.
 
 Client state:
@@ -58,6 +83,9 @@ Client state:
 - Anonymous ownership is tracked with `drop_fingerprint` in `localStorage`
   (minimum 16 characters; the server rejects shorter values).
 - Auth state is derived from whether `GET /api/me` succeeds.
+- Account and donor-match UI shows the persisted `is_verified` state. New
+  accounts remain visibly unverified until real verification infrastructure
+  exists.
 - A React error boundary displays a fallback if a route render fails.
 
 ## Backend
@@ -82,7 +110,7 @@ Security middleware:
 Main data types:
 
 - `User`
-- `DonorProfile`
+- `DonorProfile`, including donation and availability history
 - `RecipientProfile`
 - `BloodRequest`
 - `Comment`
@@ -98,15 +126,22 @@ API routes:
   the sanitized user.
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `GET /api/me` returns the authenticated user.
+- `PATCH /api/me` validates and updates the authenticated user's name and
+  phone, rejects duplicate phone numbers, and refreshes donor partitions.
+- `POST /api/me/change-password` verifies the current password and stores a
+  bcrypt hash of the new password (minimum 8 characters).
 - `GET /api/me/requests` returns requests owned by the current user.
-- `POST /api/me/donor-profile` updates donor profile data.
+- `POST /api/me/donor-profile` updates donor profile and donation-history
+  data, rejects future donation dates, records availability changes, and
+  refreshes donor partitions.
 - `POST /api/requests` creates a blood request and returns matching donors.
 - `GET /api/stats` returns public network counts (registered/available donors,
   active/fulfilled requests) for the landing page.
 - `GET /api/requests` lists active, non-expired public blood requests without requester phone or contact details.
 - `GET /api/requests/:id` returns request details and donor matches. Contact
   details and donor phone numbers are included only for authenticated users or
-  the request owner; `requester_phone` stays owner-only.
+  the request owner; `requester_phone` stays owner-only. Donor match records
+  also expose each account's non-sensitive `is_verified` flag.
 - `PATCH /api/requests/:id/details` lets the request owner update patient, requester, date, and contacts.
 - `POST /api/requests/:id/comments` adds a comment with anonymous rate limits.
 - `DELETE /api/requests/:id/comments/:commentId` lets the request owner delete comments.
@@ -192,6 +227,9 @@ The production image runs as the unprivileged `node` user and owns
   `server/sms.ts` plus new OTP endpoints.
 - There is no password-reset flow (previously impossible anyway without SMS);
   users who forget their password need manual help.
+- Notification choices are currently device-local preferences; there is no
+  push or email delivery provider. Account export is client-side, while hard
+  deletion still requires a reviewed cascading data-removal workflow.
 - Anonymous ownership relies on a client-generated fingerprint. The server
   requires ≥16 characters and only honors reassignment when the request body
   and `x-fingerprint` header agree, but a client that knows a fingerprint can
@@ -204,7 +242,8 @@ The production image runs as the unprivileged `node` user and owns
   startup, so this still assumes a single instance.
 - The app terminates no TLS itself; production deployment must sit behind an
   HTTPS reverse proxy (the session cookie is `Secure` in production).
-- Most UI logic is concentrated in `src/App.tsx`.
+- Frontend route modules still use broad `any` types and do not yet have
+  focused component tests.
 
 ## Change Rules
 
