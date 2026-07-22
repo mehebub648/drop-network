@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.35`
+Current version: `0.0.36`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -44,8 +44,11 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   production requests do not need it.
 - `LANCEDB_PATH` is set inside Docker Compose to `/data/lancedb`, backed by a
   persistent Docker volume.
-- Phone verification is currently disabled: registration is phone + password
-  only, and accounts start unverified. Wiring a real SMS provider re-enables
-  it (see `server/sms.ts`).
+- Registration requires a verified Bangladesh mobile. Development can use
+  `SMS_PROVIDER=console`; production requires the provider-neutral HTTP SMS
+  gateway settings documented in `.env.example`.
+- Creating a public request requires a verified account, complete hospital and
+  patient-reference details, a future required time, a verified contact, and
+  explicit review/consent before publication.
 
 The datastore starts empty in every environment; no demo data is generated.

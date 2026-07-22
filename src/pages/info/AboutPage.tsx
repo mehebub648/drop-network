@@ -22,7 +22,7 @@ export default function AboutPage() {
       </section>
       <section>
         <h2>Built for accountability</h2>
-        <p>Accounts, request ownership, availability status, donation history, and verification status help members understand who they are dealing with. Verification is not yet operational, so new accounts are shown honestly as unverified.</p>
+        <p>Accounts, verified mobile ownership, availability status, donation history, and request timelines help members understand who they are dealing with. Verification confirms control of a phone number; it is not identity or clinical verification.</p>
         <p className="mt-3">Read our <Link to="/safety">safety guidance</Link> before meeting a donor or requester.</p>
       </section>
       <DraftNotice>{'<TODO: Add the organization legal name, founding story, team names, registration details, and office address.>'}</DraftNotice>

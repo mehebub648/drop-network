@@ -206,10 +206,13 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                   <MapPin className="w-5 h-5 text-slate-400" />
                   {request.location.area_name}
                 </h3>
-                <p className="text-sm font-semibold text-slate-500 flex items-center gap-1.5 mt-2">
-                  <Calendar className="w-4 h-4 text-emerald-500" />
-                  Needed: <span className="text-slate-700">{request.needed_by ? new Date(request.needed_by).toLocaleDateString() : 'ASAP'}</span>
-                </p>
+                 <p className="text-sm font-semibold text-slate-500 flex items-center gap-1.5 mt-2">
+                   <Calendar className="w-4 h-4 text-emerald-500" />
+                   Needed: <span className="text-slate-700">{request.needed_by ? new Date(request.needed_by).toLocaleDateString() : 'ASAP'}</span>
+                 </p>
+                 <p className="text-sm font-semibold text-slate-600 mt-2">
+                   {request.units_required || 1} unit(s) · {(request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase()} · {request.hospital_name}
+                 </p>
                 <p className="text-xs font-semibold text-slate-500 mt-2 flex items-center gap-1.5 flex-wrap">
                   <Droplet className="w-3.5 h-3.5 text-primary" /> Compatible donors:
                   {compatibleDonorsFor(request.blood_group).map(g => (
@@ -220,9 +223,6 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           </div>
           {isOwner && (
             <div className="flex flex-col gap-3 min-w-[160px]">
-               <button onClick={() => handleUpdateStatus('FULFILLED')} className="w-full px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2">
-                 <CheckCircle2 className="w-4 h-4" /> Mark Fulfilled
-               </button>
                <button onClick={() => handleUpdateStatus('CANCELLED')} className="w-full px-5 py-3 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-600 text-sm font-bold rounded-xl transition-all">
                  Cancel Request
                </button>
@@ -374,7 +374,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Contact Details</p>
                {request.contacts === undefined ? (
                  <p className="text-sm font-medium text-slate-500 italic">
-                   <Link to="/login" className="text-primary font-bold hover:underline not-italic">Log in</Link> to see contact details.
+                   Contact details are shared only after a donor response is accepted.
                  </p>
                ) : request.contacts.length === 0 && (
                  <p className="text-sm font-medium text-slate-500 italic">No secondary contacts provided. Respond through normal channels to reveal primary phone number.</p>
@@ -426,23 +426,14 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                       <span>•</span>
                       <span>Active Donor</span>
                     </div>
-                    {revealedContacts[m.user_id] && (
-                      <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 fade-in w-full">
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">Donor Phone Number</p>
-                        <a href={`tel:${m.phone}`} className="text-primary font-bold text-xl tracking-wide hover:underline inline-flex items-center gap-2">
-                          {m.phone}
-                        </a>
-                      </div>
-                    )}
                   </div>
                 </div>
                 {!revealedContacts[m.user_id] && (
                   <div className="flex-shrink-0 md:w-32">
                     <button onClick={() => {
-                      if (!user && !isOwner) navigate('/login');
-                      else setRevealedContacts(prev => ({ ...prev, [m.user_id]: true }));
+                      setActionMessage({ type: 'error', text: 'Use a private donor invitation instead of exposing contact details.' });
                     }} className="w-full px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform hover:bg-slate-800 shadow-sm">
-                      Contact
+                      Invite donor
                     </button>
                   </div>
                 )}

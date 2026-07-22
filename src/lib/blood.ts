@@ -48,7 +48,9 @@ export const URGENCY_ORDER: Record<Urgency, number> = { CRITICAL: 0, URGENT: 1, 
 
 // Minimum gap between whole-blood donations. BD guidelines commonly use ~3-4
 // months; 90 days is the conservative default used across the app.
-export const DONATION_INTERVAL_DAYS = 90;
+// Educational default only; deployments may configure the server differently
+// after local clinical review. Collection staff always make the final decision.
+export const DONATION_INTERVAL_DAYS = 120;
 
 export function getEligibility(lastDonationDate?: string | null) {
   if (!lastDonationDate) {

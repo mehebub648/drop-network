@@ -42,15 +42,12 @@ export default function LandingPage({ user }: { user: any }) {
         return;
       }
 
-      const res = await api.requestBlood({
-        blood_group: bloodGroup,
-        needed_by: neededBy ? new Date(neededBy).toISOString() : undefined,
-        location
-      });
       setTimeout(() => {
         setSearching(false);
-        navigate(`/request/${res.request.id}`);
-      }, 800);
+        const query = new URLSearchParams({ blood_group: bloodGroup, district: location.area_name });
+        if (neededBy) query.set('needed_by', neededBy);
+        navigate(user ? `/request/new?${query}` : '/login');
+      }, 250);
     } catch (e: any) {
       setSearchError(e.message || 'Unable to create request.');
       setSearching(false);
@@ -396,4 +393,3 @@ export default function LandingPage({ user }: { user: any }) {
     </div>
   );
 }
-

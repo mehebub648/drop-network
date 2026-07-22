@@ -5,7 +5,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/utils';
 
-type RequestStatus = 'ACTIVE' | 'FULFILLED' | 'CANCELLED';
+type RequestStatus = 'DRAFT' | 'PENDING_VERIFICATION' | 'ACTIVE' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED';
 
 export default function ProfileRequestsPage() {
   const [requests, setRequests] = useState<any[]>([]);
@@ -48,6 +48,9 @@ export default function ProfileRequestsPage() {
           <select value={filter} onChange={event => setFilter(event.target.value as typeof filter)} className="px-4 py-3 bg-slate-50 rounded-xl outline-none">
             <option value="ALL">All statuses</option>
             <option value="ACTIVE">Active</option>
+            <option value="PARTIALLY_FULFILLED">Partially fulfilled</option>
+            <option value="DRAFT">Draft</option>
+            <option value="EXPIRED">Expired</option>
             <option value="FULFILLED">Fulfilled</option>
             <option value="CANCELLED">Cancelled</option>
           </select>
@@ -78,8 +81,8 @@ export default function ProfileRequestsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <select aria-label={`Status for ${request.blood_group} request`} value={request.status} disabled={updating === request.id} onChange={event => updateStatus(request.id, event.target.value as RequestStatus)} className="px-3 py-2.5 bg-slate-50 rounded-xl text-sm font-bold outline-none">
+                    {!['ACTIVE', 'CANCELLED', 'FULFILLED'].includes(request.status) && <option value={request.status}>{request.status.replaceAll('_', ' ')}</option>}
                     <option value="ACTIVE">Active</option>
-                    <option value="FULFILLED">Fulfilled</option>
                     <option value="CANCELLED">Cancelled</option>
                   </select>
                   <Link to={`/request/${request.id}`} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold inline-flex items-center gap-1"><Activity className="w-4 h-4" /> View</Link>

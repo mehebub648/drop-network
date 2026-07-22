@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.35`
+Current application version: `0.0.36`
 
 ## Overview
 
@@ -43,7 +43,7 @@ Entry points:
   shared frontend constants and utilities.
 - `src/lib/api.ts` wraps all fetch calls to `/api`.
 - `src/lib/blood.ts` holds blood-domain helpers: the compatibility maps,
-  urgency derivation from the needed-by date, and the 90-day donor
+  urgency derivation from the needed-by date, and the configurable donor
   eligibility calculation. The compatibility map mirrors the server's.
 - `src/index.css` contains global styles and Tailwind CSS usage.
 
@@ -55,7 +55,9 @@ Routes:
   filters, urgency badges, and urgent-first sorting.
 - `/request/:id` shows one request, donor matches, patient/contact details, and comments.
 - `/login` logs in an existing user.
-- `/register` creates an account with phone, name, and password (no OTP step).
+- `/register` verifies a Bangladesh mobile by OTP before creating an account.
+- `/request/new` keeps an offline-safe local form draft, presents a review
+  step, then creates a private server draft and explicitly publishes it.
 - `/profile` redirects authenticated members to `/profile/donor`.
 - `/profile/account` edits the member name and phone and shows joined and
   verification information.
@@ -80,12 +82,11 @@ Client state:
 - The session lives in an httpOnly `drop_session` cookie set by the server;
   JavaScript never sees the token, and same-origin fetches send it
   automatically.
-- Anonymous ownership is tracked with `drop_fingerprint` in `localStorage`
-  (minimum 16 characters; the server rejects shorter values).
+- A legacy `drop_fingerprint` remains for old comment attribution and ownership
+  migration. New blood requests require a verified account.
 - Auth state is derived from whether `GET /api/me` succeeds.
-- Account and donor-match UI shows the persisted `is_verified` state. New
-  accounts remain visibly unverified until real verification infrastructure
-  exists.
+- Account and donor-match UI shows phone verification state. Production
+  registration stays closed unless an HTTP SMS gateway is configured.
 - A React error boundary displays a fallback if a route render fails.
 
 ## Backend
@@ -121,9 +122,10 @@ API routes:
 
 - `POST /api/auth/login` authenticates by phone and password, sets the
   `drop_session` cookie, and returns the sanitized user.
-- `POST /api/auth/register` creates an unverified user (password min 8 chars,
-  bcrypt-hashed), optional donor profile, sets the session cookie, and returns
-  the sanitized user.
+- `POST /api/auth/otp/request` and `/api/auth/otp/verify` create purpose-bound,
+  expiring phone-verification tokens through the configured SMS provider.
+- `POST /api/auth/register` consumes a registration token, creates a verified
+  user, and starts an optional donor profile as unavailable.
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `GET /api/me` returns the authenticated user.
 - `PATCH /api/me` validates and updates the authenticated user's name and
@@ -134,7 +136,8 @@ API routes:
 - `POST /api/me/donor-profile` updates donor profile and donation-history
   data, rejects future donation dates, records availability changes, and
   refreshes donor partitions.
-- `POST /api/requests` creates a blood request and returns matching donors.
+- `POST /api/requests` creates a complete private draft for a verified owner;
+  `POST /api/requests/:id/publish` records consent and activates it.
 - `GET /api/stats` returns public network counts (registered/available donors,
   active/fulfilled requests) for the landing page.
 - `GET /api/requests` lists active, non-expired public blood requests without requester phone or contact details.
@@ -179,13 +182,14 @@ O+, and O- partitions). Request creation and request detail views:
 
 1. Look up the compatible donor groups for the requested `blood_group`
    (`COMPATIBLE_DONORS` in `server/server.ts`, mirrored in `src/lib/blood.ts`).
-2. For each compatible group, build the partition name from
-   `location.area_name` and search LanceDB near the request coordinates.
-3. Parse matched donor documents and de-duplicate by donor id.
+2. Read current donor safety and availability state from authoritative user
+   records, allowing nearby cross-district matching.
+3. Exclude deferred donors, incomplete donation intervals, and stale
+   availability confirmations.
 4. Remove the requester/self match using the authenticated user ID or anonymous fingerprint.
 5. Keep only `AVAILABLE` donors.
 6. Calculate display distance with the Haversine formula.
-7. Sort by nearest donor first.
+7. Keep donors inside the configured radius and sort nearest first.
 
 ## Deployment
 
@@ -222,14 +226,15 @@ The production image runs as the unprivileged `node` user and owns
 
 ## Current Constraints
 
-- Phone verification is disabled: there is no OTP flow and accounts start with
-  `is_verified: false`. Re-enabling it requires a real SMS provider wired into
-  `server/sms.ts` plus new OTP endpoints.
+- Production registration requires `SMS_PROVIDER=http`, `SMS_HTTP_ENDPOINT`,
+  and `SMS_HTTP_TOKEN`. The console provider is development-only.
 - There is no password-reset flow (previously impossible anyway without SMS);
   users who forget their password need manual help.
 - Notification choices are currently device-local preferences; there is no
   push or email delivery provider. Account export is client-side, while hard
   deletion still requires a reviewed cascading data-removal workflow.
+- The following fingerprint limitation now applies only to legacy anonymous
+  comments and ownership migration; new requests require verified accounts.
 - Anonymous ownership relies on a client-generated fingerprint. The server
   requires ≥16 characters and only honors reassignment when the request body
   and `x-fingerprint` header agree, but a client that knows a fingerprint can

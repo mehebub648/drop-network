@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import RegisterPage from './pages/RegisterPage';
 import RequestDetailsPage from './pages/RequestDetailsPage';
+import NewRequestPage from './pages/NewRequestPage';
 import RequestsPage from './pages/RequestsPage';
 import AboutPage from './pages/info/AboutPage';
 import ContactPage from './pages/info/ContactPage';
@@ -62,6 +63,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LandingPage user={user} />} />
             <Route path="/request/:id" element={<RequestDetailsPage user={user} />} />
+            <Route path="/request/new" element={user ? <NewRequestPage user={user} /> : <Navigate to="/login" />} />
             <Route path="/requests" element={<RequestsPage />} />
             <Route path="/login" element={!user ? <LoginPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
             <Route path="/register" element={!user ? <RegisterPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />

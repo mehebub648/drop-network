@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.35`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.36`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -31,11 +31,9 @@ delivered.
 
 These cannot be finished by editing code alone.
 
-- [ ] **Real OTP / phone verification** - SMS gateway account + API key (Twilio,
-  Vonage, or a BD provider such as SSL Wireless / bulksmsbd). The fake OTP flow
-  was removed in 0.0.31; the `SmsProvider` abstraction in `server/sms.ts` is
-  kept dormant. Re-adding requires new OTP endpoints and gating registration
-  on verification.
+- [ ] **Production SMS gateway credentials** - point the provider-neutral HTTP
+  adapter at a monitored Bangladesh SMS gateway. Production registration is
+  intentionally unavailable until these values are configured.
 - [ ] **Password reset flow** - depends on real OTP/SMS above (no email on
   file). Until then, forgotten passwords need manual intervention.
 - [ ] **Geocoding / maps** - Google Maps / Mapbox / OSM-Nominatim key to convert

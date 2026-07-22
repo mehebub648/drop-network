@@ -23,7 +23,7 @@ export default function SafetyPage() {
       </section>
       <section>
         <h2>Basic eligibility reminders</h2>
-        <p>Drop’s profile uses a 90-day interval as a simple whole-blood eligibility reminder. It is not medical clearance. Donation rules can depend on age, weight, hemoglobin, medicines, pregnancy, recent illness or surgery, infection risk, travel, and local clinical policy. Answer screening questions honestly and accept the clinician’s decision.</p>
+        <p>Drop uses a configurable 120-day whole-blood interval as a conservative educational reminder until local clinical review approves deployment policy. It is not medical clearance. Donation rules can depend on age, weight, hemoglobin, medicines, pregnancy, recent illness or surgery, infection risk, travel, and local clinical policy. Answer screening questions honestly and accept the clinician’s decision.</p>
       </section>
       <section>
         <h2>After donating</h2>

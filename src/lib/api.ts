@@ -49,11 +49,30 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to logout');
   },
 
-  async register(phone: string, name: string, password?: string, blood_group?: string, location?: { lat: number; lng: number; area_name: string }) {
+  async requestOtp(phone: string, purpose: 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE') {
+    const res = await fetch(`${API_BASE}/auth/otp/request`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone, purpose })
+    });
+    return readJsonOrThrow(res, 'Failed to send verification code');
+  },
+
+  async verifyOtp(phone: string, purpose: 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE', code: string) {
+    const res = await fetch(`${API_BASE}/auth/otp/verify`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone, purpose, code })
+    });
+    return readJsonOrThrow(res, 'Failed to verify code');
+  },
+
+  async getPublicConfig() {
+    const res = await fetch(`${API_BASE}/config/public`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load configuration');
+  },
+
+  async register(phone: string, name: string, password: string, verificationToken: string, blood_group?: string, location?: { lat: number; lng: number; area_name: string }) {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ phone, name, password, blood_group, location, fingerprint: BROWSER_FINGERPRINT })
+      body: JSON.stringify({ phone, name, password, verification_token: verificationToken, blood_group, location, fingerprint: BROWSER_FINGERPRINT })
     });
     return readJsonOrThrow(res, 'Failed to register');
   },
@@ -100,6 +119,13 @@ export const api = {
       body: JSON.stringify(requestData)
     });
     return readJsonOrThrow(res, 'Failed to create request');
+  },
+
+  async publishRequest(id: string) {
+    const res = await fetch(`${API_BASE}/requests/${id}/publish`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ consent: true })
+    });
+    return readJsonOrThrow(res, 'Failed to publish request');
   },
 
   async getMyRequests() {

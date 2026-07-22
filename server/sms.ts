@@ -1,63 +1,60 @@
-// SMS provider abstraction.
-//
-// No real SMS gateway is wired up yet, so `getSmsProvider()` returns null and
-// the app currently runs without phone verification (the OTP endpoints were
-// removed in 0.0.31; accounts start with `is_verified: false`).
-//
-// To add a real provider later:
-//   1. Implement the SmsProvider interface (see the Twilio sketch below).
-//   2. Add a `case` for it in `getSmsProvider()`, keyed off SMS_PROVIDER.
-//   3. Set SMS_PROVIDER (and the provider's credentials) in the environment.
-//   4. Reintroduce OTP endpoints in server/server.ts and gate registration on
-//      a successful verification.
-
 export interface SmsProvider {
   name: string;
   sendOtp(phone: string, code: string): Promise<void>;
 }
 
 /**
- * Returns the active SMS provider, or null if none is configured.
- * Selection is driven by the SMS_PROVIDER environment variable.
+ * Provider-neutral HTTP gateway. The configured endpoint receives a JSON body
+ * containing `phone`, `code`, and `message`. Authentication is sent through a
+ * bearer token so deployments can use a small gateway adapter for their
+ * preferred Bangladesh SMS vendor without coupling the app to one SDK.
  */
+function createHttpProvider(): SmsProvider | null {
+  const endpoint = process.env.SMS_HTTP_ENDPOINT?.trim();
+  const token = process.env.SMS_HTTP_TOKEN?.trim();
+  if (!endpoint || !token) return null;
+
+  return {
+    name: 'http',
+    async sendOtp(phone, code) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phone,
+          code,
+          message: `Your Drop verification code is ${code}. It expires in 10 minutes.`
+        })
+      });
+      if (!response.ok) throw new Error(`SMS gateway returned ${response.status}`);
+    }
+  };
+}
+
+function createDevelopmentConsoleProvider(): SmsProvider | null {
+  if (process.env.NODE_ENV === 'production') return null;
+  return {
+    name: 'console',
+    async sendOtp(phone, code) {
+      console.info(JSON.stringify({ event: 'development_otp', phone, code }));
+    }
+  };
+}
+
 export function getSmsProvider(): SmsProvider | null {
-  const provider = (process.env.SMS_PROVIDER || '').trim().toLowerCase();
-
-  switch (provider) {
-    // Example for when a real gateway is added:
-    //
-    // case 'twilio':
-    //   return createTwilioProvider();
-
-    case '':
+  switch ((process.env.SMS_PROVIDER || '').trim().toLowerCase()) {
+    case 'http':
+      return createHttpProvider();
+    case 'console':
+      return createDevelopmentConsoleProvider();
     default:
       return null;
   }
 }
 
-/** True when a real SMS gateway is configured. */
 export function isSmsConfigured(): boolean {
   return getSmsProvider() !== null;
 }
-
-// --- Provider implementations -------------------------------------------------
-//
-// Sketch of a real provider. Uncomment, install the SDK, and add the matching
-// `case` in getSmsProvider() above.
-//
-// function createTwilioProvider(): SmsProvider {
-//   const accountSid = process.env.TWILIO_ACCOUNT_SID;
-//   const authToken = process.env.TWILIO_AUTH_TOKEN;
-//   const from = process.env.TWILIO_FROM_NUMBER;
-//   const client = require('twilio')(accountSid, authToken);
-//   return {
-//     name: 'twilio',
-//     async sendOtp(phone, code) {
-//       await client.messages.create({
-//         to: phone,
-//         from,
-//         body: `Your verification code is ${code}`,
-//       });
-//     },
-//   };
-// }

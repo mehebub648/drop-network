@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions } from './db';
+import { getSmsProvider, isSmsConfigured } from './sms';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -16,6 +17,11 @@ const configuredPort = Number(process.env.PORT || process.env.PROD_PORT || 3000)
 const PORT = Number.isFinite(configuredPort) ? configuredPort : 3000;
 const DEFAULT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_VERIFICATION_TTL_MS = 30 * 60 * 1000;
+const DONATION_INTERVAL_DAYS = Math.max(1, Number(process.env.DONATION_INTERVAL_DAYS || 120));
+const AVAILABILITY_TTL_DAYS = Math.max(1, Number(process.env.AVAILABILITY_TTL_DAYS || 14));
+const MATCH_RADIUS_KM = Math.max(10, Number(process.env.MATCH_RADIUS_KM || 250));
 const SESSION_COOKIE = 'drop_session';
 // Anonymous fingerprints shorter than this are rejected so trivial values
 // (e.g. "anon") can't collide with comment author ids or claim ownership.
@@ -35,9 +41,12 @@ const COMPATIBLE_DONORS: Record<BloodGroup, BloodGroup[]> = {
   'O+': ['O+', 'O-'],
   'O-': ['O-']
 };
-const REQUEST_STATUSES = ['ACTIVE', 'FULFILLED', 'CANCELLED'] as const;
+const REQUEST_STATUSES = ['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'] as const;
 const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
 const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
+const BLOOD_COMPONENTS = ['WHOLE_BLOOD', 'RED_CELLS', 'PLATELETS', 'PLASMA'] as const;
+const REQUESTER_RELATIONSHIPS = ['SELF', 'FAMILY', 'FRIEND', 'HOSPITAL_STAFF', 'VOLUNTEER', 'OTHER'] as const;
+const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
 const allowedCorsOrigins = new Set(
   (process.env.CORS_ORIGIN || process.env.APP_URL || '')
     .split(',')
@@ -111,9 +120,12 @@ type AvailabilityHistoryEntry = {
 
 type DonorProfile = {
   blood_group: string;
-  last_donation_date: string;
+  last_donation_date?: string;
   location: { lat: number, lng: number, area_name: string };
   availability_status: 'AVAILABLE' | 'SICK' | 'TRAVELING' | 'NOT_AVAILABLE';
+  availability_confirmed_at?: string;
+  deferral_status?: 'NONE' | 'TEMPORARY' | 'PERMANENT';
+  deferred_until?: string;
   donation_history?: DonationRecord[];
   availability_history?: AvailabilityHistoryEntry[];
 };
@@ -128,6 +140,8 @@ type User = {
   name: string;
   password?: string;
   is_verified: boolean;
+  phone_verified_at?: string;
+  roles?: string[];
   created_at?: string;
   donor_profile?: DonorProfile;
   recipient_profile?: RecipientProfile;
@@ -163,12 +177,37 @@ type BloodRequest = {
   location: { lat: number, lng: number, area_name: string };
   created_at: string;
   expires_at: string;
-  status: 'ACTIVE' | 'FULFILLED' | 'CANCELLED';
+  status: (typeof REQUEST_STATUSES)[number];
+  blood_component?: (typeof BLOOD_COMPONENTS)[number];
+  units_required?: number;
+  units_pledged?: number;
+  units_confirmed?: number;
+  hospital_name?: string;
+  hospital_address?: string;
+  ward?: string;
+  patient_reference?: string;
   patient_name?: string;
   requester_name?: string;
+  requester_relationship?: (typeof REQUESTER_RELATIONSHIPS)[number];
   needed_by?: string;
+  consent_at?: string;
+  published_at?: string;
+  timeline?: Array<{ id: string; type: string; actor_id: string; created_at: string; note?: string }>;
   contacts?: ContactDetail[];
   comments?: Comment[];
+};
+
+type OtpChallenge = {
+  id: string;
+  phone: string;
+  purpose: 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE';
+  code_hash: string;
+  created_at: string;
+  expires_at: string;
+  attempts: number;
+  verified_at?: string;
+  verification_token?: string;
+  verification_expires_at?: string;
 };
 
 type PublicUser = Omit<User, 'password'>;
@@ -195,6 +234,14 @@ function optionalCleanString(value: unknown, maxLength: number) {
   return cleanString(value, maxLength);
 }
 
+function normalizeBangladeshPhone(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const digits = value.replace(/\D/g, '');
+  const local = digits.startsWith('880') ? digits.slice(3) : digits.startsWith('0') ? digits.slice(1) : digits;
+  if (!/^1[3-9]\d{8}$/.test(local)) return null;
+  return `+880${local}`;
+}
+
 function isOneOf<T extends readonly string[]>(value: unknown, values: T): value is T[number] {
   return typeof value === 'string' && values.includes(value);
 }
@@ -204,6 +251,11 @@ function parseDate(value: unknown) {
   if (typeof value !== 'string') return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function parsePositiveInteger(value: unknown, maximum = 20) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 1 && number <= maximum ? number : null;
 }
 
 function parseLocation(value: unknown) {
@@ -224,7 +276,7 @@ function parseContacts(value: unknown) {
   for (const item of value) {
     if (!isPlainObject(item)) return null;
     const name = cleanString(item.name, 80);
-    const phone = cleanString(item.phone, 30);
+    const phone = normalizeBangladeshPhone(item.phone);
     if (!name || !phone || !isOneOf(item.type, CONTACT_TYPES)) return null;
     contacts.push({ name, phone, type: item.type });
   }
@@ -258,24 +310,29 @@ function validationError(res: express.Response, message: string) {
 let users: User[] = [];
 let requests: BloodRequest[] = [];
 let sessions: AuthSession[] = [];
+let otpChallenges: OtpChallenge[] = [];
 
 async function initDbData() {
   users = await getAllFromTable('common_users');
   requests = await getAllFromTable('common_requests');
   sessions = await getAllFromTable('common_sessions');
+  otpChallenges = await getAllFromTable('common_otps');
   await enforceExpiredRequests();
 }
 
 async function enforceExpiredRequests() {
   const now = Date.now();
   const expiredRequests = requests.filter(r =>
-    r.status === 'ACTIVE' &&
+    (r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED') &&
     r.expires_at &&
     new Date(r.expires_at).getTime() <= now
   );
 
   for (const request of expiredRequests) {
-    request.status = 'CANCELLED';
+    request.status = 'EXPIRED';
+    request.timeline = [...(request.timeline || []), {
+      id: uuidv4(), type: 'REQUEST_EXPIRED', actor_id: 'system', created_at: new Date().toISOString()
+    }];
     await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
   }
 }
@@ -289,9 +346,27 @@ type DonorMatch = {
   blood_group: string;
   distance_km: number;
   availability_status: DonorProfile['availability_status'];
-  last_donation_date: string;
+  last_donation_date?: string;
   is_verified: boolean;
+  availability_confirmed_at?: string;
 };
+
+function donorEligibility(profile: DonorProfile) {
+  if (profile.deferral_status === 'PERMANENT') return { eligible: false, reason: 'Permanently deferred' };
+  if (profile.deferral_status === 'TEMPORARY') {
+    const until = profile.deferred_until ? new Date(profile.deferred_until).getTime() : Number.POSITIVE_INFINITY;
+    if (until > Date.now()) return { eligible: false, reason: 'Temporarily deferred' };
+  }
+  if (profile.last_donation_date) {
+    const next = new Date(profile.last_donation_date).getTime() + DONATION_INTERVAL_DAYS * 86_400_000;
+    if (next > Date.now()) return { eligible: false, reason: 'Donation interval not complete' };
+  }
+  const confirmed = profile.availability_confirmed_at ? new Date(profile.availability_confirmed_at).getTime() : 0;
+  if (confirmed + AVAILABILITY_TTL_DAYS * 86_400_000 < Date.now()) {
+    return { eligible: false, reason: 'Availability confirmation expired' };
+  }
+  return { eligible: true, reason: null };
+}
 
 // Searches the District x Group partitions of every blood group that is
 // medically compatible with the recipient's group (e.g. an A+ patient also
@@ -304,30 +379,15 @@ async function findDonorMatches(
   includePhone: boolean
 ): Promise<DonorMatch[]> {
   const donorGroups = COMPATIBLE_DONORS[bloodGroup as BloodGroup] || [bloodGroup];
-  const dbMatches: DonorRecord[] = [];
-  const seenIds = new Set<string>();
-  try {
-    const db = await getDb();
-    const tables = await db.tableNames();
-    for (const group of donorGroups) {
-      const pName = await getPartitionName(location.area_name, group);
-      if (!tables.includes(pName)) continue;
-      const table = await db.openTable(pName);
-      const results = await table.search([location.lng, location.lat]).limit(50).toArray();
-      for (const r of results as { doc: string }[]) {
-        const donor = JSON.parse(r.doc) as DonorRecord;
-        if (seenIds.has(donor.id)) continue;
-        seenIds.add(donor.id);
-        dbMatches.push(donor);
-      }
-    }
-  } catch (e) {
-    console.error('LanceDB donor search error:', e);
-  }
+  // The user table is authoritative for safety state. Searching it also allows
+  // legitimate nearby donors across district boundaries to be considered.
+  const dbMatches = users.filter((user): user is DonorRecord => Boolean(user.donor_profile));
 
   return dbMatches
     .filter(u => u.id !== excludeUserId)
+    .filter(u => donorGroups.includes(u.donor_profile.blood_group as BloodGroup))
     .filter(u => u.donor_profile.availability_status === 'AVAILABLE')
+    .filter(u => donorEligibility(u.donor_profile).eligible)
     .map(u => {
       const dist = getDistance(
         location.lat, location.lng,
@@ -341,9 +401,11 @@ async function findDonorMatches(
         distance_km: Math.round(dist * 10) / 10,
         availability_status: u.donor_profile.availability_status,
         last_donation_date: u.donor_profile.last_donation_date,
-        is_verified: Boolean(u.is_verified)
+        is_verified: Boolean(u.is_verified),
+        availability_confirmed_at: u.donor_profile.availability_confirmed_at
       };
     })
+    .filter(match => match.distance_km <= MATCH_RADIUS_KM)
     .sort((a, b) => a.distance_km - b.distance_km);
 }
 
@@ -434,7 +496,7 @@ function isRequestOwner(request: BloodRequest, req: express.Request) {
 
 function publicRequestPayload(request: BloodRequest) {
   const requester = users.find(u => u.id === request.user_id);
-  const { contacts, comments, ...safeRequest } = request;
+  const { contacts, comments, patient_name, patient_reference, timeline, ...safeRequest } = request;
   return {
     ...safeRequest,
     requester_name: request.requester_name || requester?.name || 'Anonymous',
@@ -442,10 +504,95 @@ function publicRequestPayload(request: BloodRequest) {
   };
 }
 
+function verifiedChallenge(phone: string, purpose: OtpChallenge['purpose'], token: unknown) {
+  if (typeof token !== 'string' || !token) return null;
+  return otpChallenges.find(challenge =>
+    challenge.phone === phone &&
+    challenge.purpose === purpose &&
+    challenge.verification_token === token &&
+    challenge.verification_expires_at &&
+    new Date(challenge.verification_expires_at).getTime() > Date.now()
+  ) || null;
+}
+
+async function consumeChallenge(challenge: OtpChallenge) {
+  challenge.verification_expires_at = new Date(0).toISOString();
+  await saveToTable('common_otps', challenge);
+}
+
 // API Routes
 
+app.get('/api/config/public', (_req, res) => {
+  res.json({
+    sms_configured: isSmsConfigured(),
+    donation_interval_days: DONATION_INTERVAL_DAYS,
+    availability_ttl_days: AVAILABILITY_TTL_DAYS,
+    match_radius_km: MATCH_RADIUS_KM
+  });
+});
+
+app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const purpose = req.body?.purpose;
+  if (!phone || !isOneOf(purpose, ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE'] as const)) {
+    return validationError(res, 'Valid Bangladesh phone and purpose are required');
+  }
+  const provider = getSmsProvider();
+  if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
+  if (purpose === 'REGISTER' && users.some(user => user.phone === phone)) {
+    return res.status(409).json({ error: 'Phone already registered' });
+  }
+  if (purpose === 'RESET_PASSWORD' && !users.some(user => user.phone === phone)) {
+    // Do not disclose account existence.
+    return res.json({ success: true });
+  }
+
+  const recent = otpChallenges.find(challenge =>
+    challenge.phone === phone && challenge.purpose === purpose &&
+    Date.now() - new Date(challenge.created_at).getTime() < 60_000
+  );
+  if (recent) return res.status(429).json({ error: 'Wait before requesting another code' });
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const now = Date.now();
+  const challenge: OtpChallenge = {
+    id: uuidv4(), phone, purpose,
+    code_hash: await bcrypt.hash(code, BCRYPT_ROUNDS),
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + OTP_TTL_MS).toISOString(),
+    attempts: 0
+  };
+  otpChallenges.push(challenge);
+  await saveToTable('common_otps', challenge);
+  await provider.sendOtp(phone, code);
+  res.json({ success: true, provider: provider.name });
+});
+
+app.post('/api/auth/otp/verify', authLimiter, async (req, res) => {
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const purpose = req.body?.purpose;
+  const code = cleanString(req.body?.code, 6);
+  if (!phone || !code || !/^\d{6}$/.test(code) || !isOneOf(purpose, ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE'] as const)) {
+    return validationError(res, 'Valid phone, purpose, and six-digit code are required');
+  }
+  const challenge = [...otpChallenges].reverse().find(item =>
+    item.phone === phone && item.purpose === purpose && !item.verified_at && new Date(item.expires_at).getTime() > Date.now()
+  );
+  if (!challenge || challenge.attempts >= 5) return res.status(400).json({ error: 'Code is invalid or expired' });
+  challenge.attempts += 1;
+  if (!(await bcrypt.compare(code, challenge.code_hash))) {
+    await saveToTable('common_otps', challenge);
+    return res.status(400).json({ error: 'Code is invalid or expired' });
+  }
+  challenge.verified_at = new Date().toISOString();
+  challenge.verification_token = uuidv4();
+  challenge.verification_expires_at = new Date(Date.now() + OTP_VERIFICATION_TTL_MS).toISOString();
+  await saveToTable('common_otps', challenge);
+  res.json({ verification_token: challenge.verification_token });
+});
+
 app.post('/api/auth/login', authLimiter, async (req, res) => {
-  const phone = cleanString(req.body?.phone, 30);
+  const phone = normalizeBangladeshPhone(req.body?.phone);
   const password = cleanString(req.body?.password, 128);
   // Only honor a fingerprint the same client also presents as its own header;
   // stops replaying someone else's leaked fingerprint from a different client.
@@ -503,15 +650,17 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 });
 
 app.post('/api/auth/register', authLimiter, async (req, res) => {
-  const phone = cleanString(req.body?.phone, 30);
+  const phone = normalizeBangladeshPhone(req.body?.phone);
   const name = cleanString(req.body?.name, 100);
   const password = cleanString(req.body?.password, 128);
   const bodyFingerprint = normalizeFingerprint(req.body?.fingerprint);
   const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
   const blood_group = req.body?.blood_group;
   const location = req.body?.location === undefined ? undefined : parseLocation(req.body.location);
+  const challenge = phone ? verifiedChallenge(phone, 'REGISTER', req.body?.verification_token) : null;
 
   if (!phone || !name || !password) return validationError(res, 'Phone, name, and password are required');
+  if (!challenge) return res.status(403).json({ error: 'Verify this phone before registering' });
   if (password.length < 8) return validationError(res, 'Password must be at least 8 characters');
   if (blood_group !== undefined && !isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (req.body?.location !== undefined && !location) return validationError(res, 'Valid location is required');
@@ -528,7 +677,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     password: await bcrypt.hash(password, BCRYPT_ROUNDS),
     // Phone verification is not wired up yet (no SMS provider); accounts start
     // unverified until a real OTP flow exists.
-    is_verified: false,
+    is_verified: true,
+    phone_verified_at: new Date().toISOString(),
+    roles: ['MEMBER'],
     created_at: new Date().toISOString(),
   };
 
@@ -536,9 +687,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     user.donor_profile = {
       blood_group,
       location,
-      last_donation_date: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
-      availability_status: 'AVAILABLE',
-      availability_history: [{ status: 'AVAILABLE', changed_at: new Date().toISOString() }]
+      availability_status: 'NOT_AVAILABLE',
+      deferral_status: 'NONE',
+      availability_history: [{ status: 'NOT_AVAILABLE', changed_at: new Date().toISOString() }]
     };
   }
 
@@ -572,6 +723,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   }
 
   const token = await issueSession(user.id);
+  await consumeChallenge(challenge);
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
   res.json({ user: sanitizeUser(user) });
 });
@@ -597,7 +749,7 @@ app.patch('/api/me', async (req, res) => {
   if (!hasName && !hasPhone) return validationError(res, 'Name or phone is required');
 
   const name = hasName ? cleanString(req.body.name, 100) : auth.user.name;
-  const phone = hasPhone ? cleanString(req.body.phone, 30) : auth.user.phone;
+  const phone = hasPhone ? normalizeBangladeshPhone(req.body.phone) : auth.user.phone;
   if (!name || !phone) return validationError(res, 'Valid name and phone are required');
 
   const duplicate = users.find(user => user.id !== auth.user.id && user.phone === phone);
@@ -606,7 +758,16 @@ app.patch('/api/me', async (req, res) => {
   const userIndex = users.findIndex(user => user.id === auth.user.id);
   if (userIndex === -1) return res.status(401).json({ error: 'Unauthorized' });
 
-  users[userIndex] = { ...users[userIndex], name, phone };
+  const phoneChanged = phone !== auth.user.phone;
+  if (phoneChanged) {
+    const challenge = verifiedChallenge(phone, 'CHANGE_PHONE', req.body?.verification_token);
+    if (!challenge) return res.status(403).json({ error: 'Verify the new phone before saving it' });
+    await consumeChallenge(challenge);
+  }
+  users[userIndex] = {
+    ...users[userIndex], name, phone,
+    ...(phoneChanged ? { is_verified: true, phone_verified_at: new Date().toISOString() } : {})
+  };
   await saveToTable('common_users', users[userIndex]);
 
   if (users[userIndex].donor_profile) {
@@ -665,13 +826,17 @@ app.post('/api/me/donor-profile', async (req, res) => {
   const location = parseLocation(req.body?.location);
   const last_donation_date = parseDate(req.body?.last_donation_date);
   const donation_history = parseDonationHistory(req.body?.donation_history);
+  const deferral_status = req.body?.deferral_status || 'NONE';
+  const deferred_until = parseDate(req.body?.deferred_until);
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (!isOneOf(availability_status, AVAILABILITY_STATUSES)) return validationError(res, 'Valid availability status is required');
   if (!location) return validationError(res, 'Valid location is required');
-  if (!last_donation_date) return validationError(res, 'Valid last donation date is required');
-  if (new Date(last_donation_date).getTime() > Date.now()) return validationError(res, 'Last donation date cannot be in the future');
+  if (last_donation_date === null) return validationError(res, 'Valid last donation date is required');
+  if (last_donation_date && new Date(last_donation_date).getTime() > Date.now()) return validationError(res, 'Last donation date cannot be in the future');
   if (donation_history === null) return validationError(res, 'Valid donation history is required');
+  if (!isOneOf(deferral_status, DEFERRAL_STATUSES)) return validationError(res, 'Valid deferral status is required');
+  if (deferred_until === null || (deferral_status === 'TEMPORARY' && !deferred_until)) return validationError(res, 'Temporary deferral needs an end date');
 
   const userIndex = users.findIndex(u => u.id === auth.user.id);
   if (userIndex !== -1) {
@@ -685,7 +850,10 @@ app.post('/api/me/donor-profile', async (req, res) => {
       blood_group,
       availability_status,
       location,
-      last_donation_date,
+      ...(last_donation_date ? { last_donation_date } : { last_donation_date: undefined }),
+      deferral_status,
+      deferred_until,
+      availability_confirmed_at: availability_status === 'AVAILABLE' ? new Date().toISOString() : existingProfile?.availability_confirmed_at,
       donation_history: donation_history || existingProfile?.donation_history || [],
       availability_history: availabilityHistory.slice(-50)
     };
@@ -700,44 +868,86 @@ app.post('/api/me/donor-profile', async (req, res) => {
   }
 });
 
-// Create search request and return matches
+function parseCompleteRequest(body: Record<string, unknown>) {
+  const blood_group = body.blood_group;
+  const blood_component = body.blood_component;
+  const location = parseLocation(body.location);
+  const needed_by = parseDate(body.needed_by);
+  const contacts = parseContacts(body.contacts);
+  const units_required = parsePositiveInteger(body.units_required);
+  const hospital_name = cleanString(body.hospital_name, 160);
+  const hospital_address = cleanString(body.hospital_address, 240);
+  const ward = optionalCleanString(body.ward, 100);
+  const patient_reference = cleanString(body.patient_reference, 100);
+  const patient_name = cleanString(body.patient_name, 120);
+  const requester_name = cleanString(body.requester_name, 120);
+  const requester_relationship = body.requester_relationship;
+
+  if (!isOneOf(blood_group, BLOOD_GROUPS)) return { error: 'Valid blood group is required' } as const;
+  if (!isOneOf(blood_component, BLOOD_COMPONENTS)) return { error: 'Valid blood component is required' } as const;
+  if (!location) return { error: 'Valid location is required' } as const;
+  if (!needed_by || new Date(needed_by).getTime() <= Date.now()) return { error: 'Needed-by time must be in the future' } as const;
+  if (!units_required) return { error: 'Units required must be between 1 and 20' } as const;
+  if (!hospital_name || !hospital_address || !patient_reference || !patient_name || !requester_name) {
+    return { error: 'Hospital, patient, reference, and requester details are required' } as const;
+  }
+  if (!isOneOf(requester_relationship, REQUESTER_RELATIONSHIPS)) return { error: 'Valid requester relationship is required' } as const;
+  if (!contacts || contacts.length === 0) return { error: 'At least one verified Bangladesh contact is required' } as const;
+
+  return {
+    value: {
+      blood_group, blood_component, location, needed_by, contacts, units_required,
+      hospital_name, hospital_address, ward, patient_reference, patient_name,
+      requester_name, requester_relationship
+    }
+  } as const;
+}
+
+// A draft is private and can only be created by a verified account. Publishing
+// is a separate, explicit action so the requester can review the data first.
 app.post('/api/requests', async (req, res) => {
   const auth = getCurrentAuth(req);
-  const fingerprint = getFingerprint(req);
-  const user_id = auth?.user.id || fingerprint || 'anonymous';
+  if (!auth) return res.status(401).json({ error: 'Log in to create a request' });
+  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before creating a request' });
+  const parsed = parseCompleteRequest(req.body || {});
+  if ('error' in parsed) return validationError(res, parsed.error);
+  const duplicate = requests.find(request =>
+    request.user_id === auth.user.id &&
+    ['DRAFT', 'ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status) &&
+    request.patient_reference?.toLowerCase() === parsed.value.patient_reference.toLowerCase() &&
+    request.hospital_name?.toLowerCase() === parsed.value.hospital_name.toLowerCase()
+  );
+  if (duplicate) return res.status(409).json({ error: 'A request for this patient reference and hospital already exists', request_id: duplicate.id });
 
-  const blood_group = req.body?.blood_group;
-  const location = parseLocation(req.body?.location);
-  const needed_by = parseDate(req.body?.needed_by);
-
-  if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
-  if (!location) return validationError(res, 'Valid location is required');
-  if (needed_by === null) return validationError(res, 'Valid needed-by date is required');
-  
-  const newRequest: BloodRequest = {
-    id: uuidv4(),
-    user_id: user_id || 'anonymous',
-    blood_group,
-    location,
-    needed_by,
-    created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + DEFAULT_REQUEST_TTL_MS).toISOString(),
-    status: 'ACTIVE',
-    contacts: [],
-    comments: []
+  const now = new Date().toISOString();
+  const request: BloodRequest = {
+    id: uuidv4(), user_id: auth.user.id, ...parsed.value,
+    created_at: now,
+    expires_at: new Date(Math.max(Date.now() + DEFAULT_REQUEST_TTL_MS, new Date(parsed.value.needed_by).getTime() + 6 * 3_600_000)).toISOString(),
+    status: 'DRAFT', units_pledged: 0, units_confirmed: 0, comments: [],
+    timeline: [{ id: uuidv4(), type: 'DRAFT_CREATED', actor_id: auth.user.id, created_at: now }]
   };
-  
-  requests.push(newRequest);
-  await saveToTable('common_requests', newRequest, [location.lng, location.lat]);
+  requests.push(request);
+  await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+  res.status(201).json(request);
+});
 
-  // The creator sees donor contact details for their own freshly created
-  // request, whether authenticated or anonymous-with-fingerprint.
-  const matches = await findDonorMatches(location, blood_group, user_id, true);
+app.post('/api/requests/:id/publish', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const request = requests.find(item => item.id === req.params.id);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the request owner can publish it' });
+  if (request.status !== 'DRAFT' && request.status !== 'PENDING_VERIFICATION') return res.status(409).json({ error: 'Only a draft can be published' });
+  if (req.body?.consent !== true) return validationError(res, 'Explicit publication consent is required');
 
-  res.json({
-    request: newRequest,
-    matches
-  });
+  const now = new Date().toISOString();
+  request.status = 'ACTIVE';
+  request.consent_at = now;
+  request.published_at = now;
+  request.timeline = [...(request.timeline || []), { id: uuidv4(), type: 'REQUEST_PUBLISHED', actor_id: auth.user.id, created_at: now }];
+  await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+  res.json({ request, matches: await findDonorMatches(request.location, request.blood_group, request.user_id, false) });
 });
 
 // Public network stats for the landing page.
@@ -746,7 +956,7 @@ app.get('/api/stats', async (req, res) => {
   res.json({
     registered_donors: users.filter(u => u.donor_profile).length,
     available_donors: users.filter(u => u.donor_profile?.availability_status === 'AVAILABLE').length,
-    active_requests: requests.filter(r => r.status === 'ACTIVE').length,
+    active_requests: requests.filter(r => r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED').length,
     fulfilled_requests: requests.filter(r => r.status === 'FULFILLED').length
   });
 });
@@ -754,7 +964,7 @@ app.get('/api/stats', async (req, res) => {
 app.get('/api/requests', async (req, res) => {
   await enforceExpiredRequests();
   const sortedRequests = requests
-    .filter(r => r.status === 'ACTIVE')
+    .filter(r => r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED')
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   res.json(sortedRequests.map(publicRequestPayload));
 });
@@ -770,18 +980,19 @@ app.get('/api/requests/:id', async (req, res) => {
 
   const requester = users.find(u => u.id === request.user_id);
   const requestOwner = isRequestOwner(request, req);
-  // Contact details (patient/relative/hospital phone numbers) and donor phone
-  // numbers are PII: visible to logged-in users and the request owner only.
-  const canSeeContacts = Boolean(getCurrentAuth(req)) || requestOwner;
-  const { contacts, ...safeRequest } = request;
+  if (!requestOwner && !['ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED'].includes(request.status)) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  // Patient identity, reference, contacts, and donor phones stay private until
+  // the response workflow grants purpose-limited access.
+  const { contacts, patient_name, patient_reference, ...safeRequest } = request;
   const enrichedRequest = {
     ...safeRequest,
-    ...(canSeeContacts ? { contacts: contacts || [] } : {}),
-    requester_name: request.requester_name || requester?.name || 'Anonymous',
-    ...(requestOwner ? { requester_phone: requester?.phone || '+8800000000' } : {})
+    ...(requestOwner ? { contacts: contacts || [], patient_name, patient_reference, requester_phone: requester?.phone } : {}),
+    requester_name: request.requester_name || requester?.name || 'Verified requester'
   };
 
-  const matches = await findDonorMatches(request.location, request.blood_group, request.user_id, canSeeContacts);
+  const matches = requestOwner ? await findDonorMatches(request.location, request.blood_group, request.user_id, false) : [];
 
   res.json({ request: enrichedRequest, matches });
 });
@@ -794,23 +1005,12 @@ app.patch('/api/requests/:id/details', async (req, res) => {
       return res.status(403).json({ error: 'Only the request owner can update details' });
     }
 
-    const patient_name = optionalCleanString(req.body?.patient_name, 120);
-    const requester_name = optionalCleanString(req.body?.requester_name, 120);
-    const needed_by = parseDate(req.body?.needed_by);
-    const contacts = parseContacts(req.body?.contacts);
-
-    if (req.body?.patient_name !== undefined && patient_name === null) return validationError(res, 'Valid patient name is required');
-    if (req.body?.requester_name !== undefined && requester_name === null) return validationError(res, 'Valid requester name is required');
-    if (needed_by === null) return validationError(res, 'Valid needed-by date is required');
-    if (contacts === null) return validationError(res, 'Valid contacts are required');
-
-    requests[requestIndex] = {
-      ...requests[requestIndex],
-      patient_name: patient_name !== undefined ? patient_name : requests[requestIndex].patient_name,
-      requester_name: requester_name !== undefined ? requester_name : requests[requestIndex].requester_name,
-      needed_by: needed_by !== undefined ? needed_by : requests[requestIndex].needed_by,
-      contacts: contacts || requests[requestIndex].contacts || []
-    };
+    const parsed = parseCompleteRequest({ ...requests[requestIndex], ...req.body });
+    if ('error' in parsed) return validationError(res, parsed.error);
+    requests[requestIndex] = { ...requests[requestIndex], ...parsed.value };
+    requests[requestIndex].timeline = [...(requests[requestIndex].timeline || []), {
+      id: uuidv4(), type: 'DETAILS_UPDATED', actor_id: requests[requestIndex].user_id, created_at: new Date().toISOString()
+    }];
     await saveToTable('common_requests', requests[requestIndex], [requests[requestIndex].location.lng, requests[requestIndex].location.lat]);
     res.json(requests[requestIndex]);
   } else {
@@ -902,7 +1102,19 @@ app.patch('/api/requests/:id/status', async (req, res) => {
     if (!isRequestOwner(requests[requestIndex], req)) {
       return res.status(403).json({ error: 'Only the request owner can update status' });
     }
+    const request = requests[requestIndex];
+    if (status === 'FULFILLED' && (request.units_confirmed || 0) < (request.units_required || 1)) {
+      return res.status(409).json({ error: 'Confirm all required units before marking fulfilled' });
+    }
+    const ownerStatuses = ['ACTIVE', 'CANCELLED', 'FULFILLED'];
+    if (!ownerStatuses.includes(status)) return res.status(403).json({ error: 'This status is managed by verification or response workflow' });
+    if (status === 'ACTIVE' && request.needed_by && new Date(request.needed_by).getTime() <= Date.now()) {
+      return res.status(409).json({ error: 'Update the required date before reopening this request' });
+    }
     requests[requestIndex].status = status;
+    requests[requestIndex].timeline = [...(requests[requestIndex].timeline || []), {
+      id: uuidv4(), type: `STATUS_${status}`, actor_id: requests[requestIndex].user_id, created_at: new Date().toISOString()
+    }];
     await saveToTable('common_requests', requests[requestIndex], [requests[requestIndex].location.lng, requests[requestIndex].location.lat]);
     res.json(requests[requestIndex]);
   } else {

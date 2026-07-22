@@ -19,7 +19,7 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Storage and security</h2>
-        <p>Drop currently stores application records in a LanceDB datastore. Passwords are bcrypt-hashed. Login state uses an httpOnly, SameSite session cookie that browser JavaScript cannot read. The application also stores a random <code>drop_fingerprint</code> value in localStorage to recognize ownership of requests created without an account. Security headers, JSON-only request handling, restricted production CORS, and rate limits reduce common risks, but no online service can promise absolute security.</p>
+        <p>Drop currently stores application records in a LanceDB datastore. Passwords and verification codes are bcrypt-hashed. Login state uses an httpOnly, SameSite session cookie that browser JavaScript cannot read. A legacy random <code>drop_fingerprint</code> remains in localStorage for older comment attribution and ownership migration; new blood requests require a verified account. Security headers, JSON-only request handling, restricted production CORS, and rate limits reduce common risks, but no online service can promise absolute security.</p>
       </section>
       <section>
         <h2>Sharing and service providers</h2>
@@ -27,7 +27,7 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Verification and OTP</h2>
-        <p>Phone OTP verification is not currently enabled. New accounts begin unverified, and an “Unverified” badge must not be treated as identity confirmation. A future verification system will require an updated operational process and, where appropriate, an updated policy.</p>
+        <p>Registration uses a short-lived SMS code. Verification confirms control of a phone number and must not be treated as identity or clinical confirmation. OTP challenges are purpose-bound and expire; operational retention will be finalized before production launch.</p>
       </section>
       <section>
         <h2>Your choices</h2>

@@ -7,6 +7,12 @@ services:
     environment:
       NODE_ENV: production
       LANCEDB_PATH: /data/lancedb
+      SMS_PROVIDER: ${SMS_PROVIDER:-}
+      SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}
+      SMS_HTTP_TOKEN: ${SMS_HTTP_TOKEN:-}
+      DONATION_INTERVAL_DAYS: ${DONATION_INTERVAL_DAYS:-120}
+      AVAILABILITY_TTL_DAYS: ${AVAILABILITY_TTL_DAYS:-14}
+      MATCH_RADIUS_KM: ${MATCH_RADIUS_KM:-250}
     ports:
       - "${PORT:-3000}:3000"
     volumes:
@@ -24,6 +30,12 @@ services:
     environment:
       NODE_ENV: development
       LANCEDB_PATH: /data/lancedb
+      SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}
+      SMS_HTTP_TOKEN: ${SMS_HTTP_TOKEN:-}
+      DONATION_INTERVAL_DAYS: ${DONATION_INTERVAL_DAYS:-120}
+      AVAILABILITY_TTL_DAYS: ${AVAILABILITY_TTL_DAYS:-14}
+      MATCH_RADIUS_KM: ${MATCH_RADIUS_KM:-250}
       CHOKIDAR_USE_POLLING: "true"
       VITE_USE_POLLING: "true"
     ports:
