@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, Droplet, LogOut } from 'lucide-react';
+import { Activity, Droplet, LogOut, ShieldCheck } from 'lucide-react';
 import Footer from './Footer';
 
 export default function Layout({ children, user, onLogout }: { children: ReactNode, user: any, onLogout: () => void }) {
@@ -24,6 +24,7 @@ export default function Layout({ children, user, onLogout }: { children: ReactNo
                 <Activity className="w-4 h-4" /> Live Requests
               </Link>
               <Link to="/profile" className="text-slate-600 hover:text-primary font-bold text-sm transition-colors">My Profile</Link>
+              {user.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role)) && <Link to="/admin" className="text-slate-600 hover:text-primary font-bold text-sm transition-colors" aria-label="Operations console"><ShieldCheck className="w-5 h-5" /></Link>}
               <div className="h-6 w-px bg-slate-200"></div>
               <button onClick={onLogout} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <LogOut className="w-5 h-5" />

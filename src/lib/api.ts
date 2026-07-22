@@ -164,6 +164,63 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to mark notification read');
   },
 
+  async report(targetType: 'REQUEST' | 'COMMENT' | 'USER', targetId: string, reason: string, details?: string) {
+    const res = await fetch(`${API_BASE}/reports`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ target_type: targetType, target_id: targetId, reason, details })
+    });
+    return readJsonOrThrow(res, 'Failed to submit report');
+  },
+
+  async blockUser(userId: string) {
+    const res = await fetch(`${API_BASE}/me/blocks/${userId}`, { method: 'POST', headers: getHeaders(), body: '{}' });
+    return readJsonOrThrow(res, 'Failed to block user');
+  },
+
+  async createSupportTicket(data: { name: string; email?: string; phone?: string; category: string; message: string }) {
+    const res = await fetch(`${API_BASE}/support/tickets`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) });
+    return readJsonOrThrow(res, 'Failed to send support request');
+  },
+
+  async getAdminOverview() {
+    const res = await fetch(`${API_BASE}/admin/overview`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load admin overview');
+  },
+
+  async getAdminUsers(search = '') {
+    const res = await fetch(`${API_BASE}/admin/users?search=${encodeURIComponent(search)}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load users');
+  },
+
+  async updateAdminUser(id: string, data: any) {
+    const res = await fetch(`${API_BASE}/admin/users/${id}`, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify(data) });
+    return readJsonOrThrow(res, 'Failed to update user');
+  },
+
+  async getAdminRequests() {
+    const res = await fetch(`${API_BASE}/admin/requests`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load requests');
+  },
+
+  async moderateRequest(id: string, status: string, note?: string) {
+    const res = await fetch(`${API_BASE}/admin/requests/${id}`, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ status, note }) });
+    return readJsonOrThrow(res, 'Failed to moderate request');
+  },
+
+  async updateReport(id: string, status: string, resolutionNote?: string) {
+    const res = await fetch(`${API_BASE}/admin/reports/${id}`, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ status, resolution_note: resolutionNote }) });
+    return readJsonOrThrow(res, 'Failed to update report');
+  },
+
+  async updateTicket(id: string, status: string) {
+    const res = await fetch(`${API_BASE}/admin/tickets/${id}`, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ status }) });
+    return readJsonOrThrow(res, 'Failed to update ticket');
+  },
+
+  async getAuditLog() {
+    const res = await fetch(`${API_BASE}/admin/audit`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load audit log');
+  },
+
   async getMyRequests() {
     const res = await fetch(`${API_BASE}/me/requests`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load requests');

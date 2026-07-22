@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Heart, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, User as UserIcon, Users, Zap } from 'lucide-react';
+import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Flag, Heart, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, User as UserIcon, Users, Zap } from 'lucide-react';
 import { api, BROWSER_FINGERPRINT } from '../lib/api';
 import { BLOOD_GROUPS, compatibleDonorsFor, DONATION_INTERVAL_DAYS, getEligibility, getUrgency, URGENCY_ORDER } from '../lib/blood';
 import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
@@ -23,6 +23,9 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   const [newComment, setNewComment] = useState('');
   const [anonName, setAnonName] = useState('');
   const [copied, setCopied] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ type: 'REQUEST' | 'COMMENT', id: string } | null>(null);
+  const [reportReason, setReportReason] = useState('OTHER');
+  const [reportDetails, setReportDetails] = useState('');
 
   const shareRequest = (target: 'copy' | 'whatsapp') => {
     if (!data) return;
@@ -151,6 +154,15 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     }
   };
 
+  const submitReport = async () => {
+    if (!reportTarget) return;
+    try {
+      await api.report(reportTarget.type, reportTarget.id, reportReason, reportDetails || undefined);
+      setReportTarget(null); setReportDetails('');
+      setActionMessage({ type: 'success', text: 'Report submitted to the moderation team.' });
+    } catch (error: any) { setActionMessage({ type: 'error', text: error.message || 'Could not submit the report.' }); }
+  };
+
   if (loading) return <div className="flex justify-center p-12"><div className="w-10 h-10 border-[3px] border-rose-100 border-t-primary rounded-full animate-spin"></div></div>;
   if (loadError) return (
     <div className="max-w-3xl mx-auto theme-card p-10 text-center border border-slate-100">
@@ -171,7 +183,18 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           &larr; Back
         </Link>
         <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">Request Dashboard</h2>
+        {user && !isOwner && <button onClick={() => setReportTarget({ type: 'REQUEST', id: request.id })} className="ml-auto text-xs font-bold text-slate-500 hover:text-red-600 flex items-center gap-1"><Flag className="w-4 h-4" /> Report</button>}
       </div>
+
+      {reportTarget && <div role="dialog" aria-modal="true" aria-labelledby="report-title" className="fixed inset-0 z-[70] bg-slate-900/50 p-6 flex items-center justify-center">
+        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+          <h2 id="report-title" className="text-xl font-bold">Report safety concern</h2>
+          <p className="text-sm text-slate-500 mt-1">Reports are visible only to authorized operators.</p>
+          <select value={reportReason} onChange={e => setReportReason(e.target.value)} className="w-full mt-4 px-4 py-3 border rounded-xl"><option value="OTHER">Inaccurate or other concern</option><option value="SPAM">Spam or duplicate</option><option value="PAYMENT_REQUEST">Payment requested</option><option value="HARASSMENT">Harassment</option><option value="PRIVACY">Privacy concern</option><option value="FRAUD">Suspected fraud</option></select>
+          <textarea value={reportDetails} onChange={e => setReportDetails(e.target.value)} maxLength={1000} rows={4} placeholder="Optional details" className="w-full mt-3 px-4 py-3 border rounded-xl" />
+          <div className="flex justify-end gap-2 mt-4"><button onClick={() => setReportTarget(null)} className="px-4 py-2 rounded-xl border font-bold">Cancel</button><button onClick={submitReport} className="px-4 py-2 rounded-xl bg-red-600 text-white font-bold">Submit report</button></div>
+        </div>
+      </div>}
 
       {actionMessage && (
         <div className={cn(
@@ -477,7 +500,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                     <span className="text-xs font-semibold text-slate-400">{formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}</span>
                   </div>
                   <p className="text-sm text-slate-700 leading-relaxed">{c.text}</p>
-                  {isOwner && (
+                  {(isOwner || (user && c.user_id === user.id)) && (
                     <button 
                       onClick={() => handleDeleteComment(c.id)}
                       className="absolute right-2 top-2 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
@@ -485,6 +508,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
+                  {user && c.user_id !== user.id && <button onClick={() => setReportTarget({ type: 'COMMENT', id: c.id })} className="mt-2 text-xs font-bold text-slate-400 hover:text-red-600"><Flag className="inline w-3 h-3 mr-1" />Report</button>}
                 </div>
               </div>
             ))

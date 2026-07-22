@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.37`
+Current application version: `0.0.38`
 
 ## Overview
 
@@ -71,7 +71,10 @@ Routes:
 - `/profile/settings` stores device-local preferences and exports the current
   account record. Automated hard deletion remains disabled.
 - `/about` explains the service mission, matching model, and limitations.
-- `/contact` provides placeholder support and safety-report email links.
+- `/contact` submits validated support, privacy, safety, and partnership
+  tickets to the protected operations queue.
+- `/admin` gives authorized support, moderator, verifier, and administrator
+  roles an operational dashboard for reports, tickets, and request review.
 - `/privacy` documents current data collection, visibility, storage, cookies,
   local ownership fingerprints, and verification limitations.
 - `/terms` sets the acceptable-use and service-disclaimer draft.
@@ -119,6 +122,8 @@ Main data types:
 - `Comment`
 - `ContactDetail`
 - `AuthSession`
+- `DonorResponse` and `AppNotification`
+- `ModerationReport`, `SupportTicket`, and `AuditEvent`
 
 API routes:
 
@@ -147,6 +152,10 @@ API routes:
   mutual confirmation, partial fulfillment, and donation history.
 - `GET /api/me/notifications` and its read endpoint provide persisted in-app
   delivery; external SMS/push delivery remains provider work.
+- `POST /api/reports`, `POST /api/me/blocks/:userId`, and
+  `POST /api/support/tickets` provide member safety and public support entry
+  points. Admin routes under `/api/admin` expose role-gated overview, user,
+  request, report, ticket, and immutable audit operations.
 - `GET /api/stats` returns public network counts (registered/available donors,
   active/fulfilled requests) for the landing page.
 - `GET /api/requests` lists active, non-expired public blood requests without requester phone or contact details.
@@ -171,6 +180,8 @@ Tables:
 - `common_otps` stores expiring hashed verification challenges.
 - `common_responses` stores private donor invitations and response state.
 - `common_notifications` stores per-user in-app notifications.
+- `common_reports`, `common_support_tickets`, and `common_audit_events` store
+  moderation operations and their audit trail.
 - `donors_<district>_<blood_group>` stores searchable donor partitions.
 
 Records are stored as JSON strings in a `doc` field. LanceDB vectors use `[lng, lat]` so donor/request records can be searched by location.
@@ -226,6 +237,8 @@ Environment:
 - `CORS_ORIGIN` optionally lists allowed cross-origin browser origins.
 - `LANCEDB_PATH` sets the datastore directory inside the container. Docker
   Compose sets it to `/data/lancedb`.
+- `ADMIN_PHONE` bootstraps the first verified administrator by normalized
+  Bangladesh phone; further role changes require an administrator.
 
 Persistent Docker volumes:
 

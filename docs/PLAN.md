@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.37`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.38`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -47,16 +47,12 @@ These cannot be finished by editing code alone.
 - [ ] **External push / SMS / email notification delivery** - persisted in-app
   notifications and invitations exist; FCM/APNs or a transactional provider
   plus delivery receipts are still required for off-site alerts.
-- [ ] **Working contact form** - add a validated backend endpoint, abuse
-  protection, monitored recipient, and transactional email provider. Until
-  then, `/contact` uses honest `mailto:` links.
 - [ ] **Production hosting & domain** - TLS-terminating reverse proxy, domain,
   deploy target; wire the real `APP_URL` (currently `MY_APP_URL` placeholder).
   The session cookie is `Secure` in production, so HTTPS is required.
-- [ ] **Donor verification / anti-abuse** - identity or moderation pipeline,
-  possibly a captcha key. Accounts start `is_verified: false` since 0.0.31, but
-  nothing verifies them yet; anonymous fingerprint ownership remains spoofable
-  by anyone who knows the fingerprint value.
+- [ ] **CAPTCHA / advanced fraud scoring** - reports, blocking, phone
+  verification, moderation roles, and an audit trail now exist, but production
+  needs a shared risk provider and operational review procedures.
 
 ---
 

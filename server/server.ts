@@ -142,6 +142,9 @@ type User = {
   is_verified: boolean;
   phone_verified_at?: string;
   roles?: string[];
+  account_status?: 'ACTIVE' | 'SUSPENDED';
+  suspension_reason?: string;
+  blocked_user_ids?: string[];
   created_at?: string;
   donor_profile?: DonorProfile;
   recipient_profile?: RecipientProfile;
@@ -234,6 +237,43 @@ type AppNotification = {
   href: string;
   created_at: string;
   read_at?: string;
+};
+
+type ModerationReport = {
+  id: string;
+  reporter_id: string;
+  target_type: 'REQUEST' | 'COMMENT' | 'USER';
+  target_id: string;
+  reason: 'SPAM' | 'FRAUD' | 'PAYMENT_REQUEST' | 'HARASSMENT' | 'PRIVACY' | 'OTHER';
+  details?: string;
+  status: 'OPEN' | 'REVIEWING' | 'RESOLVED' | 'DISMISSED';
+  created_at: string;
+  updated_at: string;
+  assigned_to?: string;
+  resolution_note?: string;
+};
+
+type AuditEvent = {
+  id: string;
+  actor_id: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+};
+
+type SupportTicket = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  category: 'SUPPORT' | 'SAFETY' | 'PRIVACY' | 'PARTNERSHIP';
+  message: string;
+  status: 'OPEN' | 'IN_PROGRESS' | 'CLOSED';
+  created_at: string;
+  updated_at: string;
+  owner_id?: string;
 };
 
 type PublicUser = Omit<User, 'password'>;
@@ -339,6 +379,9 @@ let sessions: AuthSession[] = [];
 let otpChallenges: OtpChallenge[] = [];
 let donorResponses: DonorResponse[] = [];
 let notifications: AppNotification[] = [];
+let moderationReports: ModerationReport[] = [];
+let auditEvents: AuditEvent[] = [];
+let supportTickets: SupportTicket[] = [];
 
 async function initDbData() {
   users = await getAllFromTable('common_users');
@@ -347,7 +390,25 @@ async function initDbData() {
   otpChallenges = await getAllFromTable('common_otps');
   donorResponses = await getAllFromTable('common_responses');
   notifications = await getAllFromTable('common_notifications');
+  moderationReports = await getAllFromTable('common_reports');
+  auditEvents = await getAllFromTable('common_audit_events');
+  supportTickets = await getAllFromTable('common_support_tickets');
+  const adminPhone = normalizeBangladeshPhone(process.env.ADMIN_PHONE);
+  if (adminPhone) {
+    const admin = users.find(user => user.phone === adminPhone);
+    if (admin && !admin.roles?.includes('ADMIN')) {
+      admin.roles = [...new Set([...(admin.roles || ['MEMBER']), 'ADMIN'])];
+      await saveToTable('common_users', admin);
+    }
+  }
   await enforceExpiredRequests();
+}
+
+async function audit(actorId: string, action: string, targetType: string, targetId: string, metadata?: Record<string, unknown>) {
+  const event: AuditEvent = { id: uuidv4(), actor_id: actorId, action, target_type: targetType, target_id: targetId, metadata, created_at: new Date().toISOString() };
+  auditEvents.push(event);
+  await saveToTable('common_audit_events', event);
+  return event;
 }
 
 async function notify(userId: string, type: string, title: string, body: string, href: string) {
@@ -376,7 +437,7 @@ async function enforceExpiredRequests() {
   }
 }
 
-type DonorRecord = Pick<User, 'id' | 'name' | 'phone' | 'is_verified'> & { donor_profile: DonorProfile };
+type DonorRecord = Pick<User, 'id' | 'name' | 'phone' | 'is_verified' | 'blocked_user_ids'> & { donor_profile: DonorProfile };
 
 type DonorMatch = {
   user_id: string;
@@ -421,9 +482,11 @@ async function findDonorMatches(
   // The user table is authoritative for safety state. Searching it also allows
   // legitimate nearby donors across district boundaries to be considered.
   const dbMatches = users.filter((user): user is DonorRecord => Boolean(user.donor_profile));
+  const requester = users.find(user => user.id === excludeUserId);
 
   return dbMatches
     .filter(u => u.id !== excludeUserId)
+    .filter(u => !u.blocked_user_ids?.includes(excludeUserId) && !requester?.blocked_user_ids?.includes(u.id))
     .filter(u => donorGroups.includes(u.donor_profile.blood_group as BloodGroup))
     .filter(u => u.donor_profile.availability_status === 'AVAILABLE')
     .filter(u => donorEligibility(u.donor_profile).eligible)
@@ -499,7 +562,15 @@ function getCurrentAuth(req: express.Request) {
   if (!session) return null;
 
   const user = users.find(u => u.id === session.user_id);
-  return user ? { user, session } : null;
+  return user && user.account_status !== 'SUSPENDED' ? { user, session } : null;
+}
+
+function isOperator(user: User | undefined) {
+  return Boolean(user?.roles?.some(role => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role)));
+}
+
+function isAdmin(user: User | undefined) {
+  return Boolean(user?.roles?.includes('ADMIN'));
 }
 
 async function issueSession(userId: string) {
@@ -1128,6 +1199,165 @@ app.patch('/api/me/notifications/:id/read', async (req, res) => {
   res.json(notification);
 });
 
+app.post('/api/reports', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const target_type = req.body?.target_type;
+  const target_id = cleanString(req.body?.target_id, 100);
+  const reason = req.body?.reason;
+  const details = optionalCleanString(req.body?.details, 1000);
+  if (!auth) return res.status(401).json({ error: 'Log in to report abuse' });
+  if (!isOneOf(target_type, ['REQUEST', 'COMMENT', 'USER'] as const) || !target_id) return validationError(res, 'Valid report target is required');
+  if (!isOneOf(reason, ['SPAM', 'FRAUD', 'PAYMENT_REQUEST', 'HARASSMENT', 'PRIVACY', 'OTHER'] as const)) return validationError(res, 'Valid report reason is required');
+  const targetExists = target_type === 'REQUEST'
+    ? requests.some(item => item.id === target_id)
+    : target_type === 'USER'
+      ? users.some(item => item.id === target_id)
+      : requests.some(item => item.comments?.some(comment => comment.id === target_id));
+  if (!targetExists) return res.status(404).json({ error: 'Report target not found' });
+  if (moderationReports.some(report => report.reporter_id === auth.user.id && report.target_type === target_type && report.target_id === target_id && report.status === 'OPEN')) {
+    return res.status(409).json({ error: 'You already reported this item' });
+  }
+  const now = new Date().toISOString();
+  const report: ModerationReport = { id: uuidv4(), reporter_id: auth.user.id, target_type, target_id, reason, details, status: 'OPEN', created_at: now, updated_at: now };
+  moderationReports.push(report);
+  await saveToTable('common_reports', report);
+  await audit(auth.user.id, 'REPORT_CREATED', target_type, target_id, { reason });
+  res.status(201).json(report);
+});
+
+app.post('/api/me/blocks/:userId', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const target = users.find(user => user.id === req.params.userId);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!target || target.id === auth.user.id) return validationError(res, 'Valid user is required');
+  auth.user.blocked_user_ids = [...new Set([...(auth.user.blocked_user_ids || []), target.id])];
+  await saveToTable('common_users', auth.user);
+  await audit(auth.user.id, 'USER_BLOCKED', 'USER', target.id);
+  res.json({ success: true });
+});
+
+app.post('/api/support/tickets', async (req, res) => {
+  const name = cleanString(req.body?.name, 100);
+  const email = optionalCleanString(req.body?.email, 160);
+  const phone = req.body?.phone ? normalizeBangladeshPhone(req.body.phone) : undefined;
+  const category = req.body?.category;
+  const message = cleanString(req.body?.message, 2000);
+  if (!name || !message || !isOneOf(category, ['SUPPORT', 'SAFETY', 'PRIVACY', 'PARTNERSHIP'] as const)) return validationError(res, 'Name, category, and message are required');
+  if (!email && !phone) return validationError(res, 'Email or Bangladesh phone is required');
+  if (req.body?.phone && !phone) return validationError(res, 'Valid Bangladesh phone is required');
+  const now = new Date().toISOString();
+  const ticket: SupportTicket = { id: uuidv4(), name, email: email || undefined, phone, category, message, status: 'OPEN', created_at: now, updated_at: now };
+  supportTickets.push(ticket);
+  await saveToTable('common_support_tickets', ticket);
+  res.status(201).json({ id: ticket.id, status: ticket.status });
+});
+
+app.get('/api/admin/overview', (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  res.json({
+    counts: {
+      users: users.length,
+      verified_users: users.filter(user => user.is_verified).length,
+      suspended_users: users.filter(user => user.account_status === 'SUSPENDED').length,
+      active_requests: requests.filter(request => ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)).length,
+      open_reports: moderationReports.filter(report => report.status === 'OPEN').length,
+      open_tickets: supportTickets.filter(ticket => ticket.status !== 'CLOSED').length,
+      confirmed_donations: donorResponses.filter(response => response.status === 'DONATED' && response.donor_confirmed_at && response.requester_confirmed_at).length
+    },
+    reports: [...moderationReports].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100),
+    tickets: [...supportTickets].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100)
+  });
+});
+
+app.get('/api/admin/users', (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+  res.json(users.filter(user => !search || user.name.toLowerCase().includes(search) || user.phone.includes(search)).slice(0, 200).map(sanitizeUser));
+});
+
+app.patch('/api/admin/users/:id', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const target = users.find(user => user.id === req.params.id);
+  if (!auth || !isAdmin(auth.user)) return res.status(403).json({ error: 'Administrator access required' });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.id === auth.user.id && req.body?.account_status === 'SUSPENDED') return res.status(409).json({ error: 'You cannot suspend your own account' });
+  const accountStatus = req.body?.account_status;
+  const roles = req.body?.roles;
+  if (accountStatus !== undefined && !isOneOf(accountStatus, ['ACTIVE', 'SUSPENDED'] as const)) return validationError(res, 'Valid account status is required');
+  if (roles !== undefined && (!Array.isArray(roles) || roles.some(role => !['MEMBER', 'SUPPORT', 'MODERATOR', 'VERIFIER', 'ADMIN'].includes(role)))) return validationError(res, 'Valid roles are required');
+  if (accountStatus) target.account_status = accountStatus;
+  if (req.body?.suspension_reason !== undefined) target.suspension_reason = optionalCleanString(req.body.suspension_reason, 500) || undefined;
+  if (roles) target.roles = [...new Set(roles as string[])];
+  await saveToTable('common_users', target);
+  if (target.account_status === 'SUSPENDED') {
+    for (const session of sessions.filter(item => item.user_id === target.id && !item.revoked_at)) {
+      session.revoked_at = new Date().toISOString();
+      await saveToTable('common_sessions', session);
+    }
+    await removeDonorFromAllPartitions(target.id);
+  }
+  await audit(auth.user.id, 'USER_ADMIN_UPDATED', 'USER', target.id, { account_status: target.account_status, roles: target.roles });
+  res.json(sanitizeUser(target));
+});
+
+app.get('/api/admin/requests', (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  const status = typeof req.query.status === 'string' ? req.query.status : '';
+  res.json(requests.filter(request => !status || request.status === status).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 200));
+});
+
+app.patch('/api/admin/requests/:id', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const request = requests.find(item => item.id === req.params.id);
+  const status = req.body?.status;
+  const note = optionalCleanString(req.body?.note, 500);
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (!isOneOf(status, ['ACTIVE', 'REJECTED', 'CANCELLED'] as const)) return validationError(res, 'Valid moderation status is required');
+  request.status = status;
+  request.timeline = [...(request.timeline || []), { id: uuidv4(), type: `MODERATION_${status}`, actor_id: auth.user.id, created_at: new Date().toISOString(), note }];
+  await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+  await audit(auth.user.id, 'REQUEST_MODERATED', 'REQUEST', request.id, { status, note });
+  await notify(request.user_id, 'REQUEST_MODERATION', `Request ${status.toLowerCase()}`, note || 'An operator reviewed your request.', `/request/${request.id}`);
+  res.json(request);
+});
+
+app.patch('/api/admin/reports/:id', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const report = moderationReports.find(item => item.id === req.params.id);
+  const status = req.body?.status;
+  const note = optionalCleanString(req.body?.resolution_note, 1000);
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  if (!report) return res.status(404).json({ error: 'Report not found' });
+  if (!isOneOf(status, ['REVIEWING', 'RESOLVED', 'DISMISSED'] as const)) return validationError(res, 'Valid report status is required');
+  report.status = status; report.assigned_to = auth.user.id; report.resolution_note = note; report.updated_at = new Date().toISOString();
+  await saveToTable('common_reports', report);
+  await audit(auth.user.id, 'REPORT_UPDATED', 'REPORT', report.id, { status, note });
+  res.json(report);
+});
+
+app.patch('/api/admin/tickets/:id', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const ticket = supportTickets.find(item => item.id === req.params.id);
+  const status = req.body?.status;
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+  if (!isOneOf(status, ['OPEN', 'IN_PROGRESS', 'CLOSED'] as const)) return validationError(res, 'Valid ticket status is required');
+  ticket.status = status; ticket.owner_id = auth.user.id; ticket.updated_at = new Date().toISOString();
+  await saveToTable('common_support_tickets', ticket);
+  await audit(auth.user.id, 'SUPPORT_TICKET_UPDATED', 'SUPPORT_TICKET', ticket.id, { status });
+  res.json(ticket);
+});
+
+app.get('/api/admin/audit', (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth || !isAdmin(auth.user)) return res.status(403).json({ error: 'Administrator access required' });
+  res.json([...auditEvents].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 500));
+});
+
 // Public network stats for the landing page.
 app.get('/api/stats', async (req, res) => {
   await enforceExpiredRequests();
@@ -1262,15 +1492,19 @@ app.delete('/api/requests/:id/comments/:commentId', async (req, res) => {
   const request = requests.find(r => r.id === id);
   if (!request) return res.status(404).json({ error: 'Request not found' });
 
-  // Only author of the blood request can delete comments
-  if (request.user_id !== userId) {
-    return res.status(403).json({ error: 'Only the author of this request can delete a comment' });
+  const comment = request.comments?.find(item => item.id === commentId);
+  const auth = getCurrentAuth(req);
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  if (request.user_id !== userId && comment.user_id !== userId && !isOperator(auth?.user)) {
+    return res.status(403).json({ error: 'Only the comment author, request owner, or moderator can delete it' });
   }
 
   if (request.comments) {
     request.comments = request.comments.filter(c => c.id !== commentId);
     await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
   }
+
+  await audit(userId || auth?.user.id || 'anonymous', 'COMMENT_DELETED', 'COMMENT', commentId, { request_id: id });
 
   res.json({ success: true });
 });

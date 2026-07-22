@@ -23,6 +23,7 @@ import ProfileLayout from './pages/profile/ProfileLayout';
 import ProfileRequestsPage from './pages/profile/ProfileRequestsPage';
 import SecurityPage from './pages/profile/SecurityPage';
 import SettingsPage from './pages/profile/SettingsPage';
+import AdminPage from './pages/AdminPage';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/safety" element={<SafetyPage />} />
+            <Route path="/admin" element={user?.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role)) ? <AdminPage /> : <Navigate to="/" />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Layout>
