@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.39`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.40`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,13 +13,8 @@ delivered.
 
 ### Code quality / polish
 
-- [ ] **Persist request-feed filters in URL query params** so filtered views
-  are shareable/bookmarkable (`RequestsPage` in `src/App.tsx`).
-- [ ] **Request-feed pagination** once volume grows; `GET /api/requests`
-  currently returns everything.
-
-- [ ] **Pervasive `any` and no focused frontend tests.** Add focused types and
-  tests when touching those areas.
+- [ ] **Pervasive `any` and limited focused tests.** Blood-domain unit coverage
+  now exists; add API integration and browser coverage as workflows expand.
 - [ ] **In-memory rate limits / runtime cache reset on restart** and are
   per-process; move to a shared store (Redis or the datastore) once a real
   multi-instance deployment exists. Covers the auth/API limiters added in

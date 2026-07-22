@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build development image
+        run: docker compose --profile development build app-dev
+      - name: Type check
+        run: docker compose --profile development run --rm app-dev npm run lint
+      - name: Unit tests
+        run: docker compose --profile development run --rm app-dev npm test
+      - name: Production bundle
+        run: docker compose --profile development run --rm app-dev npm run build
+      - name: Dependency audit
+        run: docker compose --profile development run --rm app-dev npm audit --omit=dev --audit-level=high
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gitleaks/gitleaks-action@v2

@@ -256,8 +256,14 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load requests');
   },
 
-  async getRequests() {
-    const res = await fetch(`${API_BASE}/requests`, { headers: getHeaders() });
+  async getRequests(params: { blood_group?: string; district?: string; urgent?: boolean; page?: number; limit?: number } = {}) {
+    const query = new URLSearchParams();
+    if (params.blood_group) query.set('blood_group', params.blood_group);
+    if (params.district) query.set('district', params.district);
+    if (params.urgent) query.set('urgent', 'true');
+    if (params.page) query.set('page', String(params.page));
+    if (params.limit) query.set('limit', String(params.limit));
+    const res = await fetch(`${API_BASE}/requests?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load requests');
   },
 

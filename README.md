@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.39`
+Current version: `0.0.40`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -58,5 +58,14 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   tickets at `/admin`; administrative actions are audited.
 - Members can recover passwords by verified SMS, inspect and revoke signed-in
   devices, download a server-side data export, and anonymize their account.
+- Public requests use server-side filters and bounded pagination with URL-based
+  filter state. `/health`, `/ready`, and Prometheus-format `/metrics` support
+  production probes and monitoring.
 
 The datastore starts empty in every environment; no demo data is generated.
+
+## Validation
+
+- Type check: `docker compose --profile development run --rm app-dev npm run lint`
+- Unit tests: `docker compose --profile development run --rm app-dev npm test`
+- Bundle: `docker compose --profile development run --rm app-dev npm run build`

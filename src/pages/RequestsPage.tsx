@@ -1,25 +1,33 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Heart, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, Users, Zap } from 'lucide-react';
-import { api, BROWSER_FINGERPRINT } from '../lib/api';
-import { BLOOD_GROUPS, compatibleDonorsFor, DONATION_INTERVAL_DAYS, getEligibility, getUrgency, URGENCY_ORDER } from '../lib/blood';
-import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
+import { Activity, ChevronLeft, ChevronRight, Clock, Filter, MapPin, MessageCircle } from 'lucide-react';
+import { api } from '../lib/api';
+import { BLOOD_GROUPS } from '../lib/blood';
+import { BD_LOCATION_NAMES } from '../lib/locations';
 import { cn } from '../lib/utils';
 import { UrgencyBadge } from '../components/UrgencyBadge';
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [groupFilter, setGroupFilter] = useState('');
-  const [districtFilter, setDistrictFilter] = useState('');
-  const [urgentOnly, setUrgentOnly] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const groupFilter = searchParams.get('blood_group') || '';
+  const districtFilter = searchParams.get('district') || '';
+  const urgentOnly = searchParams.get('urgent') === 'true';
+  const page = Math.max(1, Number(searchParams.get('page')) || 1);
+  const [pagination, setPagination] = useState({ page: 1, total: 0, pages: 1 });
+
+  const updateFilter = (key: string, value: string) => {
+    const next = new URLSearchParams(searchParams); if (value) next.set(key, value); else next.delete(key); if (key !== 'page') next.delete('page'); setSearchParams(next);
+  };
 
   useEffect(() => {
     async function loadRequests() {
       try {
-        const data = await api.getRequests();
-        setRequests(data);
+        setLoading(true);
+        const data = await api.getRequests({ blood_group: groupFilter, district: districtFilter, urgent: urgentOnly, page, limit: 20 });
+        setRequests(data.items); setPagination(data.pagination);
       } catch (e) {
         console.error(e);
       } finally {
@@ -27,19 +35,7 @@ export default function RequestsPage() {
       }
     }
     loadRequests();
-  }, []);
-
-  const filtered = useMemo(() => {
-    return requests
-      .filter(r => !groupFilter || r.blood_group === groupFilter)
-      .filter(r => !districtFilter || r.location.area_name === districtFilter)
-      .filter(r => !urgentOnly || getUrgency(r.needed_by) !== 'SCHEDULED')
-      .sort((a, b) => {
-        const urgencyDiff = URGENCY_ORDER[getUrgency(a.needed_by)] - URGENCY_ORDER[getUrgency(b.needed_by)];
-        if (urgencyDiff !== 0) return urgencyDiff;
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      });
-  }, [requests, groupFilter, districtFilter, urgentOnly]);
+  }, [groupFilter, districtFilter, urgentOnly, page]);
 
   const hasFilters = Boolean(groupFilter || districtFilter || urgentOnly);
 
@@ -56,7 +52,7 @@ export default function RequestsPage() {
         </span>
         <select
           value={groupFilter}
-          onChange={e => setGroupFilter(e.target.value)}
+          onChange={e => updateFilter('blood_group', e.target.value)}
           className="px-4 py-2.5 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary font-bold text-sm text-slate-700 outline-none appearance-none cursor-pointer"
         >
           <option value="">All groups</option>
@@ -64,14 +60,14 @@ export default function RequestsPage() {
         </select>
         <select
           value={districtFilter}
-          onChange={e => setDistrictFilter(e.target.value)}
+          onChange={e => updateFilter('district', e.target.value)}
           className="px-4 py-2.5 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary font-bold text-sm text-slate-700 outline-none appearance-none cursor-pointer"
         >
           <option value="">All districts</option>
           {BD_LOCATION_NAMES.map(loc => <option key={loc} value={loc}>{loc}</option>)}
         </select>
         <button
-          onClick={() => setUrgentOnly(!urgentOnly)}
+          onClick={() => updateFilter('urgent', urgentOnly ? '' : 'true')}
           className={cn(
             'px-4 py-2.5 rounded-xl font-bold text-sm transition-colors',
             urgentOnly ? 'bg-red-600 text-white' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
@@ -81,7 +77,7 @@ export default function RequestsPage() {
         </button>
         {hasFilters && (
           <button
-            onClick={() => { setGroupFilter(''); setDistrictFilter(''); setUrgentOnly(false); }}
+            onClick={() => setSearchParams({})}
             className="px-3 py-2.5 text-sm font-bold text-primary hover:underline"
           >
             Clear
@@ -89,7 +85,7 @@ export default function RequestsPage() {
         )}
         {!loading && (
           <span className="ml-auto text-sm font-semibold text-slate-400">
-            {filtered.length} of {requests.length} request{requests.length === 1 ? '' : 's'}
+            {requests.length} of {pagination.total} request{pagination.total === 1 ? '' : 's'}
           </span>
         )}
       </div>
@@ -106,7 +102,7 @@ export default function RequestsPage() {
             </div>
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : requests.length === 0 ? (
         <div className="theme-card p-12 text-center border border-slate-100 shadow-sm">
           <Activity className="w-12 h-12 text-slate-300 mx-auto mb-4" />
           <p className="text-slate-600 font-bold">
@@ -118,7 +114,7 @@ export default function RequestsPage() {
         </div>
       ) : (
         <div className="grid gap-4">
-          {filtered.map(req => (
+          {requests.map(req => (
             <div key={req.id} className="theme-card p-6 flex flex-col md:flex-row md:items-center gap-6 hover:border-rose-200 border border-transparent transition-colors shadow-sm">
               <div className="flex items-center gap-6 flex-1">
                 <div className="w-16 h-16 rounded-2xl overflow-hidden bg-rose-50 flex-shrink-0 flex items-center justify-center text-primary text-2xl font-extrabold shadow-sm border border-rose-100">
@@ -154,7 +150,7 @@ export default function RequestsPage() {
           ))}
         </div>
       )}
+      {pagination.pages > 1 && <nav aria-label="Request pages" className="flex justify-center items-center gap-3"><button disabled={page <= 1} onClick={() => updateFilter('page', String(page - 1))} className="p-3 border rounded-xl disabled:opacity-40"><ChevronLeft className="w-4 h-4" /></button><span className="text-sm font-bold">Page {page} of {pagination.pages}</span><button disabled={page >= pagination.pages} onClick={() => updateFilter('page', String(page + 1))} className="p-3 border rounded-xl disabled:opacity-40"><ChevronRight className="w-4 h-4" /></button></nav>}
     </div>
   );
 }
-

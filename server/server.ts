@@ -27,6 +27,8 @@ const SESSION_COOKIE = 'drop_session';
 // (e.g. "anon") can't collide with comment author ids or claim ownership.
 const MIN_FINGERPRINT_LENGTH = 16;
 const BCRYPT_ROUNDS = 10;
+const STARTED_AT = Date.now();
+let isReady = false;
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
 type BloodGroup = (typeof BLOOD_GROUPS)[number];
 // For each recipient group, the donor groups whose blood they can receive.
@@ -441,6 +443,19 @@ async function enforceExpiredRequests() {
   }
 }
 
+async function enforceStaleAvailability() {
+  const cutoff = Date.now() - AVAILABILITY_TTL_DAYS * 86_400_000;
+  for (const user of users.filter(item => item.donor_profile?.availability_status === 'AVAILABLE')) {
+    const confirmed = user.donor_profile?.availability_confirmed_at ? new Date(user.donor_profile.availability_confirmed_at).getTime() : 0;
+    if (confirmed >= cutoff) continue;
+    user.donor_profile!.availability_status = 'NOT_AVAILABLE';
+    user.donor_profile!.availability_history = [...(user.donor_profile!.availability_history || []), { status: 'NOT_AVAILABLE', changed_at: new Date().toISOString() }];
+    await saveToTable('common_users', user);
+    await removeDonorFromAllPartitions(user.id);
+    await notify(user.id, 'AVAILABILITY_EXPIRED', 'Availability paused', 'Reconfirm your availability before receiving new invitations.', '/profile/donor');
+  }
+}
+
 type DonorRecord = Pick<User, 'id' | 'name' | 'phone' | 'is_verified' | 'blocked_user_ids'> & { donor_profile: DonorProfile };
 
 type DonorMatch = {
@@ -646,6 +661,17 @@ app.get('/api/config/public', (_req, res) => {
     availability_ttl_days: AVAILABILITY_TTL_DAYS,
     match_radius_km: MATCH_RADIUS_KM
   });
+});
+
+app.get('/health', (_req, res) => res.json({ status: 'ok', uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000) }));
+app.get('/ready', (_req, res) => res.status(isReady ? 200 : 503).json({ status: isReady ? 'ready' : 'starting' }));
+app.get('/metrics', (_req, res) => {
+  res.type('text/plain').send([
+    '# HELP drop_users_total Registered user records', '# TYPE drop_users_total gauge', `drop_users_total ${users.length}`,
+    '# HELP drop_active_requests Active public blood requests', '# TYPE drop_active_requests gauge', `drop_active_requests ${requests.filter(item => ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(item.status)).length}`,
+    '# HELP drop_open_reports Open moderation reports', '# TYPE drop_open_reports gauge', `drop_open_reports ${moderationReports.filter(item => item.status === 'OPEN').length}`,
+    '# HELP drop_uptime_seconds Process uptime', '# TYPE drop_uptime_seconds gauge', `drop_uptime_seconds ${Math.floor((Date.now() - STARTED_AT) / 1000)}`
+  ].join('\n') + '\n');
 });
 
 app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
@@ -1476,10 +1502,20 @@ app.get('/api/stats', async (req, res) => {
 
 app.get('/api/requests', async (req, res) => {
   await enforceExpiredRequests();
+  const group = typeof req.query.blood_group === 'string' && BLOOD_GROUPS.includes(req.query.blood_group as BloodGroup) ? req.query.blood_group : '';
+  const district = cleanString(req.query.district, 100) || '';
+  const urgentOnly = req.query.urgent === 'true';
+  const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
+  const limit = Math.min(50, Math.max(1, Math.floor(Number(req.query.limit) || 20)));
   const sortedRequests = requests
     .filter(r => r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED')
+    .filter(r => !group || r.blood_group === group)
+    .filter(r => !district || r.location.area_name === district)
+    .filter(r => !urgentOnly || !r.needed_by || new Date(r.needed_by).getTime() - Date.now() <= 72 * 3_600_000)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  res.json(sortedRequests.map(publicRequestPayload));
+  const total = sortedRequests.length;
+  const items = sortedRequests.slice((page - 1) * limit, page * limit).map(publicRequestPayload);
+  res.json({ items, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
 });
 
 app.get('/api/requests/:id', async (req, res) => {
@@ -1646,6 +1682,14 @@ app.patch('/api/requests/:id/status', async (req, res) => {
 
 async function startServer() {
   await initDbData();
+  await enforceExpiredRequests();
+  await enforceStaleAvailability();
+  isReady = true;
+  const maintenanceTimer = setInterval(() => {
+    void enforceExpiredRequests();
+    void enforceStaleAvailability();
+  }, 5 * 60_000);
+  maintenanceTimer.unref();
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

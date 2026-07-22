@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.39`
+Current application version: `0.0.40`
 
 ## Overview
 
@@ -51,8 +51,8 @@ Routes:
 
 - `/` shows the landing and blood request flow, plus live network stats, a
   blood-compatibility chart, and a donor-eligibility FAQ.
-- `/requests` lists public blood requests with blood-group/district/urgency
-  filters, urgency badges, and urgent-first sorting.
+- `/requests` lists bounded pages of public blood requests with server-side
+  blood-group/district/urgency filters persisted in the URL.
 - `/request/:id` shows one request, donor matches, patient/contact details, and comments.
 - `/login` logs in an existing user.
 - `/register` verifies a Bangladesh mobile by OTP before creating an account.
@@ -167,7 +167,8 @@ API routes:
   request, report, ticket, and immutable audit operations.
 - `GET /api/stats` returns public network counts (registered/available donors,
   active/fulfilled requests) for the landing page.
-- `GET /api/requests` lists active, non-expired public blood requests without requester phone or contact details.
+- `GET /api/requests` lists active, non-expired public blood requests without
+  requester phone or contact details and returns bounded pagination metadata.
 - `GET /api/requests/:id` returns request details and donor matches. Contact
   details and donor phone numbers are included only for authenticated users or
   the request owner; `requester_phone` stays owner-only. Donor match records
@@ -257,6 +258,15 @@ Persistent Docker volumes:
 
 The production image runs as the unprivileged `node` user and owns
 `/data/lancedb`.
+
+Operational endpoints and jobs:
+
+- `/health` reports process liveness, `/ready` reports completed datastore
+  initialization, and `/metrics` exposes low-cardinality Prometheus gauges.
+- A five-minute background job expires overdue requests and automatically
+  pauses stale donor availability while creating an in-app reconfirmation notice.
+- `.github/workflows/ci.yml` runs Docker-based type checking, tests, bundle
+  creation, dependency audit, and secret scanning.
 
 ## Current Constraints
 
