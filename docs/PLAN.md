@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.36`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.37`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -44,8 +44,9 @@ These cannot be finished by editing code alone.
 - [ ] **Reviewed account hard-deletion workflow** - cascade removal across user,
   session, request, comment, and donor-partition records, define retention and
   abuse/audit handling, then enable the settings control.
-- [ ] **Push / email notifications** ("someone needs your blood type") - FCM/APNs
-  or SendGrid/SES + keys.
+- [ ] **External push / SMS / email notification delivery** - persisted in-app
+  notifications and invitations exist; FCM/APNs or a transactional provider
+  plus delivery receipts are still required for off-site alerts.
 - [ ] **Working contact form** - add a validated backend endpoint, abuse
   protection, monitored recipient, and transactional email provider. Until
   then, `/contact` uses honest `mailto:` links.

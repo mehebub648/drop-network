@@ -12,13 +12,13 @@ import VerifiedBadge from '../components/VerifiedBadge';
 export default function RequestDetailsPage({ user }: { user: any }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [data, setData] = useState<{ request: any, matches: any[] } | null>(null);
+  const [data, setData] = useState<{ request: any, matches: any[], responses?: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
   // UI States
-  const [revealedContacts, setRevealedContacts] = useState<Record<string, boolean>>({});
+  const [inviting, setInviting] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [anonName, setAnonName] = useState('');
@@ -133,6 +133,21 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       });
     } catch (err: any) {
       setActionMessage({ type: 'error', text: err.message || 'Failed to delete comment.' });
+    }
+  };
+
+  const inviteDonor = async (donorId: string) => {
+    if (!data) return;
+    setInviting(donorId);
+    setActionMessage(null);
+    try {
+      const response = await api.inviteDonor(data.request.id, donorId);
+      setData({ ...data, responses: [...(data.responses || []), response] });
+      setActionMessage({ type: 'success', text: 'Private invitation sent. Contact details remain hidden until the donor accepts.' });
+    } catch (error: any) {
+      setActionMessage({ type: 'error', text: error.message || 'Could not invite donor.' });
+    } finally {
+      setInviting('');
     }
   };
 
@@ -428,12 +443,10 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                     </div>
                   </div>
                 </div>
-                {!revealedContacts[m.user_id] && (
+                {!data.responses?.some(response => response.donor_id === m.user_id && !['DECLINED', 'CANCELLED', 'NO_SHOW'].includes(response.status)) && (
                   <div className="flex-shrink-0 md:w-32">
-                    <button onClick={() => {
-                      setActionMessage({ type: 'error', text: 'Use a private donor invitation instead of exposing contact details.' });
-                    }} className="w-full px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform hover:bg-slate-800 shadow-sm">
-                      Invite donor
+                    <button disabled={inviting === m.user_id} onClick={() => inviteDonor(m.user_id)} className="w-full px-4 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform hover:bg-slate-800 shadow-sm disabled:opacity-50">
+                      {inviting === m.user_id ? 'Sending…' : 'Invite donor'}
                     </button>
                   </div>
                 )}

@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.36`
+Current application version: `0.0.37`
 
 ## Overview
 
@@ -64,6 +64,8 @@ Routes:
 - `/profile/donor` manages blood group, district, availability, eligibility,
   and recent availability history.
 - `/profile/requests` filters and updates requests owned by the member.
+- `/profile/invitations` manages private invitations, donor responses, mutual
+  donation confirmation, purpose-limited contacts, and in-app notifications.
 - `/profile/history` adds, edits, and deletes validated donation records.
 - `/profile/security` changes the password after current-password verification.
 - `/profile/settings` stores device-local preferences and exports the current
@@ -138,6 +140,13 @@ API routes:
   refreshes donor partitions.
 - `POST /api/requests` creates a complete private draft for a verified owner;
   `POST /api/requests/:id/publish` records consent and activates it.
+- `POST /api/requests/:id/invitations` privately invites a currently eligible
+  matched donor without disclosing either party's phone.
+- `GET /api/me/invitations`, `PATCH /api/responses/:id`, and
+  `POST /api/responses/:id/confirm-donation` coordinate acceptance, arrival,
+  mutual confirmation, partial fulfillment, and donation history.
+- `GET /api/me/notifications` and its read endpoint provide persisted in-app
+  delivery; external SMS/push delivery remains provider work.
 - `GET /api/stats` returns public network counts (registered/available donors,
   active/fulfilled requests) for the landing page.
 - `GET /api/requests` lists active, non-expired public blood requests without requester phone or contact details.
@@ -159,6 +168,9 @@ Tables:
 - `common_users` stores user documents.
 - `common_requests` stores blood request documents.
 - `common_sessions` stores opaque auth session documents.
+- `common_otps` stores expiring hashed verification challenges.
+- `common_responses` stores private donor invitations and response state.
+- `common_notifications` stores per-user in-app notifications.
 - `donors_<district>_<blood_group>` stores searchable donor partitions.
 
 Records are stored as JSON strings in a `doc` field. LanceDB vectors use `[lng, lat]` so donor/request records can be searched by location.

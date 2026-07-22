@@ -18,6 +18,7 @@ import TermsPage from './pages/info/TermsPage';
 import AccountPage from './pages/profile/AccountPage';
 import DonorPage from './pages/profile/DonorPage';
 import HistoryPage from './pages/profile/HistoryPage';
+import InvitationsPage from './pages/profile/InvitationsPage';
 import ProfileLayout from './pages/profile/ProfileLayout';
 import ProfileRequestsPage from './pages/profile/ProfileRequestsPage';
 import SecurityPage from './pages/profile/SecurityPage';
@@ -72,6 +73,7 @@ export default function App() {
               <Route path="account" element={<AccountPage user={user} onUpdate={fetchUser} />} />
               <Route path="donor" element={<DonorPage user={user} onUpdate={fetchUser} />} />
               <Route path="requests" element={<ProfileRequestsPage />} />
+              <Route path="invitations" element={<InvitationsPage user={user} />} />
               <Route path="history" element={<HistoryPage user={user} onUpdate={fetchUser} />} />
               <Route path="security" element={<SecurityPage />} />
               <Route path="settings" element={<SettingsPage user={user} />} />

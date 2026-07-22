@@ -210,6 +210,32 @@ type OtpChallenge = {
   verification_expires_at?: string;
 };
 
+const RESPONSE_STATUSES = ['INVITED', 'ACCEPTED', 'DECLINED', 'QUESTION', 'ARRIVED', 'DONATED', 'CANCELLED', 'NO_SHOW'] as const;
+type DonorResponse = {
+  id: string;
+  request_id: string;
+  donor_id: string;
+  requester_id: string;
+  status: (typeof RESPONSE_STATUSES)[number];
+  units: number;
+  message?: string;
+  created_at: string;
+  updated_at: string;
+  donor_confirmed_at?: string;
+  requester_confirmed_at?: string;
+};
+
+type AppNotification = {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string;
+  href: string;
+  created_at: string;
+  read_at?: string;
+};
+
 type PublicUser = Omit<User, 'password'>;
 
 // Never serialize the password hash to clients.
@@ -311,13 +337,26 @@ let users: User[] = [];
 let requests: BloodRequest[] = [];
 let sessions: AuthSession[] = [];
 let otpChallenges: OtpChallenge[] = [];
+let donorResponses: DonorResponse[] = [];
+let notifications: AppNotification[] = [];
 
 async function initDbData() {
   users = await getAllFromTable('common_users');
   requests = await getAllFromTable('common_requests');
   sessions = await getAllFromTable('common_sessions');
   otpChallenges = await getAllFromTable('common_otps');
+  donorResponses = await getAllFromTable('common_responses');
+  notifications = await getAllFromTable('common_notifications');
   await enforceExpiredRequests();
+}
+
+async function notify(userId: string, type: string, title: string, body: string, href: string) {
+  const notification: AppNotification = {
+    id: uuidv4(), user_id: userId, type, title, body, href, created_at: new Date().toISOString()
+  };
+  notifications.push(notification);
+  await saveToTable('common_notifications', notification);
+  return notification;
 }
 
 async function enforceExpiredRequests() {
@@ -950,6 +989,145 @@ app.post('/api/requests/:id/publish', async (req, res) => {
   res.json({ request, matches: await findDonorMatches(request.location, request.blood_group, request.user_id, false) });
 });
 
+function responsePayload(response: DonorResponse, viewerId: string) {
+  const request = requests.find(item => item.id === response.request_id);
+  const donor = users.find(user => user.id === response.donor_id);
+  const requester = users.find(user => user.id === response.requester_id);
+  const contactAllowed = ['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status) &&
+    (viewerId === response.donor_id || viewerId === response.requester_id);
+  return {
+    ...response,
+    request: request ? {
+      id: request.id, blood_group: request.blood_group, blood_component: request.blood_component,
+      units_required: request.units_required, hospital_name: request.hospital_name,
+      hospital_address: request.hospital_address, ward: request.ward,
+      location: request.location, needed_by: request.needed_by, status: request.status
+    } : null,
+    donor: donor ? { id: donor.id, name: donor.name, blood_group: donor.donor_profile?.blood_group, is_verified: donor.is_verified } : null,
+    requester: requester ? { id: requester.id, name: requester.name, is_verified: requester.is_verified } : null,
+    ...(contactAllowed ? {
+      donor_phone: donor?.phone,
+      requester_contacts: request?.contacts || []
+    } : {})
+  };
+}
+
+async function recomputeRequestProgress(request: BloodRequest) {
+  const related = donorResponses.filter(response => response.request_id === request.id);
+  request.units_pledged = related
+    .filter(response => ['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status))
+    .reduce((sum, response) => sum + response.units, 0);
+  request.units_confirmed = related
+    .filter(response => response.status === 'DONATED' && response.donor_confirmed_at && response.requester_confirmed_at)
+    .reduce((sum, response) => sum + response.units, 0);
+  if ((request.units_confirmed || 0) >= (request.units_required || 1)) request.status = 'FULFILLED';
+  else if ((request.units_pledged || 0) > 0) request.status = 'PARTIALLY_FULFILLED';
+  else if (!['CANCELLED', 'EXPIRED', 'REJECTED', 'DRAFT'].includes(request.status)) request.status = 'ACTIVE';
+  await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+}
+
+app.post('/api/requests/:id/invitations', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const request = requests.find(item => item.id === req.params.id);
+  const donorId = cleanString(req.body?.donor_id, 80);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can invite donors' });
+  if (!['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)) return res.status(409).json({ error: 'This request is not accepting responses' });
+  if (!donorId) return validationError(res, 'Donor is required');
+  if (donorResponses.some(response => response.request_id === request.id && response.donor_id === donorId && !['DECLINED', 'CANCELLED', 'NO_SHOW'].includes(response.status))) {
+    return res.status(409).json({ error: 'This donor already has an active invitation' });
+  }
+  const matches = await findDonorMatches(request.location, request.blood_group, request.user_id, false);
+  if (!matches.some(match => match.user_id === donorId)) return res.status(409).json({ error: 'Donor is no longer an eligible match' });
+  const now = new Date().toISOString();
+  const response: DonorResponse = {
+    id: uuidv4(), request_id: request.id, donor_id: donorId, requester_id: request.user_id,
+    status: 'INVITED', units: 1, created_at: now, updated_at: now
+  };
+  donorResponses.push(response);
+  await saveToTable('common_responses', response);
+  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group} ${request.blood_component?.replaceAll('_', ' ').toLowerCase()} is needed at ${request.hospital_name}.`, `/profile/invitations`);
+  res.status(201).json(responsePayload(response, auth.user.id));
+});
+
+app.get('/api/me/invitations', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const responses = donorResponses
+    .filter(response => response.donor_id === auth.user.id || response.requester_id === auth.user.id)
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  res.json(responses.map(response => responsePayload(response, auth.user.id)));
+});
+
+app.patch('/api/responses/:id', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const response = donorResponses.find(item => item.id === req.params.id);
+  const status = req.body?.status;
+  const message = optionalCleanString(req.body?.message, 500);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!response) return res.status(404).json({ error: 'Response not found' });
+  if (response.donor_id !== auth.user.id) return res.status(403).json({ error: 'Only the invited donor can respond' });
+  if (!isOneOf(status, ['ACCEPTED', 'DECLINED', 'QUESTION', 'ARRIVED', 'DONATED', 'CANCELLED'] as const)) return validationError(res, 'Valid donor response is required');
+  if (status === 'QUESTION' && !message) return validationError(res, 'A question is required');
+  if (status === 'DONATED' && !['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status)) return res.status(409).json({ error: 'Accept the request before reporting a donation' });
+  response.status = status;
+  response.message = message || response.message;
+  response.updated_at = new Date().toISOString();
+  if (status === 'DONATED') response.donor_confirmed_at = response.updated_at;
+  await saveToTable('common_responses', response);
+  const request = requests.find(item => item.id === response.request_id);
+  if (request) await recomputeRequestProgress(request);
+  await notify(response.requester_id, 'DONOR_RESPONSE', `Donor response: ${status.toLowerCase()}`, `${auth.user.name} updated their response.`, `/request/${response.request_id}`);
+  res.json(responsePayload(response, auth.user.id));
+});
+
+app.post('/api/responses/:id/confirm-donation', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const response = donorResponses.find(item => item.id === req.params.id);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!response) return res.status(404).json({ error: 'Response not found' });
+  if (response.requester_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can confirm receipt' });
+  if (!response.donor_confirmed_at) return res.status(409).json({ error: 'The donor must report the donation first' });
+  if (!response.requester_confirmed_at) {
+    response.requester_confirmed_at = new Date().toISOString();
+    response.status = 'DONATED';
+    response.updated_at = response.requester_confirmed_at;
+    await saveToTable('common_responses', response);
+    const donor = users.find(user => user.id === response.donor_id);
+    const request = requests.find(item => item.id === response.request_id);
+    if (donor?.donor_profile && request) {
+      const date = response.requester_confirmed_at.slice(0, 10);
+      donor.donor_profile.last_donation_date = date;
+      donor.donor_profile.availability_status = 'NOT_AVAILABLE';
+      donor.donor_profile.donation_history = [...(donor.donor_profile.donation_history || []), {
+        id: response.id, date, organization: request.hospital_name || 'Receiving hospital'
+      }];
+      await saveToTable('common_users', donor);
+      await removeDonorFromAllPartitions(donor.id);
+      await recomputeRequestProgress(request);
+      await notify(donor.id, 'DONATION_CONFIRMED', 'Donation confirmed', `Your donation at ${request.hospital_name} was confirmed.`, '/profile/history');
+    }
+  }
+  res.json(responsePayload(response, auth.user.id));
+});
+
+app.get('/api/me/notifications', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  res.json(notifications.filter(item => item.user_id === auth.user.id).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100));
+});
+
+app.patch('/api/me/notifications/:id/read', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const notification = notifications.find(item => item.id === req.params.id && item.user_id === auth.user.id);
+  if (!notification) return res.status(404).json({ error: 'Notification not found' });
+  notification.read_at = new Date().toISOString();
+  await saveToTable('common_notifications', notification);
+  res.json(notification);
+});
+
 // Public network stats for the landing page.
 app.get('/api/stats', async (req, res) => {
   await enforceExpiredRequests();
@@ -980,6 +1158,11 @@ app.get('/api/requests/:id', async (req, res) => {
 
   const requester = users.find(u => u.id === request.user_id);
   const requestOwner = isRequestOwner(request, req);
+  const viewerId = getCurrentAuth(req)?.user.id || '';
+  const viewerResponses = donorResponses.filter(response =>
+    response.request_id === request.id && (response.requester_id === viewerId || response.donor_id === viewerId)
+  );
+  const acceptedParticipant = viewerResponses.some(response => ['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status));
   if (!requestOwner && !['ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED'].includes(request.status)) {
     return res.status(404).json({ error: 'Not found' });
   }
@@ -988,13 +1171,13 @@ app.get('/api/requests/:id', async (req, res) => {
   const { contacts, patient_name, patient_reference, ...safeRequest } = request;
   const enrichedRequest = {
     ...safeRequest,
-    ...(requestOwner ? { contacts: contacts || [], patient_name, patient_reference, requester_phone: requester?.phone } : {}),
+    ...((requestOwner || acceptedParticipant) ? { contacts: contacts || [], patient_name, patient_reference, requester_phone: requester?.phone } : {}),
     requester_name: request.requester_name || requester?.name || 'Verified requester'
   };
 
   const matches = requestOwner ? await findDonorMatches(request.location, request.blood_group, request.user_id, false) : [];
 
-  res.json({ request: enrichedRequest, matches });
+  res.json({ request: enrichedRequest, matches, responses: viewerResponses.map(response => responsePayload(response, viewerId)) });
 });
 
 app.patch('/api/requests/:id/details', async (req, res) => {

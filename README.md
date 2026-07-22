@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.36`
+Current version: `0.0.37`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -50,5 +50,8 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 - Creating a public request requires a verified account, complete hospital and
   patient-reference details, a future required time, a verified contact, and
   explicit review/consent before publication.
+- Requesters invite eligible donors privately. Donors can accept, decline,
+  report arrival/donation, and reveal coordination contacts only after
+  acceptance. A donation counts only after requester confirmation.
 
 The datastore starts empty in every environment; no demo data is generated.

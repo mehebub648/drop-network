@@ -70,3 +70,16 @@ body {
 }
 
 .primary-button:disabled { opacity: 0.5; }
+
+.response-primary, .response-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.75rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+.response-primary { background: #0f172a; color: white; }
+.response-secondary { background: #f1f5f9; color: #334155; }
+.response-primary:disabled, .response-secondary:disabled { opacity: 0.5; }

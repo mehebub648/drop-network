@@ -128,6 +128,42 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to publish request');
   },
 
+  async inviteDonor(requestId: string, donorId: string) {
+    const res = await fetch(`${API_BASE}/requests/${requestId}/invitations`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ donor_id: donorId })
+    });
+    return readJsonOrThrow(res, 'Failed to invite donor');
+  },
+
+  async getInvitations() {
+    const res = await fetch(`${API_BASE}/me/invitations`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load donor responses');
+  },
+
+  async updateDonorResponse(id: string, status: string, message?: string) {
+    const res = await fetch(`${API_BASE}/responses/${id}`, {
+      method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ status, message })
+    });
+    return readJsonOrThrow(res, 'Failed to update donor response');
+  },
+
+  async confirmDonation(id: string) {
+    const res = await fetch(`${API_BASE}/responses/${id}/confirm-donation`, {
+      method: 'POST', headers: getHeaders(), body: '{}'
+    });
+    return readJsonOrThrow(res, 'Failed to confirm donation');
+  },
+
+  async getNotifications() {
+    const res = await fetch(`${API_BASE}/me/notifications`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load notifications');
+  },
+
+  async markNotificationRead(id: string) {
+    const res = await fetch(`${API_BASE}/me/notifications/${id}/read`, { method: 'PATCH', headers: getHeaders(), body: '{}' });
+    return readJsonOrThrow(res, 'Failed to mark notification read');
+  },
+
   async getMyRequests() {
     const res = await fetch(`${API_BASE}/me/requests`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load requests');
