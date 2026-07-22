@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.41`
+Current application version: `0.0.42`
 
 ## Overview
 
@@ -76,6 +76,8 @@ Routes:
   tickets to the protected operations queue.
 - `/admin` gives authorized support, moderator, verifier, and administrator
   roles an operational dashboard for reports, tickets, and request review.
+- `/partners` lists verified hospitals, blood banks, NGOs, and current donation
+  campaigns and accepts verified-member organization applications.
 - `/privacy` documents current data collection, visibility, storage, cookies,
   local ownership fingerprints, and verification limitations.
 - `/terms` sets the acceptable-use and service-disclaimer draft.
@@ -131,6 +133,7 @@ Main data types:
 - `AuthSession`
 - `DonorResponse` and `AppNotification`
 - `ModerationReport`, `SupportTicket`, and `AuditEvent`
+- `Organization`, including verification state and public campaigns
 
 API routes:
 
@@ -171,6 +174,8 @@ API routes:
   `POST /api/support/tickets` provide member safety and public support entry
   points. Admin routes under `/api/admin` expose role-gated overview, user,
   request, report, ticket, and immutable audit operations.
+- Public and protected `/api/organizations` routes support directory listing,
+  applications, operator review, role assignment, and campaign publication.
 - `GET /api/stats` returns public network counts (registered/available donors,
   active/fulfilled requests) for the landing page.
 - `GET /api/requests` lists active, non-expired public blood requests without
@@ -198,6 +203,8 @@ Tables:
 - `common_notifications` stores per-user in-app notifications.
 - `common_reports`, `common_support_tickets`, and `common_audit_events` store
   moderation operations and their audit trail.
+- `common_organizations` stores partner applications, verification state, and
+  campaign records.
 - `donors_<district>_<blood_group>` stores searchable donor partitions.
 
 Records are stored as JSON strings in a `doc` field. LanceDB vectors use `[lng, lat]` so donor/request records can be searched by location.

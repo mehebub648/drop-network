@@ -8,7 +8,8 @@ const metadata: Record<string, [string, string]> = {
   '/register': ['Become a donor — Drop Network', 'Join the Bangladesh community blood donor network with a verified phone.'],
   '/about': ['About Drop Network', 'How Drop connects requesters with compatible community donors.'],
   '/safety': ['Blood donation safety — Drop Network', 'Safety guidance for community blood donor coordination.'],
-  '/contact': ['Contact Drop Network operations', 'Submit support, safety, privacy, or partnership questions.']
+  '/contact': ['Contact Drop Network operations', 'Submit support, safety, privacy, or partnership questions.'],
+  '/partners': ['Verified blood donation partners — Drop Network', 'Browse reviewed hospitals, blood banks, NGOs, and public donation campaigns.']
 };
 
 export default function RouteMetadata() {

@@ -26,6 +26,7 @@ import SettingsPage from './pages/profile/SettingsPage';
 import AdminPage from './pages/AdminPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import RouteMetadata from './components/RouteMetadata';
+import PartnersPage from './pages/PartnersPage';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -88,6 +89,7 @@ export default function App() {
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/safety" element={<SafetyPage />} />
+            <Route path="/partners" element={<PartnersPage user={user} />} />
             <Route path="/admin" element={user?.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role)) ? <AdminPage /> : <Navigate to="/" />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

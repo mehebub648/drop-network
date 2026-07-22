@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.41`
+Current version: `0.0.42`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -64,6 +64,8 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 - The app ships an installable offline shell, route-specific SEO/social
   metadata, a generated sitemap/robots policy, accessible focus behavior, and
   a persistent English/Bangla shared-navigation switch.
+- Verified hospitals, blood banks, and NGOs can be reviewed by operators,
+  listed in the public partner directory, and publish donation campaigns.
 
 The datastore starts empty in every environment; no demo data is generated.
 

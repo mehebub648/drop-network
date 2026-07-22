@@ -282,6 +282,23 @@ type SupportTicket = {
   owner_id?: string;
 };
 
+type Organization = {
+  id: string;
+  owner_id: string;
+  name: string;
+  type: 'HOSPITAL' | 'BLOOD_BANK' | 'NGO';
+  district: string;
+  address: string;
+  phone: string;
+  website?: string;
+  registration_reference: string;
+  status: 'PENDING' | 'VERIFIED' | 'REJECTED' | 'SUSPENDED';
+  verification_note?: string;
+  created_at: string;
+  updated_at: string;
+  campaigns?: Array<{ id: string; title: string; location: string; starts_at: string; ends_at: string; status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED' }>;
+};
+
 type PublicUser = Omit<User, 'password'>;
 
 // Never serialize the password hash to clients.
@@ -388,6 +405,7 @@ let notifications: AppNotification[] = [];
 let moderationReports: ModerationReport[] = [];
 let auditEvents: AuditEvent[] = [];
 let supportTickets: SupportTicket[] = [];
+let organizations: Organization[] = [];
 
 async function initDbData() {
   users = await getAllFromTable('common_users');
@@ -399,6 +417,7 @@ async function initDbData() {
   moderationReports = await getAllFromTable('common_reports');
   auditEvents = await getAllFromTable('common_audit_events');
   supportTickets = await getAllFromTable('common_support_tickets');
+  organizations = await getAllFromTable('common_organizations');
   const adminPhone = normalizeBangladeshPhone(process.env.ADMIN_PHONE);
   if (adminPhone) {
     const admin = users.find(user => user.phone === adminPhone);
@@ -681,7 +700,7 @@ app.get('/robots.txt', (req, res) => {
 
 app.get('/sitemap.xml', (req, res) => {
   const origin = `${req.protocol}://${req.get('host')}`;
-  const routes = ['', '/requests', '/register', '/about', '/contact', '/safety', '/privacy', '/terms'];
+  const routes = ['', '/requests', '/register', '/partners', '/about', '/contact', '/safety', '/privacy', '/terms'];
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${origin}${route}</loc></url>`).join('')}</urlset>`);
 });
 
@@ -1405,7 +1424,8 @@ app.get('/api/admin/overview', (req, res) => {
       active_requests: requests.filter(request => ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)).length,
       open_reports: moderationReports.filter(report => report.status === 'OPEN').length,
       open_tickets: supportTickets.filter(ticket => ticket.status !== 'CLOSED').length,
-      confirmed_donations: donorResponses.filter(response => response.status === 'DONATED' && response.donor_confirmed_at && response.requester_confirmed_at).length
+      confirmed_donations: donorResponses.filter(response => response.status === 'DONATED' && response.donor_confirmed_at && response.requester_confirmed_at).length,
+      verified_organizations: organizations.filter(item => item.status === 'VERIFIED').length
     },
     reports: [...moderationReports].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100),
     tickets: [...supportTickets].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100)
@@ -1428,7 +1448,7 @@ app.patch('/api/admin/users/:id', async (req, res) => {
   const accountStatus = req.body?.account_status;
   const roles = req.body?.roles;
   if (accountStatus !== undefined && !isOneOf(accountStatus, ['ACTIVE', 'SUSPENDED'] as const)) return validationError(res, 'Valid account status is required');
-  if (roles !== undefined && (!Array.isArray(roles) || roles.some(role => !['MEMBER', 'SUPPORT', 'MODERATOR', 'VERIFIER', 'ADMIN'].includes(role)))) return validationError(res, 'Valid roles are required');
+  if (roles !== undefined && (!Array.isArray(roles) || roles.some(role => !['MEMBER', 'SUPPORT', 'MODERATOR', 'VERIFIER', 'ORGANIZATION_OPERATOR', 'ADMIN'].includes(role)))) return validationError(res, 'Valid roles are required');
   if (accountStatus) target.account_status = accountStatus;
   if (req.body?.suspension_reason !== undefined) target.suspension_reason = optionalCleanString(req.body.suspension_reason, 500) || undefined;
   if (roles) target.roles = [...new Set(roles as string[])];
@@ -1498,6 +1518,72 @@ app.get('/api/admin/audit', (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth || !isAdmin(auth.user)) return res.status(403).json({ error: 'Administrator access required' });
   res.json([...auditEvents].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 500));
+});
+
+app.get('/api/organizations', (_req, res) => {
+  res.json(organizations.filter(item => item.status === 'VERIFIED').map(item => ({
+    id: item.id, name: item.name, type: item.type, district: item.district, address: item.address,
+    phone: item.phone, website: item.website,
+    campaigns: (item.campaigns || []).filter(campaign => campaign.status === 'PUBLISHED' && new Date(campaign.ends_at).getTime() >= Date.now())
+  })));
+});
+
+app.post('/api/organizations', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth || !auth.user.is_verified) return res.status(403).json({ error: 'Verified account required' });
+  if (organizations.some(item => item.owner_id === auth.user.id && ['PENDING', 'VERIFIED'].includes(item.status))) return res.status(409).json({ error: 'You already have an active organization application' });
+  const name = cleanString(req.body?.name, 160);
+  const type = req.body?.type;
+  const district = cleanString(req.body?.district, 100);
+  const address = cleanString(req.body?.address, 300);
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const website = optionalCleanString(req.body?.website, 300) || undefined;
+  const registration_reference = cleanString(req.body?.registration_reference, 160);
+  if (!name || !district || !address || !phone || !registration_reference || !isOneOf(type, ['HOSPITAL', 'BLOOD_BANK', 'NGO'] as const)) return validationError(res, 'Complete valid organization details are required');
+  const now = new Date().toISOString();
+  const organization: Organization = { id: uuidv4(), owner_id: auth.user.id, name, type, district, address, phone, website, registration_reference, status: 'PENDING', created_at: now, updated_at: now, campaigns: [] };
+  organizations.push(organization); await saveToTable('common_organizations', organization);
+  await audit(auth.user.id, 'ORGANIZATION_APPLIED', 'ORGANIZATION', organization.id);
+  res.status(201).json(organization);
+});
+
+app.get('/api/admin/organizations', (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  res.json(organizations);
+});
+
+app.patch('/api/admin/organizations/:id', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const organization = organizations.find(item => item.id === req.params.id);
+  const status = req.body?.status;
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  if (!organization) return res.status(404).json({ error: 'Organization not found' });
+  if (!isOneOf(status, ['VERIFIED', 'REJECTED', 'SUSPENDED'] as const)) return validationError(res, 'Valid organization status required');
+  organization.status = status; organization.verification_note = optionalCleanString(req.body?.note, 500) || undefined; organization.updated_at = new Date().toISOString();
+  await saveToTable('common_organizations', organization);
+  const owner = users.find(item => item.id === organization.owner_id);
+  if (owner) {
+    const roles = new Set(owner.roles || ['MEMBER']);
+    if (status === 'VERIFIED') roles.add('ORGANIZATION_OPERATOR'); else roles.delete('ORGANIZATION_OPERATOR');
+    owner.roles = [...roles]; await saveToTable('common_users', owner);
+    await notify(owner.id, 'ORGANIZATION_REVIEWED', `Organization ${status.toLowerCase()}`, organization.verification_note || `${organization.name} was reviewed.`, '/partners');
+  }
+  await audit(auth.user.id, 'ORGANIZATION_REVIEWED', 'ORGANIZATION', organization.id, { status });
+  res.json(organization);
+});
+
+app.post('/api/organizations/:id/campaigns', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const organization = organizations.find(item => item.id === req.params.id && item.status === 'VERIFIED');
+  if (!auth || !organization || (organization.owner_id !== auth.user.id && !isOperator(auth.user))) return res.status(403).json({ error: 'Verified organization operator required' });
+  const title = cleanString(req.body?.title, 160); const location = cleanString(req.body?.location, 200);
+  const starts_at = req.body?.starts_at; const ends_at = req.body?.ends_at;
+  if (!title || !location || !starts_at || !ends_at || new Date(ends_at).getTime() <= new Date(starts_at).getTime()) return validationError(res, 'Valid campaign details and date range are required');
+  const campaign = { id: uuidv4(), title, location, starts_at: new Date(starts_at).toISOString(), ends_at: new Date(ends_at).toISOString(), status: 'PUBLISHED' as const };
+  organization.campaigns = [...(organization.campaigns || []), campaign]; organization.updated_at = new Date().toISOString();
+  await saveToTable('common_organizations', organization); await audit(auth.user.id, 'CAMPAIGN_PUBLISHED', 'ORGANIZATION', organization.id, { campaign_id: campaign.id });
+  res.status(201).json(campaign);
 });
 
 // Public network stats for the landing page.

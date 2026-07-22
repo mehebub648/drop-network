@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.41`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.42`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -45,6 +45,10 @@ These cannot be finished by editing code alone.
 - [ ] **External push / SMS / email notification delivery** - persisted in-app
   notifications and invitations exist; FCM/APNs or a transactional provider
   plus delivery receipts are still required for off-site alerts.
+- [ ] **Partner operating agreements and clinical confirmation.** Organization
+  applications, verification, directory listing, roles, and campaigns exist;
+  real partners still need contracts, reviewer ownership, and a process for
+  hospitals to confirm completed donations.
 - [ ] **Production hosting & domain** - TLS-terminating reverse proxy, domain,
   deploy target; wire the real `APP_URL` (currently `MY_APP_URL` placeholder).
   The session cookie is `Secure` in production, so HTTPS is required.

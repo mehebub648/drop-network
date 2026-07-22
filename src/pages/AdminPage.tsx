@@ -11,14 +11,16 @@ type Overview = {
 export default function AdminPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
+  const [organizations, setOrganizations] = useState<any[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
 
   const load = async () => {
     try {
-      const [nextOverview, nextRequests] = await Promise.all([api.getAdminOverview(), api.getAdminRequests()]);
+      const [nextOverview, nextRequests, nextOrganizations] = await Promise.all([api.getAdminOverview(), api.getAdminRequests(), api.getAdminOrganizations()]);
       setOverview(nextOverview);
       setRequests(nextRequests);
+      setOrganizations(nextOrganizations);
       setError('');
     } catch (caught: any) {
       setError(caught.message || 'Could not load operations data.');
@@ -55,6 +57,11 @@ export default function AdminPage() {
           {Object.entries(overview.counts).map(([key, value]) => (
             <div key={key} className="theme-card border border-slate-100 p-5"><div className="text-2xl font-bold">{value}</div><div className="text-sm text-slate-500 mt-1">{labels[key] || key}</div></div>
           ))}
+        </section>
+
+        <section className="theme-card border border-slate-100 p-6">
+          <h2 className="font-bold text-xl flex items-center gap-2"><Users className="w-5 h-5 text-primary" /> Organization applications</h2>
+          <div className="mt-4 space-y-3">{organizations.length === 0 && <p className="text-sm text-slate-500">No applications.</p>}{organizations.map(org => <div key={org.id} className="rounded-xl border p-4 flex flex-col sm:flex-row gap-3 justify-between"><div><p className="font-bold">{org.name}</p><p className="text-xs text-slate-500">{org.status} · {org.type} · {org.district} · Ref {org.registration_reference}</p></div><div className="flex gap-2"><button onClick={() => run(org.id, () => api.reviewOrganization(org.id, 'VERIFIED', 'Organization reference reviewed.'))} className="px-3 py-2 border rounded-lg text-xs font-bold">Verify</button><button onClick={() => run(org.id, () => api.reviewOrganization(org.id, 'REJECTED', 'Verification requirements not met.'))} className="px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-bold">Reject</button></div></div>)}</div>
         </section>
 
         <section className="theme-card border border-slate-100 p-6">

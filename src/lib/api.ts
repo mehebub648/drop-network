@@ -311,5 +311,30 @@ export const api = {
       headers: getHeaders()
     });
     return readJsonOrThrow(res, 'Failed to delete comment');
+  },
+
+  async getOrganizations() {
+    const res = await fetch(`${API_BASE}/organizations`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load organizations');
+  },
+
+  async applyOrganization(data: any) {
+    const res = await fetch(`${API_BASE}/organizations`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) });
+    return readJsonOrThrow(res, 'Failed to submit organization application');
+  },
+
+  async getAdminOrganizations() {
+    const res = await fetch(`${API_BASE}/admin/organizations`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load organization applications');
+  },
+
+  async reviewOrganization(id: string, status: string, note?: string) {
+    const res = await fetch(`${API_BASE}/admin/organizations/${id}`, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ status, note }) });
+    return readJsonOrThrow(res, 'Failed to review organization');
+  },
+
+  async createCampaign(id: string, data: any) {
+    const res = await fetch(`${API_BASE}/organizations/${id}/campaigns`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) });
+    return readJsonOrThrow(res, 'Failed to publish campaign');
   }
 };
