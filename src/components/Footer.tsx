@@ -69,7 +69,7 @@ export default function Footer() {
           <p>© {new Date().getFullYear()} Drop Network. All rights reserved.</p>
           <div className="flex flex-wrap gap-4">
             <Link to="/safety" className="hover:text-slate-300 inline-flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> Safety first</Link>
-            <a href="mailto:hello@example.com" className="hover:text-slate-300 inline-flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> hello@example.com</a>
+            <Link to="/contact" className="hover:text-slate-300 inline-flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> Contact operations</Link>
           </div>
         </div>
       </div>

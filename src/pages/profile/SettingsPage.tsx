@@ -58,7 +58,7 @@ export default function SettingsPage({ user }: { user: ProfileUser }) {
           <section className="pt-5 border-t border-slate-100">
             <h3 className="font-extrabold flex items-center gap-2"><Languages className="w-5 h-5 text-primary" /> Language</h3>
             <select value={preferences.language} onChange={() => undefined} className="mt-3 px-4 py-3 bg-slate-50 rounded-xl font-medium"><option>English</option></select>
-            <p className="text-xs text-slate-400 mt-2">Bangla localization is not available yet.</p>
+            <p className="text-xs text-slate-400 mt-2">Use the header language switch for Bangla navigation. Detailed form translations are still being completed.</p>
           </section>
 
           <section className="pt-5 border-t border-slate-100">

@@ -25,6 +25,7 @@ import SecurityPage from './pages/profile/SecurityPage';
 import SettingsPage from './pages/profile/SettingsPage';
 import AdminPage from './pages/AdminPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import RouteMetadata from './components/RouteMetadata';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -62,6 +63,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
+        <RouteMetadata />
         <Layout user={user} onLogout={handleLogout}>
           <Routes>
             <Route path="/" element={<LandingPage user={user} />} />

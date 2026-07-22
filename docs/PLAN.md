@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.40`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.41`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -12,6 +12,14 @@ delivered.
 ## Bucket 1 - Fixable in-repo (no credentials, no external service)
 
 ### Code quality / polish
+
+- [ ] **Complete Bangla localization.** The persistent language provider and
+  shared navigation translations exist; translate emergency forms, validation,
+  request details, profile, operations, and legal/safety content and review the
+  language with a native clinical/operations reviewer.
+- [ ] **Rendered accessibility/browser audit.** Keyboard/focus and reduced
+  motion foundations exist, but complete WCAG 2.2 AA review, screen-reader
+  testing, target-size/contrast audit, and responsive browser matrix remain.
 
 - [ ] **Pervasive `any` and limited focused tests.** Blood-domain unit coverage
   now exists; add API integration and browser coverage as workflows expand.

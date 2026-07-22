@@ -674,6 +674,17 @@ app.get('/metrics', (_req, res) => {
   ].join('\n') + '\n');
 });
 
+app.get('/robots.txt', (req, res) => {
+  const origin = `${req.protocol}://${req.get('host')}`;
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nSitemap: ${origin}/sitemap.xml\n`);
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const origin = `${req.protocol}://${req.get('host')}`;
+  const routes = ['', '/requests', '/register', '/about', '/contact', '/safety', '/privacy', '/terms'];
+  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${origin}${route}</loc></url>`).join('')}</urlset>`);
+});
+
 app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const purpose = req.body?.purpose;

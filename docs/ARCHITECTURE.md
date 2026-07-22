@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.40`
+Current application version: `0.0.41`
 
 ## Overview
 
@@ -94,6 +94,12 @@ Client state:
 - Account and donor-match UI shows phone verification state. Production
   registration stays closed unless an HTTP SMS gateway is configured.
 - A React error boundary displays a fallback if a route render fails.
+- `LocaleProvider` persists English/Bangla selection and translates the shared
+  navigation shell. Detailed page/form copy remains an explicit localization
+  follow-up.
+- `RouteMetadata` updates route titles, descriptions, canonical URLs, and Open
+  Graph fields. The public manifest and service worker provide an installable,
+  cache-first fallback shell without caching API responses.
 
 ## Backend
 
@@ -267,6 +273,8 @@ Operational endpoints and jobs:
   pauses stale donor availability while creating an in-app reconfirmation notice.
 - `.github/workflows/ci.yml` runs Docker-based type checking, tests, bundle
   creation, dependency audit, and secret scanning.
+- `/robots.txt` and `/sitemap.xml` are generated from the deployed request
+  origin so production never publishes a placeholder hostname.
 
 ## Current Constraints
 

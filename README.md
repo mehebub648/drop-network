@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.40`
+Current version: `0.0.41`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -61,6 +61,9 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 - Public requests use server-side filters and bounded pagination with URL-based
   filter state. `/health`, `/ready`, and Prometheus-format `/metrics` support
   production probes and monitoring.
+- The app ships an installable offline shell, route-specific SEO/social
+  metadata, a generated sitemap/robots policy, accessible focus behavior, and
+  a persistent English/Bangla shared-navigation switch.
 
 The datastore starts empty in every environment; no demo data is generated.
 
