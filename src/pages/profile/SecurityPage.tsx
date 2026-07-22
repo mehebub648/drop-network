@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { KeyRound, ShieldCheck } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { KeyRound, LogOut, Monitor, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
 
 export default function SecurityPage() {
@@ -8,6 +8,10 @@ export default function SecurityPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [sessions, setSessions] = useState<any[]>([]);
+
+  const loadSessions = async () => { try { setSessions(await api.getSessions()); } catch { setSessions([]); } };
+  useEffect(() => { loadSessions(); }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -29,7 +33,7 @@ export default function SecurityPage() {
   };
 
   return (
-    <div className="theme-card border border-slate-100 p-6 sm:p-8">
+    <div className="space-y-6"><div className="theme-card border border-slate-100 p-6 sm:p-8">
       <div className="flex items-center gap-3">
         <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center"><ShieldCheck className="w-6 h-6" /></div>
         <div>
@@ -53,6 +57,6 @@ export default function SecurityPage() {
         {message && <p className={message.type === 'success' ? 'text-emerald-700 font-bold text-sm' : 'text-red-600 font-bold text-sm'}>{message.text}</p>}
         <button disabled={saving} className="px-5 py-3 bg-slate-900 text-white rounded-xl font-bold inline-flex items-center gap-2 disabled:opacity-50"><KeyRound className="w-4 h-4" /> {saving ? 'Changing...' : 'Change password'}</button>
       </form>
-    </div>
+    </div><div className="theme-card border border-slate-100 p-6 sm:p-8"><h2 className="text-xl font-extrabold flex items-center gap-2"><Monitor className="w-5 h-5 text-primary" /> Signed-in devices</h2><div className="mt-4 space-y-3">{sessions.map(session => <div key={session.id} className="border rounded-xl p-4 flex items-center justify-between gap-3"><div><p className="text-sm font-bold">{session.current ? 'This device' : session.user_agent}</p><p className="text-xs text-slate-500 mt-1">Signed in {new Date(session.created_at).toLocaleString()} · expires {new Date(session.expires_at).toLocaleDateString()}</p></div><button onClick={async () => { const result = await api.revokeSession(session.id); if (result.current) window.location.href = '/login'; else loadSessions(); }} className="px-3 py-2 text-xs font-bold border rounded-lg">Revoke</button></div>)}</div><button onClick={async () => { await api.logoutAll(); window.location.href = '/login'; }} className="mt-5 px-4 py-3 bg-red-50 text-red-700 rounded-xl font-bold inline-flex gap-2"><LogOut className="w-4 h-4" /> Log out all devices</button></div></div>
   );
 }

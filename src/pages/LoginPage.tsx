@@ -1,12 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Heart, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, Users, Zap } from 'lucide-react';
-import { api, BROWSER_FINGERPRINT } from '../lib/api';
-import { BLOOD_GROUPS, compatibleDonorsFor, DONATION_INTERVAL_DAYS, getEligibility, getUrgency, URGENCY_ORDER } from '../lib/blood';
-import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
-import { cn } from '../lib/utils';
-import { UrgencyBadge } from '../components/UrgencyBadge';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Droplet } from 'lucide-react';
+import { api } from '../lib/api';
 
 export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
   const navigate = useNavigate();
@@ -36,6 +31,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | 
           <div className="w-16 h-16 bg-rose-50 rounded-2xl flex items-center justify-center">
             <Droplet className="w-8 h-8 text-primary" />
           </div>
+          <div className="text-right"><Link to="/forgot-password" className="text-xs font-bold text-primary hover:underline">Forgot password?</Link></div>
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-center mb-2">Welcome Back</h2>
         <p className="text-slate-500 text-center mb-8">Log in to your Drop account</p>
@@ -75,4 +71,3 @@ export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | 
     </div>
   );
 }
-

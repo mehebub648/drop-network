@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Bell, Download, Languages, LockKeyhole, Save, Trash2 } from 'lucide-react';
 import type { ProfileUser } from './types';
+import { api } from '../../lib/api';
 
 type Preferences = {
   urgentAlerts: boolean;
@@ -20,14 +21,16 @@ function loadPreferences(): Preferences {
 export default function SettingsPage({ user }: { user: ProfileUser }) {
   const [preferences, setPreferences] = useState(loadPreferences);
   const [saved, setSaved] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [accountMessage, setAccountMessage] = useState('');
 
   const save = () => {
     localStorage.setItem('drop_preferences', JSON.stringify(preferences));
     setSaved(true);
   };
 
-  const exportAccount = () => {
-    const content = JSON.stringify({ exported_at: new Date().toISOString(), account: user }, null, 2);
+  const exportAccount = async () => {
+    const content = JSON.stringify(await api.exportAccount(), null, 2);
     const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
     const link = document.createElement('a');
     link.href = url;
@@ -74,9 +77,11 @@ export default function SettingsPage({ user }: { user: ProfileUser }) {
         <h2 className="font-extrabold">Account data</h2>
         <div className="mt-4 flex flex-col sm:flex-row gap-3">
           <button type="button" onClick={exportAccount} className="px-4 py-3 bg-slate-100 text-slate-800 rounded-xl font-bold inline-flex items-center justify-center gap-2"><Download className="w-4 h-4" /> Export my account</button>
-          <button type="button" disabled className="px-4 py-3 bg-red-50 text-red-400 rounded-xl font-bold inline-flex items-center justify-center gap-2 cursor-not-allowed"><Trash2 className="w-4 h-4" /> Delete account</button>
+          <button type="button" disabled={!deletePassword} onClick={async () => { if (!window.confirm('Anonymize your account and cancel active requests? This cannot be undone.')) return; try { await api.deleteAccount(deletePassword); window.location.href = '/'; } catch (error: any) { setAccountMessage(error.message); } }} className="px-4 py-3 bg-red-50 text-red-700 rounded-xl font-bold inline-flex items-center justify-center gap-2 disabled:opacity-40"><Trash2 className="w-4 h-4" /> Delete account</button>
         </div>
-        <p className="mt-3 text-xs text-slate-500">Hard deletion is disabled until a reviewed workflow can remove account, request, session, and donor-partition records safely. Contact support for a manual request.</p>
+        <input type="password" value={deletePassword} onChange={e => setDeletePassword(e.target.value)} placeholder="Current password to enable deletion" className="mt-3 w-full max-w-sm px-4 py-3 rounded-xl border" />
+        {accountMessage && <p className="mt-2 text-sm font-bold text-red-600">{accountMessage}</p>}
+        <p className="mt-3 text-xs text-slate-500">Deletion immediately revokes sessions, removes donor availability and private patient/contact data, cancels active requests, and anonymizes retained coordination and safety records.</p>
       </div>
     </div>
   );

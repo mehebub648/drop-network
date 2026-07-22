@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.38`
+Current version: `0.0.39`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -56,5 +56,7 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 - Set `ADMIN_PHONE` to a verified member's normalized Bangladesh phone to
   bootstrap the first administrator. Operators handle reports and support
   tickets at `/admin`; administrative actions are audited.
+- Members can recover passwords by verified SMS, inspect and revoke signed-in
+  devices, download a server-side data export, and anonymize their account.
 
 The datastore starts empty in every environment; no demo data is generated.

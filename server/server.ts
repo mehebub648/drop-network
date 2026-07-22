@@ -145,6 +145,7 @@ type User = {
   account_status?: 'ACTIVE' | 'SUSPENDED';
   suspension_reason?: string;
   blocked_user_ids?: string[];
+  deleted_at?: string;
   created_at?: string;
   donor_profile?: DonorProfile;
   recipient_profile?: RecipientProfile;
@@ -157,6 +158,9 @@ type AuthSession = {
   created_at: string;
   expires_at: string;
   revoked_at?: string;
+  user_agent?: string;
+  ip?: string;
+  last_seen_at?: string;
 };
 
 type ContactDetail = {
@@ -573,14 +577,17 @@ function isAdmin(user: User | undefined) {
   return Boolean(user?.roles?.includes('ADMIN'));
 }
 
-async function issueSession(userId: string) {
+async function issueSession(userId: string, req: express.Request) {
   const now = Date.now();
   const session: AuthSession = {
     id: uuidv4(),
     token: uuidv4(),
     user_id: userId,
     created_at: new Date(now).toISOString(),
-    expires_at: new Date(now + SESSION_TTL_MS).toISOString()
+    expires_at: new Date(now + SESSION_TTL_MS).toISOString(),
+    user_agent: cleanString(req.get('user-agent'), 300) || 'Unknown device',
+    ip: req.ip,
+    last_seen_at: new Date(now).toISOString()
   };
   sessions.push(session);
   await saveToTable('common_sessions', session);
@@ -754,7 +761,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     }
   }
 
-  const token = await issueSession(user.id);
+  const token = await issueSession(user.id, req);
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
   res.json({ user: sanitizeUser(user) });
 });
@@ -832,7 +839,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
   }
 
-  const token = await issueSession(user.id);
+  const token = await issueSession(user.id, req);
   await consumeChallenge(challenge);
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
   res.json({ user: sanitizeUser(user) });
@@ -841,6 +848,26 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 app.post('/api/auth/logout', async (req, res) => {
   await revokeSession(req);
   res.clearCookie(SESSION_COOKIE, { path: '/' });
+  res.json({ success: true });
+});
+
+app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const newPassword = cleanString(req.body?.new_password, 128);
+  if (!phone || !newPassword || newPassword.length < 8) return validationError(res, 'Valid phone and password of at least 8 characters are required');
+  const challenge = verifiedChallenge(phone, 'RESET_PASSWORD', req.body?.verification_token);
+  if (!challenge) return res.status(403).json({ error: 'Verify the phone before resetting the password' });
+  const user = users.find(item => item.phone === phone && !item.deleted_at);
+  if (!user) return validationError(res, 'Password could not be reset');
+  user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  await saveToTable('common_users', user);
+  const now = new Date().toISOString();
+  for (const session of sessions.filter(item => item.user_id === user.id && !item.revoked_at)) {
+    session.revoked_at = now;
+    await saveToTable('common_sessions', session);
+  }
+  await consumeChallenge(challenge);
+  await audit(user.id, 'PASSWORD_RESET', 'USER', user.id);
   res.json({ success: true });
 });
 
@@ -907,6 +934,84 @@ app.post('/api/me/change-password', async (req, res) => {
 
   auth.user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
   await saveToTable('common_users', auth.user);
+  res.json({ success: true });
+});
+
+app.get('/api/me/sessions', (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  res.json(sessions.filter(item => item.user_id === auth.user.id && !item.revoked_at && new Date(item.expires_at).getTime() > Date.now()).map(item => ({
+    id: item.id, created_at: item.created_at, expires_at: item.expires_at, last_seen_at: item.last_seen_at,
+    user_agent: item.user_agent || 'Unknown device', ip: item.ip, current: item.id === auth.session.id
+  })));
+});
+
+app.delete('/api/me/sessions/:id', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const session = sessions.find(item => item.id === req.params.id && item.user_id === auth.user.id && !item.revoked_at);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  session.revoked_at = new Date().toISOString();
+  await saveToTable('common_sessions', session);
+  await audit(auth.user.id, 'SESSION_REVOKED', 'SESSION', session.id);
+  if (session.id === auth.session.id) res.clearCookie(SESSION_COOKIE, { path: '/' });
+  res.json({ success: true, current: session.id === auth.session.id });
+});
+
+app.post('/api/me/logout-all', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const now = new Date().toISOString();
+  for (const session of sessions.filter(item => item.user_id === auth.user.id && !item.revoked_at)) {
+    session.revoked_at = now; await saveToTable('common_sessions', session);
+  }
+  await audit(auth.user.id, 'ALL_SESSIONS_REVOKED', 'USER', auth.user.id);
+  res.clearCookie(SESSION_COOKIE, { path: '/' });
+  res.json({ success: true });
+});
+
+app.get('/api/me/export', (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = auth.user.id;
+  res.json({
+    exported_at: new Date().toISOString(),
+    account: sanitizeUser(auth.user),
+    requests: requests.filter(item => item.user_id === userId),
+    responses: donorResponses.filter(item => item.donor_id === userId || item.requester_id === userId),
+    notifications: notifications.filter(item => item.user_id === userId),
+    reports: moderationReports.filter(item => item.reporter_id === userId)
+  });
+});
+
+app.delete('/api/me', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const password = cleanString(req.body?.password, 128);
+  if (!password || !auth.user.password || !(await bcrypt.compare(password, auth.user.password))) return res.status(403).json({ error: 'Current password is required' });
+  const now = new Date().toISOString();
+  for (const request of requests.filter(item => item.user_id === auth.user.id)) {
+    if (['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)) request.status = 'CANCELLED';
+    request.patient_name = undefined; request.patient_reference = undefined; request.contacts = [];
+    request.requester_name = 'Deleted member';
+    await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+  }
+  for (const request of requests) {
+    let changed = false;
+    request.comments = request.comments?.map(comment => {
+      if (comment.user_id !== auth.user.id) return comment;
+      changed = true; return { ...comment, user_name: 'Deleted member' };
+    });
+    if (changed) await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+  }
+  await removeDonorFromAllPartitions(auth.user.id);
+  auth.user.name = 'Deleted member'; auth.user.phone = `deleted-${auth.user.id}`; auth.user.password = undefined;
+  auth.user.is_verified = false; auth.user.donor_profile = undefined; auth.user.recipient_profile = undefined;
+  auth.user.blocked_user_ids = []; auth.user.account_status = 'SUSPENDED'; auth.user.deleted_at = now;
+  await saveToTable('common_users', auth.user);
+  for (const session of sessions.filter(item => item.user_id === auth.user.id && !item.revoked_at)) { session.revoked_at = now; await saveToTable('common_sessions', session); }
+  await audit(auth.user.id, 'ACCOUNT_ANONYMIZED', 'USER', auth.user.id);
+  res.clearCookie(SESSION_COOKIE, { path: '/' });
   res.json({ success: true });
 });
 

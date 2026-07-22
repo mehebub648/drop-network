@@ -31,7 +31,7 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Your choices</h2>
-        <p>You can update donor information in your profile. Account access, correction, export, or deletion requests can be sent through the <Link to="/contact">contact page</Link>. Automated export and hard deletion are not yet available.</p>
+        <p>You can update donor information, download a server-side account export, and delete your account from profile settings. Deletion revokes sessions, removes donor and private patient/contact information, cancels active requests, and anonymizes coordination and safety records that must be retained. You can also send an access, correction, or deletion question through the <Link to="/contact">contact page</Link>.</p>
       </section>
     </InfoPage>
   );

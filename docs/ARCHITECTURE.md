@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.38`
+Current application version: `0.0.39`
 
 ## Overview
 
@@ -67,9 +67,10 @@ Routes:
 - `/profile/invitations` manages private invitations, donor responses, mutual
   donation confirmation, purpose-limited contacts, and in-app notifications.
 - `/profile/history` adds, edits, and deletes validated donation records.
-- `/profile/security` changes the password after current-password verification.
-- `/profile/settings` stores device-local preferences and exports the current
-  account record. Automated hard deletion remains disabled.
+- `/profile/security` changes the password and manages signed-in devices.
+- `/profile/settings` stores device-local preferences, downloads the complete
+  server-side account export, and starts password-confirmed anonymization.
+- `/forgot-password` resets a password after registered-phone OTP verification.
 - `/about` explains the service mission, matching model, and limitations.
 - `/contact` submits validated support, privacy, safety, and partnership
   tickets to the protected operations queue.
@@ -134,11 +135,19 @@ API routes:
 - `POST /api/auth/register` consumes a registration token, creates a verified
   user, and starts an optional donor profile as unavailable.
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
+- `POST /api/auth/reset-password` consumes a verified recovery challenge,
+  changes the password, and revokes every existing session.
 - `GET /api/me` returns the authenticated user.
 - `PATCH /api/me` validates and updates the authenticated user's name and
   phone, rejects duplicate phone numbers, and refreshes donor partitions.
 - `POST /api/me/change-password` verifies the current password and stores a
   bcrypt hash of the new password (minimum 8 characters).
+- `GET/DELETE /api/me/sessions` and `POST /api/me/logout-all` expose and revoke
+  device sessions without disclosing opaque tokens.
+- `GET /api/me/export` returns the member's account, requests, responses,
+  notifications, and reports. `DELETE /api/me` requires the current password,
+  removes donor/private patient data, cancels active requests, revokes sessions,
+  and anonymizes records retained for coordination and safety auditing.
 - `GET /api/me/requests` returns requests owned by the current user.
 - `POST /api/me/donor-profile` updates donor profile and donation-history
   data, rejects future donation dates, records availability changes, and
@@ -253,11 +262,8 @@ The production image runs as the unprivileged `node` user and owns
 
 - Production registration requires `SMS_PROVIDER=http`, `SMS_HTTP_ENDPOINT`,
   and `SMS_HTTP_TOKEN`. The console provider is development-only.
-- There is no password-reset flow (previously impossible anyway without SMS);
-  users who forget their password need manual help.
 - Notification choices are currently device-local preferences; there is no
-  push or email delivery provider. Account export is client-side, while hard
-  deletion still requires a reviewed cascading data-removal workflow.
+  push or email delivery provider.
 - The following fingerprint limitation now applies only to legacy anonymous
   comments and ownership migration; new requests require verified accounts.
 - Anonymous ownership relies on a client-generated fingerprint. The server

@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.38`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.39`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -34,16 +34,11 @@ These cannot be finished by editing code alone.
 - [ ] **Production SMS gateway credentials** - point the provider-neutral HTTP
   adapter at a monitored Bangladesh SMS gateway. Production registration is
   intentionally unavailable until these values are configured.
-- [ ] **Password reset flow** - depends on real OTP/SMS above (no email on
-  file). Until then, forgotten passwords need manual intervention.
 - [ ] **Geocoding / maps** - Google Maps / Mapbox / OSM-Nominatim key to convert
   districts and GPS into real coordinates and render a map.
 - [ ] **Browser geolocation** - HTTPS origin + permission flow wired into search.
 - [ ] **Hosted, persistent database** - managed datastore + connection string;
   local `.lancedb/` plus in-memory cache won't survive multi-instance/redeploys.
-- [ ] **Reviewed account hard-deletion workflow** - cascade removal across user,
-  session, request, comment, and donor-partition records, define retention and
-  abuse/audit handling, then enable the settings control.
 - [ ] **External push / SMS / email notification delivery** - persisted in-app
   notifications and invitations exist; FCM/APNs or a transactional provider
   plus delivery receipts are still required for off-site alerts.

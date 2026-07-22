@@ -103,6 +103,36 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to change password');
   },
 
+  async resetPassword(phone: string, newPassword: string, verificationToken: string) {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone, new_password: newPassword, verification_token: verificationToken }) });
+    return readJsonOrThrow(res, 'Failed to reset password');
+  },
+
+  async getSessions() {
+    const res = await fetch(`${API_BASE}/me/sessions`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load sessions');
+  },
+
+  async revokeSession(id: string) {
+    const res = await fetch(`${API_BASE}/me/sessions/${id}`, { method: 'DELETE', headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to revoke session');
+  },
+
+  async logoutAll() {
+    const res = await fetch(`${API_BASE}/me/logout-all`, { method: 'POST', headers: getHeaders(), body: '{}' });
+    return readJsonOrThrow(res, 'Failed to log out devices');
+  },
+
+  async exportAccount() {
+    const res = await fetch(`${API_BASE}/me/export`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to export account');
+  },
+
+  async deleteAccount(password: string) {
+    const res = await fetch(`${API_BASE}/me`, { method: 'DELETE', headers: getHeaders(), body: JSON.stringify({ password }) });
+    return readJsonOrThrow(res, 'Failed to delete account');
+  },
+
   async updateDonorProfile(profile: any) {
     const res = await fetch(`${API_BASE}/me/donor-profile`, {
       method: 'POST',

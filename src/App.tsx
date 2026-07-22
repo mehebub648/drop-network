@@ -24,6 +24,7 @@ import ProfileRequestsPage from './pages/profile/ProfileRequestsPage';
 import SecurityPage from './pages/profile/SecurityPage';
 import SettingsPage from './pages/profile/SettingsPage';
 import AdminPage from './pages/AdminPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/requests" element={<RequestsPage />} />
             <Route path="/login" element={!user ? <LoginPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
             <Route path="/register" element={!user ? <RegisterPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
+            <Route path="/forgot-password" element={!user ? <ForgotPasswordPage /> : <Navigate to="/profile/security" />} />
             <Route path="/profile" element={user ? <ProfileLayout user={user} /> : <Navigate to="/login" />}>
               <Route index element={<Navigate to="donor" replace />} />
               <Route path="account" element={<AccountPage user={user} onUpdate={fetchUser} />} />
