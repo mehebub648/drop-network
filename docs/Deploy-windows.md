@@ -23,6 +23,9 @@ Open PowerShell in the project root and create the env file:
 Copy-Item .env.example .env
 ```
 
+The example uses `APP_URL=https://findadrop.org`. Keep that value for the
+public deployment; use a different origin only for a separate environment.
+
 If port `3000` or `3001` is already busy, set `PORT` or `DEV_PORT` in `.env`.
 The datastore starts empty; no demo data is generated. Docker Compose stores
 LanceDB in named volumes by default.
@@ -92,6 +95,21 @@ docker compose --profile development down -v
 ```
 
 Use that only when you intentionally want to reset local state.
+
+### Importing public donor listings
+
+The imported directory lives in the same LanceDB volume. Populating it is a
+manual, two-step operation, never something the running server does:
+
+```powershell
+docker compose --profile development run --rm app-dev npm run scrape -- --source=all --resume
+docker compose --profile development run --rm app-dev npm run import-donors -- --in=data/scraped
+```
+
+The scrape writes NDJSON to `data/scraped/` on the host and takes hours,
+because the source hosts are slow and the scraper deliberately backs off when
+they start failing. `--resume` continues an interrupted run. Re-running the
+import replaces rows by id, so it is safe to repeat.
 
 ## 6. Updating After Code Changes
 

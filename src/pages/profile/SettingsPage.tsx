@@ -1,20 +1,19 @@
 import { useState } from 'react';
-import { Bell, Download, Languages, LockKeyhole, Save, Trash2 } from 'lucide-react';
+import { Bell, Download, LockKeyhole, Save, Trash2 } from 'lucide-react';
 import type { ProfileUser } from './types';
 import { api } from '../../lib/api';
 
 type Preferences = {
   urgentAlerts: boolean;
   requestUpdates: boolean;
-  language: 'English';
 };
 
 function loadPreferences(): Preferences {
   try {
     const saved = JSON.parse(localStorage.getItem('drop_preferences') || '{}');
-    return { urgentAlerts: Boolean(saved.urgentAlerts), requestUpdates: Boolean(saved.requestUpdates), language: 'English' };
+    return { urgentAlerts: Boolean(saved.urgentAlerts), requestUpdates: Boolean(saved.requestUpdates) };
   } catch {
-    return { urgentAlerts: false, requestUpdates: false, language: 'English' };
+    return { urgentAlerts: false, requestUpdates: false };
   }
 }
 
@@ -53,12 +52,6 @@ export default function SettingsPage({ user }: { user: ProfileUser }) {
               <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.urgentAlerts} onChange={event => setPreferences(current => ({ ...current, urgentAlerts: event.target.checked }))} className="w-4 h-4 accent-rose-600" /> <span className="font-medium">Urgent requests for my blood group</span></label>
               <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.requestUpdates} onChange={event => setPreferences(current => ({ ...current, requestUpdates: event.target.checked }))} className="w-4 h-4 accent-rose-600" /> <span className="font-medium">Updates to my requests</span></label>
             </div>
-          </section>
-
-          <section className="pt-5 border-t border-slate-100">
-            <h3 className="font-extrabold flex items-center gap-2"><Languages className="w-5 h-5 text-primary" /> Language</h3>
-            <select value={preferences.language} onChange={() => undefined} className="mt-3 px-4 py-3 bg-slate-50 rounded-xl font-medium"><option>English</option></select>
-            <p className="text-xs text-slate-400 mt-2">Use the header language switch for Bangla navigation. Detailed form translations are still being completed.</p>
           </section>
 
           <section className="pt-5 border-t border-slate-100">

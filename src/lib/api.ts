@@ -267,6 +267,48 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load requests');
   },
 
+  // Imported directory. Contact numbers come back masked; the full number is
+  // only ever known to the person who claims the profile.
+  async getDirectory(params: { blood_group?: string; district?: string; source?: string; q?: string; page?: number } = {}) {
+    const query = new URLSearchParams();
+    if (params.blood_group) query.set('blood_group', params.blood_group);
+    if (params.district) query.set('district', params.district);
+    if (params.source) query.set('source', params.source);
+    if (params.q) query.set('q', params.q);
+    if (params.page) query.set('page', String(params.page));
+    const res = await fetch(`${API_BASE}/directory?${query}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load the donor directory');
+  },
+
+  async getDirectorySources() {
+    const res = await fetch(`${API_BASE}/directory/sources`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load directory sources');
+  },
+
+  async getDirectoryProfile(id: string) {
+    const res = await fetch(`${API_BASE}/directory/${encodeURIComponent(id)}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load that profile');
+  },
+
+  async claimDirectoryProfile(id: string, body: { name?: string; blood_group?: string; location?: { lat: number; lng: number; area_name: string } }) {
+    const res = await fetch(`${API_BASE}/directory/${encodeURIComponent(id)}/claim`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to claim that profile');
+  },
+
+  async getDirectoryClaims() {
+    const res = await fetch(`${API_BASE}/admin/directory/claims`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load directory claims');
+  },
+
+  async reviewDirectoryClaim(id: string, approve: boolean, note?: string) {
+    const res = await fetch(`${API_BASE}/admin/directory/claims/${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ approve, note })
+    });
+    return readJsonOrThrow(res, 'Failed to review that claim');
+  },
+
   async getStats() {
     const res = await fetch(`${API_BASE}/stats`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load stats');

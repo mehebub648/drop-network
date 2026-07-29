@@ -7,3 +7,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Scraped donor listings are large working data, not source.
+data/scraped/

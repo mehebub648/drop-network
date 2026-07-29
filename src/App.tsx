@@ -27,6 +27,8 @@ import AdminPage from './pages/AdminPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import RouteMetadata from './components/RouteMetadata';
 import PartnersPage from './pages/PartnersPage';
+import DirectoryPage from './pages/DirectoryPage';
+import ClaimProfilePage from './pages/ClaimProfilePage';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -71,6 +73,8 @@ export default function App() {
             <Route path="/request/:id" element={<RequestDetailsPage user={user} />} />
             <Route path="/request/new" element={user ? <NewRequestPage user={user} /> : <Navigate to="/login" />} />
             <Route path="/requests" element={<RequestsPage />} />
+            <Route path="/directory" element={<DirectoryPage />} />
+            <Route path="/directory/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
             <Route path="/login" element={!user ? <LoginPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
             <Route path="/register" element={!user ? <RegisterPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
             <Route path="/forgot-password" element={!user ? <ForgotPasswordPage /> : <Navigate to="/profile/security" />} />

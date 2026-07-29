@@ -1,0 +1,107 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  dedupeKey,
+  evaluateClaim,
+  importedDonorId,
+  maskPhone,
+  missingFields,
+  toImportedDonor,
+  toPublicImportedDonor,
+  type ImportedDonor
+} from './importedDonors';
+
+const scraped = {
+  source_id: 'bd-scouts',
+  source_organization: 'Bangladesh Scouts',
+  source_url: 'https://service.scouts.gov.bd/blood-donation/1',
+  scraped_at: '2026-07-29T00:00:00.000Z',
+  source_ref: 'AA1583',
+  name: 'Scout Md. Robin',
+  phone: '+8801961161996',
+  blood_group: 'A+',
+  district: 'Dhaka',
+  upazila: 'Adabor'
+};
+
+test('records with the same phone collapse across sources', () => {
+  const a = dedupeKey({ phone: '+8801961161996', source_id: 'bd-scouts', source_ref: 'AA1583' });
+  const b = dedupeKey({ phone: '+8801961161996', source_id: 'quantum-method', source_ref: '332496' });
+  assert.equal(a, b);
+  assert.equal(importedDonorId(a), importedDonorId(b));
+});
+
+test('records without a phone stay unique per source', () => {
+  const a = dedupeKey({ phone: '', source_id: 'quantum-method', source_ref: '332496' });
+  const b = dedupeKey({ phone: '', source_id: 'quantum-method', source_ref: '332497' });
+  assert.notEqual(a, b);
+});
+
+test('imported donors start unclaimed and never expose a raw phone publicly', () => {
+  const donor = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
+  assert.equal(donor.claim_status, 'UNCLAIMED');
+  const publicView = toPublicImportedDonor(donor);
+  assert.equal(publicView.has_phone, true);
+  assert.ok(!publicView.phone_masked.includes('61161'));
+  assert.equal(publicView.phone_masked, '+88019••••••96');
+  assert.deepEqual(publicView.missing_fields, []);
+});
+
+test('masking keeps only the operator prefix and the last two digits', () => {
+  assert.equal(maskPhone('+8801712345678'), '+88017••••••78');
+  assert.equal(maskPhone(''), '');
+});
+
+test('missing fields are reported so the claim form can require them', () => {
+  assert.deepEqual(
+    missingFields({ name: 'Gopal', phone: '', blood_group: 'O+', district: '' }),
+    ['phone', 'district']
+  );
+});
+
+test('a claim from the published number is auto-approved', () => {
+  const decision = evaluateClaim(
+    { ...scraped, claim_status: 'UNCLAIMED' },
+    {},
+    '+8801961161996'
+  );
+  assert.ok(!('error' in decision));
+  if ('error' in decision) return;
+  assert.equal(decision.status, 'CLAIMED');
+  assert.equal(decision.resolved.district, 'Dhaka');
+});
+
+test('a claim from a different number is queued for review, not granted', () => {
+  const decision = evaluateClaim(
+    { ...scraped, claim_status: 'UNCLAIMED' },
+    {},
+    '+8801711111111'
+  );
+  assert.ok(!('error' in decision));
+  if ('error' in decision) return;
+  assert.equal(decision.status, 'PENDING_REVIEW');
+  // The claimant's own verified number wins over the scraped one.
+  assert.equal(decision.resolved.phone, '+8801711111111');
+});
+
+test('a contact-less record cannot be auto-approved and must be completed', () => {
+  const stub = { name: 'Gopal', phone: '', blood_group: '', district: '', claim_status: 'UNCLAIMED' as const };
+
+  const incomplete = evaluateClaim(stub, {}, '+8801711111111');
+  assert.ok('error' in incomplete);
+
+  const completed = evaluateClaim(stub, { blood_group: 'O+', district: 'Khulna' }, '+8801711111111');
+  assert.ok(!('error' in completed));
+  if ('error' in completed) return;
+  assert.equal(completed.status, 'PENDING_REVIEW');
+  assert.equal(completed.resolved.blood_group, 'O+');
+});
+
+test('already-claimed and in-review profiles reject further claims', () => {
+  const claimed: Pick<ImportedDonor, 'name' | 'phone' | 'blood_group' | 'district' | 'claim_status'> = {
+    ...scraped,
+    claim_status: 'CLAIMED'
+  };
+  assert.ok('error' in evaluateClaim(claimed, {}, '+8801961161996'));
+  assert.ok('error' in evaluateClaim({ ...claimed, claim_status: 'PENDING_REVIEW' }, {}, '+8801961161996'));
+});

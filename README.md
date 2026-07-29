@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.42`
+Current version: `0.0.44`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -40,6 +40,8 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 
 - `PORT` controls the Docker production host port.
 - `DEV_PORT` controls the Docker development host port.
+- `APP_URL` is the canonical public origin. Production defaults to
+  `https://findadrop.org`; development uses its localhost origin.
 - `CORS_ORIGIN` can list allowed cross-origin browser origins; same-origin
   production requests do not need it.
 - `LANCEDB_PATH` is set inside Docker Compose to `/data/lancedb`, backed by a
@@ -63,11 +65,32 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   production probes and monitoring.
 - The app ships an installable offline shell, route-specific SEO/social
   metadata, a generated sitemap/robots policy, accessible focus behavior, and
-  a persistent English/Bangla shared-navigation switch.
+  consistent production English copy.
 - Verified hospitals, blood banks, and NGOs can be reviewed by operators,
   listed in the public partner directory, and publish donation campaigns.
 
 The datastore starts empty in every environment; no demo data is generated.
+
+## Imported Donor Directory
+
+Donor listings published openly by other Bangladesh organisations can be
+imported as claimable stubs. Scraping and importing are two separate scripts,
+both run through Docker Compose:
+
+```
+docker compose --profile development run --rm app-dev npm run scrape -- --source=all
+docker compose --profile development run --rm app-dev npm run import-donors -- --in=data/scraped
+```
+
+`npm run scrape` writes NDJSON per source into `data/scraped/` (ignored by git);
+`npm run import-donors` normalizes and loads it. Add `--dry-run` to see the
+counts without writing, `--source=<id>` to run one listing, and `--limit=<n>` to
+cap a run.
+
+Imported people never registered here, so their phone numbers are always served
+masked and a record only becomes a usable donor profile when its owner claims it
+at `/directory`. See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the
+claim rules and how to add a source.
 
 ## Validation
 

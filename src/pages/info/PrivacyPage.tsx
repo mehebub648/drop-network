@@ -1,10 +1,9 @@
 import { Link } from 'react-router-dom';
-import { DraftNotice, InfoPage } from './InfoPage';
+import { InfoPage } from './InfoPage';
 
 export default function PrivacyPage() {
   return (
-    <InfoPage eyebrow="Legal" title="Privacy Policy" intro="This draft explains what Drop currently collects, why it is used, where it is stored, and when another member can see it.">
-      <DraftNotice>{'<TODO: Insert the legal entity, privacy contact, jurisdiction, effective date, retention periods, and obtain local legal review.>'}</DraftNotice>
+    <InfoPage eyebrow="Legal" title="Privacy Policy" intro="Effective 22 July 2026. This policy explains what Drop currently collects, why it is used, where it is stored, and when another member can see it.">
       <section>
         <h2>Information we collect</h2>
         <p>When you create or use an account, Drop can store your name, phone number, password hash, blood group, district and approximate district coordinates, availability, verification status, last donation date, and donation-history entries. Blood requests can include patient and requester names, blood group, district, needed-by date, contact people, comments, status, and creation time.</p>
@@ -32,6 +31,10 @@ export default function PrivacyPage() {
       <section>
         <h2>Your choices</h2>
         <p>You can update donor information, download a server-side account export, and delete your account from profile settings. Deletion revokes sessions, removes donor and private patient/contact information, cancels active requests, and anonymizes coordination and safety records that must be retained. You can also send an access, correction, or deletion question through the <Link to="/contact">contact page</Link>.</p>
+      </section>
+      <section>
+        <h2>Questions and changes</h2>
+        <p>This policy describes the service as it operates today. Material changes will be reflected on this page with a revised effective date. Send privacy questions or requests through the <Link to="/contact">contact page</Link>.</p>
       </section>
     </InfoPage>
   );

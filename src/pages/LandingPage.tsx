@@ -1,12 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Heart, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, Users, Zap } from 'lucide-react';
-import { api, BROWSER_FINGERPRINT } from '../lib/api';
-import { BLOOD_GROUPS, compatibleDonorsFor, DONATION_INTERVAL_DAYS, getEligibility, getUrgency, URGENCY_ORDER } from '../lib/blood';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Activity, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Droplet, Heart, MapPin, Search, Shield, Users, Zap } from 'lucide-react';
+import { api } from '../lib/api';
+import { DONATION_INTERVAL_DAYS } from '../lib/blood';
 import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
 import { cn } from '../lib/utils';
-import { UrgencyBadge } from '../components/UrgencyBadge';
 
 export default function LandingPage({ user }: { user: any }) {
   const [bloodGroup, setBloodGroup] = useState('O+');
@@ -19,10 +17,6 @@ export default function LandingPage({ user }: { user: any }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
-  const [matches, setMatches] = useState<any[]>([]);
-  const [showResults, setShowResults] = useState(false);
-  const [revealedContacts, setRevealedContacts] = useState<Record<string, boolean>>({});
-  const [activeRequest, setActiveRequest] = useState<any>(null);
   const [stats, setStats] = useState<{ registered_donors: number; available_donors: number; active_requests: number; fulfilled_requests: number } | null>(null);
   const navigate = useNavigate();
 
@@ -95,21 +89,16 @@ export default function LandingPage({ user }: { user: any }) {
   };
 
   return (
-    <div className="space-y-24 w-full pb-10">
+    <div className="space-y-16 sm:space-y-24 w-full pb-10">
       {/* Hero Section */}
       <div className="space-y-12">
-        <section className="text-center px-4 fade-in pt-6 pb-2">
-          <h1 className="text-[2.75rem] md:text-[4rem] font-extrabold tracking-tight text-slate-900 leading-[1.1] mb-6">
-            Find a life-saving match<br className="hidden md:block" />
-            <span className="text-primary relative inline-block ml-3">
-              instantly
-              <svg className="absolute w-full h-3 -bottom-1 left-0 text-rose-200" viewBox="0 0 100 20" preserveAspectRatio="none">
-                <path d="M0 15 Q 50 0 100 15" fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-              </svg>
-            </span>.
+        <section className="text-center px-1 sm:px-4 fade-in pt-3 sm:pt-6 pb-2">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary mb-4">Community blood coordination across Bangladesh</p>
+          <h1 className="text-4xl sm:text-5xl md:text-[4rem] font-extrabold tracking-tight text-slate-900 leading-[1.08] mb-6">
+            Start a clear, verified request<br className="hidden md:block" /> and reach available donors.
           </h1>
           <p className="text-slate-500 text-lg md:text-xl font-medium max-w-2xl mx-auto leading-relaxed">
-            Search for available blood donors near you in real-time. No sign-up required.
+            Choose the required blood group, district, and date. Drop helps a verified requester coordinate privately with compatible donors who have marked themselves available.
           </p>
         </section>
 
@@ -252,54 +241,53 @@ export default function LandingPage({ user }: { user: any }) {
           </div>
         )}
         <p className="text-center text-sm text-slate-500 font-medium">
-          <CheckCircle2 className="w-4 h-4 inline text-emerald-500 mr-1 -mt-0.5" /> Matches are realtime and location-based
+          <CheckCircle2 className="w-4 h-4 inline text-emerald-500 mr-1 -mt-0.5" /> Search is based on current donor availability and supported districts
         </p>
       </div>
 
-      {/* Informative Sections */}
       <section className="fade-in pt-12">
-        <div className="text-center mb-16">
+        <div className="text-center mb-10 sm:mb-14">
           <h2 className="text-3xl font-bold tracking-tight text-slate-900 mb-4">How Drop Works</h2>
-          <p className="text-slate-500 font-medium max-w-lg mx-auto">A seamless emergency response system designed specifically for the healthcare needs of Bangladesh.</p>
+          <p className="text-slate-500 font-medium max-w-2xl mx-auto leading-7">Drop organizes the information needed for safer coordination. It does not replace clinical screening, a hospital, or a licensed blood bank.</p>
         </div>
         
-        <div className="grid md:grid-cols-3 gap-8">
-          <div className="theme-card p-8 text-center hover:-translate-y-1 transition-transform duration-300">
-            <div className="w-14 h-14 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-6 text-primary">
-              <Search className="w-7 h-7" />
+        <div className="grid md:grid-cols-3 gap-4 sm:gap-6">
+          <div className="theme-card p-6 sm:p-8">
+            <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-5 text-primary">
+              <ClipboardCheck className="w-6 h-6" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-slate-900">1. Real-time Search</h3>
-            <p className="text-slate-500 text-sm leading-relaxed">Search supported Bangladesh districts to find active donors rather than broadcasting open pleas.</p>
+            <h3 className="text-xl font-bold mb-3 text-slate-900">1. Prepare the request</h3>
+            <p className="text-slate-500 text-sm leading-6">Confirm the patient reference, hospital, blood component, units, needed-by time, and a reliable contact before publishing.</p>
           </div>
           
-          <div className="theme-card p-8 text-center hover:-translate-y-1 transition-transform duration-300">
-            <div className="w-14 h-14 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-6 text-primary">
+          <div className="theme-card p-6 sm:p-8">
+            <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-5 text-primary">
               <Zap className="w-7 h-7" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-slate-900">2. Smart Matching</h3>
-            <p className="text-slate-500 text-sm leading-relaxed">Our algorithm considers exact geolocation, time requirements, and live availability statuses.</p>
+            <h3 className="text-xl font-bold mb-3 text-slate-900">2. Review current matches</h3>
+            <p className="text-slate-500 text-sm leading-6">Drop checks compatible blood groups, district proximity, donation interval, deferrals, and the donor's latest availability confirmation.</p>
           </div>
           
-          <div className="theme-card p-8 text-center hover:-translate-y-1 transition-transform duration-300">
-            <div className="w-14 h-14 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-6 text-primary">
+          <div className="theme-card p-6 sm:p-8">
+            <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mb-5 text-primary">
               <Shield className="w-7 h-7" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-slate-900">3. Secure Contact</h3>
-            <p className="text-slate-500 text-sm leading-relaxed">Review request details first, then contact available donors directly when you are ready to respond.</p>
+            <h3 className="text-xl font-bold mb-3 text-slate-900">3. Coordinate privately</h3>
+            <p className="text-slate-500 text-sm leading-6">Invite suitable donors, reveal contact details only through the response workflow, and complete the donation at an appropriate clinical facility.</p>
           </div>
         </div>
       </section>
 
-      <section className="theme-card p-12 overflow-hidden relative fade-in border-0 bg-slate-900 text-white shadow-2xl shadow-slate-900/20">
-        <div className="absolute top-0 right-0 p-8 opacity-10">
+      <section className="theme-card p-6 sm:p-9 lg:p-12 overflow-hidden relative fade-in border-0 bg-slate-900 text-white shadow-2xl shadow-slate-900/20">
+        <div className="absolute top-0 right-0 p-4 sm:p-8 opacity-10">
           <Droplet className="w-64 h-64 text-primary" />
         </div>
         <div className="relative z-10 max-w-3xl">
-          <h2 className="text-3xl font-bold mb-6 text-white">Building a live donor network for urgent requests.</h2>
-          <p className="text-slate-400 text-lg mb-8 leading-relaxed">
-            Keep your donor status current so matching can prioritize the right blood group, district, and availability when a nearby request is created.
+          <h2 className="text-2xl sm:text-3xl font-bold mb-5 text-white">A useful donor network depends on accurate availability.</h2>
+          <p className="text-slate-300 text-base sm:text-lg mb-8 leading-7">
+            Donors should pause availability when they are unwell, travelling, deferred, or unable to respond. Requesters should close completed or cancelled requests promptly so people can focus on current needs.
           </p>
-          <div className="flex flex-wrap gap-x-10 gap-y-6 items-center">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { icon: Users, value: stats?.registered_donors, label: 'Registered Donors' },
               { icon: Zap, value: stats?.available_donors, label: 'Available Now' },
@@ -309,7 +297,7 @@ export default function LandingPage({ user }: { user: any }) {
               <div key={label} className="flex items-center gap-3">
                 <Icon className="w-10 h-10 text-primary" />
                 <div>
-                  <div className="text-3xl font-extrabold leading-none text-white">{value ?? '—'}</div>
+                  <div className="text-2xl sm:text-3xl font-extrabold leading-none text-white">{value ?? '—'}</div>
                   <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1.5">{label}</div>
                 </div>
               </div>
@@ -323,62 +311,39 @@ export default function LandingPage({ user }: { user: any }) {
         </div>
       </section>
 
-      {/* Blood Compatibility Chart */}
-      <section className="fade-in">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 mb-4">Who Can Donate to Whom?</h2>
-          <p className="text-slate-500 font-medium max-w-lg mx-auto">
-            You don't need an exact match — these groups are medically compatible. Drop's matching already includes them automatically.
-          </p>
+      <section className="grid lg:grid-cols-2 gap-5 sm:gap-6 fade-in">
+        <div className="theme-card border border-slate-100 p-6 sm:p-8">
+          <h2 className="text-2xl font-bold text-slate-900">Before publishing a request</h2>
+          <ul className="mt-5 space-y-3 text-sm leading-6 text-slate-600">
+            <li className="flex gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />Confirm the requirement with the treating hospital or blood bank.</li>
+            <li className="flex gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />Use a patient reference instead of publishing unnecessary medical details.</li>
+            <li className="flex gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />Provide a contact who can answer promptly and verify the facility location.</li>
+            <li className="flex gap-3"><CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />Never offer payment for blood or share passwords, OTPs, or financial credentials.</li>
+          </ul>
         </div>
-        <div className="theme-card border border-slate-100 shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/50">
-                <th className="text-left px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-400">Patient</th>
-                <th className="text-left px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-400">Can receive from</th>
-              </tr>
-            </thead>
-            <tbody>
-              {BLOOD_GROUPS.map(group => (
-                <tr key={group} className="border-b border-slate-50 last:border-0 hover:bg-rose-50/30 transition-colors">
-                  <td className="px-6 py-3.5">
-                    <span className="inline-flex items-center justify-center w-11 h-9 bg-rose-50 border border-rose-100 rounded-lg text-primary font-extrabold">{group}</span>
-                    {group === 'AB+' && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full">Universal recipient</span>}
-                  </td>
-                  <td className="px-6 py-3.5">
-                    <div className="flex flex-wrap gap-1.5">
-                      {compatibleDonorsFor(group).map(d => (
-                        <span key={d} className={cn(
-                          'px-2 py-0.5 rounded-md font-bold text-xs border',
-                          d === 'O-' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-50 border-slate-100 text-slate-600'
-                        )}>{d}</span>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="theme-card border border-slate-100 p-6 sm:p-8">
+          <h2 className="text-2xl font-bold text-slate-900">Privacy and clinical safety</h2>
+          <p className="mt-5 text-sm leading-6 text-slate-600">Public request listings omit phone numbers and private patient references. Contact information is shared through authenticated coordination steps. A match is only a lead: the receiving facility remains responsible for identity checks, donor screening, testing, collection, and clinical decisions.</p>
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            <Link to="/safety" className="px-5 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold text-center">Read safety guidance</Link>
+            <Link to="/privacy" className="px-5 py-3 rounded-xl border border-slate-200 text-slate-700 text-sm font-bold text-center">Review privacy</Link>
+          </div>
         </div>
-        <p className="text-center text-xs text-slate-400 font-medium mt-3">
-          <span className="text-emerald-600 font-bold">O−</span> is the universal donor and works for every patient.
-        </p>
       </section>
 
-      {/* Eligibility FAQ */}
       <section className="fade-in max-w-3xl mx-auto">
-        <div className="text-center mb-12">
+        <div className="text-center mb-8 sm:mb-12">
           <h2 className="text-3xl font-bold tracking-tight text-slate-900 mb-4">Can I Donate?</h2>
-          <p className="text-slate-500 font-medium">Quick answers to the most common questions from donors in Bangladesh.</p>
+          <p className="text-slate-500 font-medium leading-7">These are coordination reminders, not medical clearance. The collection facility makes the final decision after screening.</p>
         </div>
         <div className="space-y-3">
           {[
-            { q: 'Who can donate blood?', a: 'Generally healthy adults aged 18–60, weighing at least 50 kg, with no recent serious illness. A quick screening at the donation point makes the final call.' },
-            { q: 'How often can I donate?', a: `Whole blood can be donated safely about every ${DONATION_INTERVAL_DAYS} days (roughly 3–4 months). Your body fully replaces the donated blood well within that window.` },
-            { q: 'Does donating hurt or make me weak?', a: 'Only a brief pinch. The donation takes 10–15 minutes, and most donors are back to normal the same day. Rest, drink water, and avoid heavy lifting for a few hours.' },
-            { q: 'Should I eat before donating?', a: 'Yes — have a proper meal and plenty of water within 3 hours before donating. Avoid donating on an empty stomach.' },
-            { q: 'Is my information safe on Drop?', a: 'Your phone number is only shown to logged-in members responding to a request, and you control your availability status at all times.' }
+            { q: 'Who decides whether I can donate?', a: 'Qualified staff at the hospital or blood collection facility make the final decision after reviewing your health, donation history, medicines, and required screening.' },
+            { q: 'Why does Drop use a donation interval?', a: `Drop uses a configurable ${DONATION_INTERVAL_DAYS}-day whole-blood interval as a conservative matching safeguard. Local clinical policy and the facility's assessment always take priority.` },
+            { q: 'What should I do before travelling to donate?', a: 'Confirm the patient reference, facility, required blood component, time, and official contact. Do not travel based only on an unverified social post or payment request.' },
+            { q: 'What should I bring?', a: 'Follow the receiving facility’s instructions. They may require identification and information about recent health, medicines, travel, or previous donations.' },
+            { q: 'How is my phone number protected?', a: 'Phone numbers are not included in public request lists. Contact details are shared only through authenticated, purpose-limited coordination steps.' },
+            { q: 'Can Drop guarantee a donor or successful collection?', a: 'No. Availability can change, and every potential donor must pass the receiving facility’s checks. Keep coordinating with the hospital or blood bank until the need is resolved.' }
           ].map(({ q, a }) => (
             <details key={q} className="theme-card border border-slate-100 shadow-sm group">
               <summary className="px-6 py-4 font-bold text-slate-900 cursor-pointer list-none flex items-center justify-between hover:text-primary transition-colors">
@@ -388,6 +353,17 @@ export default function LandingPage({ user }: { user: any }) {
               <p className="px-6 pb-5 text-sm text-slate-500 leading-relaxed font-medium">{a}</p>
             </details>
           ))}
+        </div>
+      </section>
+
+      <section className="theme-card border border-rose-100 bg-rose-50/60 p-6 sm:p-9 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div className="max-w-2xl">
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Ready to help the next verified request?</h2>
+          <p className="mt-3 text-slate-600 leading-7">Create a donor profile, keep your availability current, and respond only when you can safely reach the named clinical facility.</p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+          <Link to={user ? '/profile/donor' : '/register'} className="px-6 py-3.5 rounded-xl bg-primary text-white text-sm font-bold text-center">{user ? 'Update availability' : 'Become a donor'}</Link>
+          <Link to="/requests" className="px-6 py-3.5 rounded-xl bg-white border border-rose-200 text-slate-800 text-sm font-bold text-center">View live requests</Link>
         </div>
       </section>
     </div>

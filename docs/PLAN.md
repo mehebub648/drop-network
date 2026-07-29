@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.42`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.44`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,16 +13,28 @@ delivered.
 
 ### Code quality / polish
 
-- [ ] **Complete Bangla localization.** The persistent language provider and
-  shared navigation translations exist; translate emergency forms, validation,
-  request details, profile, operations, and legal/safety content and review the
-  language with a native clinical/operations reviewer.
 - [ ] **Rendered accessibility/browser audit.** Keyboard/focus and reduced
   motion foundations exist, but complete WCAG 2.2 AA review, screen-reader
   testing, target-size/contrast audit, and responsive browser matrix remain.
 
 - [ ] **Pervasive `any` and limited focused tests.** Blood-domain unit coverage
   now exists; add API integration and browser coverage as workflows expand.
+- [ ] **Seven truncated upazila/blood-group combinations.** The Bangladesh
+  Scouts register caps every search at 500 rows. The 0.0.44 full run hit that
+  cap in exactly seven places: Rajshahi/Bagmara (A+, B+, O+),
+  Rajshahi/Godagari (B+), Rajshahi/Tanore (B+), and Kurigram/Ulipur (A+, B+).
+  Roughly 1-3k donors sit behind those caps. Needs a narrower public filter
+  than upazila+group, which the form does not currently expose.
+- [ ] **Quantum donors are mostly unreachable.** Their API reports 58k+ regular
+  donors but ignores every paging parameter, so only the ends of each rank list
+  can be read (587 records captured). Revisit if they expose paging.
+- [ ] **More donor listings.** `sandhani.org` and the medical-college unit sites
+  (e.g. `sbmcu.com`) were unreachable while 0.0.44 was built; Badhan's directory
+  is behind a login. Revisit and add sources to `IMPORT_SOURCES` when they are
+  reachable and genuinely public.
+- [ ] **Directory paging is offset-by-overfetch.** `queryImportedDonors()` in
+  `server/db.ts` fetches `offset + limit` rows and slices, because LanceDB has
+  no OFFSET. Fine for shallow paging; revisit if deep paging is needed.
 - [ ] **In-memory rate limits / runtime cache reset on restart** and are
   per-process; move to a shared store (Redis or the datastore) once a real
   multi-instance deployment exists. Covers the auth/API limiters added in
@@ -49,9 +61,9 @@ These cannot be finished by editing code alone.
   applications, verification, directory listing, roles, and campaigns exist;
   real partners still need contracts, reviewer ownership, and a process for
   hospitals to confirm completed donations.
-- [ ] **Production hosting & domain** - TLS-terminating reverse proxy, domain,
-  deploy target; wire the real `APP_URL` (currently `MY_APP_URL` placeholder).
-  The session cookie is `Secure` in production, so HTTPS is required.
+- [ ] **Production hosting & TLS** - provision the deploy target and a
+  TLS-terminating reverse proxy for `findadrop.org`. The canonical `APP_URL` is
+  configured, but the production session cookie requires a real HTTPS host.
 - [ ] **CAPTCHA / advanced fraud scoring** - reports, blocking, phone
   verification, moderation roles, and an audit trail now exist, but production
   needs a shared risk provider and operational review procedures.

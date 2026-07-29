@@ -1,7 +1,7 @@
 {
   "name": "drop-network",
   "private": true,
-  "version": "0.0.42",
+  "version": "0.0.44",
   "type": "module",
   "scripts": {
     "dev": "tsx watch server/server.ts",
@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/lib/*.test.ts"
+    "test": "tsx --test src/lib/*.test.ts server/*.test.ts",
+    "scrape": "tsx scripts/scrape/index.ts",
+    "import-donors": "tsx scripts/import-donors.ts"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.27.2",

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { DraftNotice, InfoPage } from './InfoPage';
+import { InfoPage } from './InfoPage';
 
 export default function AboutPage() {
   return (
@@ -25,7 +25,10 @@ export default function AboutPage() {
         <p>Accounts, verified mobile ownership, availability status, donation history, and request timelines help members understand who they are dealing with. Verification confirms control of a phone number; it is not identity or clinical verification.</p>
         <p className="mt-3">Read our <Link to="/safety">safety guidance</Link> before meeting a donor or requester.</p>
       </section>
-      <DraftNotice>{'<TODO: Add the organization legal name, founding story, team names, registration details, and office address.>'}</DraftNotice>
+      <section>
+        <h2>How to reach the team</h2>
+        <p>Questions about an account, a safety concern, privacy, or a potential partnership can be sent through the <Link to="/contact">contact form</Link>. Do not use that form for a medical emergency; contact the treating facility directly.</p>
+      </section>
     </InfoPage>
   );
 }

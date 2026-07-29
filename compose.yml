@@ -6,6 +6,7 @@ services:
     container_name: drop
     environment:
       NODE_ENV: production
+      APP_URL: ${APP_URL:-https://findadrop.org}
       LANCEDB_PATH: /data/lancedb
       SMS_PROVIDER: ${SMS_PROVIDER:-}
       SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}
@@ -30,6 +31,7 @@ services:
     command: npm run dev
     environment:
       NODE_ENV: development
+      APP_URL: ${APP_URL:-http://localhost:3001}
       LANCEDB_PATH: /data/lancedb
       SMS_PROVIDER: ${SMS_PROVIDER:-console}
       SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}

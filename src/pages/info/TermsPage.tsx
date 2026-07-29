@@ -1,10 +1,9 @@
 import { Link } from 'react-router-dom';
-import { DraftNotice, InfoPage } from './InfoPage';
+import { InfoPage } from './InfoPage';
 
 export default function TermsPage() {
   return (
-    <InfoPage eyebrow="Legal" title="Terms of Use" intro="These draft terms set expectations for using Drop responsibly. By using the service, you agree to provide honest information and use it only for legitimate blood-donation coordination.">
-      <DraftNotice>{'<TODO: Insert the operating entity, governing law, courts or dispute process, effective date, and obtain local legal review.>'}</DraftNotice>
+    <InfoPage eyebrow="Legal" title="Terms of Use" intro="Effective 22 July 2026. These terms set expectations for using Drop responsibly. By using the service, you agree to provide honest information and use it only for legitimate blood-donation coordination.">
       <section>
         <h2>Who may use Drop</h2>
         <p>You must be able to agree to these terms under applicable law. If you are coordinating for a patient, you must have permission to share the details you submit. Keep your password private and tell us if you believe your account is being misused.</p>
@@ -28,6 +27,10 @@ export default function TermsPage() {
       <section>
         <h2>Availability and liability</h2>
         <p>Drop is provided on an “as available” basis. To the extent permitted by law, the operator does not promise uninterrupted service, successful matching, or the accuracy of member-provided information, and is not liable for indirect or consequential loss arising from use of the service. Nothing in these terms excludes rights or liability that cannot legally be excluded.</p>
+      </section>
+      <section>
+        <h2>Questions about these terms</h2>
+        <p>Applicable law may give you rights that these terms cannot limit. If you have a question about these terms or an account action, use the <Link to="/contact">contact page</Link> and keep the ticket reference for follow-up.</p>
       </section>
     </InfoPage>
   );

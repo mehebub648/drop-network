@@ -7,7 +7,8 @@ const columns = [
     links: [
       { label: 'Find Blood', to: '/' },
       { label: 'Live Requests', to: '/requests' },
-      { label: 'Become a Donor', to: '/register' }
+      { label: 'Become a Donor', to: '/register' },
+      { label: 'Donor Directory', to: '/directory' }
     ]
   },
   {
@@ -43,8 +44,8 @@ export default function Footer() {
             <p className="mt-4 max-w-sm text-sm leading-6 text-slate-400">
               A community blood-donor matching service helping people in Bangladesh find nearby, compatible donors.
             </p>
-            <p className="mt-4 text-xs leading-5 text-amber-200/90">
-              {'<TODO: Add the operating organization legal name, postal address, and official social links.>'}
+            <p className="mt-4 text-xs leading-5 text-slate-500">
+              Drop is an independent coordination platform. It does not collect blood, provide medical care, or replace a hospital or licensed blood bank.
             </p>
           </div>
 

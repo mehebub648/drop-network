@@ -8,8 +8,10 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions } from './db';
+import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, queryImportedDonors, countImportedDonors, getImportedDonor, replaceImportedDonor } from './db';
+import { evaluateClaim, toImportedDonorRow, toPublicImportedDonor, IMPORT_SOURCES, type ImportedDonor } from './importedDonors';
 import { getSmsProvider, isSmsConfigured } from './sms';
+import { canAssignStaffRole, canEditMember, canManageMember, capabilitiesFor, hasCapability, isStaffRole, legacyStaffRole, type StaffRole } from './adminPolicy';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -55,6 +57,20 @@ const allowedCorsOrigins = new Set(
     .map(origin => origin.trim())
     .filter(origin => origin && origin !== 'MY_APP_URL')
 );
+const configuredPublicOrigin = (() => {
+  const configured = process.env.APP_URL?.trim();
+  if (!configured || configured === 'MY_APP_URL') return '';
+  try {
+    const parsed = new URL(configured);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.origin : '';
+  } catch {
+    return '';
+  }
+})();
+
+function publicOrigin(req: express.Request) {
+  return configuredPublicOrigin || `${req.protocol}://${req.get('host')}`;
+}
 
 // Behind a TLS-terminating reverse proxy in production; needed so
 // express-rate-limit sees the real client IP instead of the proxy's.
@@ -144,8 +160,11 @@ type User = {
   is_verified: boolean;
   phone_verified_at?: string;
   roles?: string[];
+  staff_role?: StaffRole;
   account_status?: 'ACTIVE' | 'SUSPENDED';
   suspension_reason?: string;
+  suspended_at?: string;
+  suspended_by?: string;
   blocked_user_ids?: string[];
   deleted_at?: string;
   created_at?: string;
@@ -177,6 +196,10 @@ type Comment = {
   user_name: string;
   text: string;
   created_at: string;
+  moderation_status?: 'VISIBLE' | 'HIDDEN';
+  moderation_reason?: string;
+  moderated_at?: string;
+  moderated_by?: string;
 };
 
 type BloodRequest = {
@@ -418,12 +441,23 @@ async function initDbData() {
   auditEvents = await getAllFromTable('common_audit_events');
   supportTickets = await getAllFromTable('common_support_tickets');
   organizations = await getAllFromTable('common_organizations');
-  const adminPhone = normalizeBangladeshPhone(process.env.ADMIN_PHONE);
-  if (adminPhone) {
-    const admin = users.find(user => user.phone === adminPhone);
-    if (admin && !admin.roles?.includes('ADMIN')) {
-      admin.roles = [...new Set([...(admin.roles || ['MEMBER']), 'ADMIN'])];
-      await saveToTable('common_users', admin);
+  const legacyStaffTokens = new Set(['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER']);
+  for (const user of users) {
+    const migratedStaffRole = user.staff_role || legacyStaffRole(user.roles);
+    const migratedRoles = [...new Set((user.roles || ['MEMBER']).filter(role => !legacyStaffTokens.has(role)))];
+    if (!migratedRoles.includes('MEMBER')) migratedRoles.unshift('MEMBER');
+    if (user.staff_role !== migratedStaffRole || JSON.stringify(user.roles || []) !== JSON.stringify(migratedRoles)) {
+      user.staff_role = migratedStaffRole;
+      user.roles = migratedRoles;
+      await saveToTable('common_users', user);
+    }
+  }
+  const superadminPhone = normalizeBangladeshPhone(process.env.SUPERADMIN_PHONE || process.env.ADMIN_PHONE);
+  if (superadminPhone) {
+    const superadmin = users.find(user => user.phone === superadminPhone);
+    if (superadmin && superadmin.staff_role !== 'SUPERADMIN') {
+      superadmin.staff_role = 'SUPERADMIN';
+      await saveToTable('common_users', superadmin);
     }
   }
   await enforceExpiredRequests();
@@ -604,11 +638,11 @@ function getCurrentAuth(req: express.Request) {
 }
 
 function isOperator(user: User | undefined) {
-  return Boolean(user?.roles?.some(role => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role)));
+  return hasCapability(user, 'DASHBOARD');
 }
 
 function isAdmin(user: User | undefined) {
-  return Boolean(user?.roles?.includes('ADMIN'));
+  return hasCapability(user, 'EDIT_USERS');
 }
 
 async function issueSession(userId: string, req: express.Request) {
@@ -694,13 +728,13 @@ app.get('/metrics', (_req, res) => {
 });
 
 app.get('/robots.txt', (req, res) => {
-  const origin = `${req.protocol}://${req.get('host')}`;
+  const origin = publicOrigin(req);
   res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nSitemap: ${origin}/sitemap.xml\n`);
 });
 
 app.get('/sitemap.xml', (req, res) => {
-  const origin = `${req.protocol}://${req.get('host')}`;
-  const routes = ['', '/requests', '/register', '/partners', '/about', '/contact', '/safety', '/privacy', '/terms'];
+  const origin = publicOrigin(req);
+  const routes = ['', '/requests', '/register', '/directory', '/partners', '/about', '/contact', '/safety', '/privacy', '/terms'];
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${origin}${route}</loc></url>`).join('')}</urlset>`);
 });
 
@@ -1584,6 +1618,201 @@ app.post('/api/organizations/:id/campaigns', async (req, res) => {
   organization.campaigns = [...(organization.campaigns || []), campaign]; organization.updated_at = new Date().toISOString();
   await saveToTable('common_organizations', organization); await audit(auth.user.id, 'CAMPAIGN_PUBLISHED', 'ORGANIZATION', organization.id, { campaign_id: campaign.id });
   res.status(201).json(campaign);
+});
+
+// --- Imported donor directory -------------------------------------------
+//
+// Profiles imported from other organisations' public donor listings. These
+// people never registered here, so the directory is intentionally weaker than
+// the live donor index: contact numbers are always masked, entries are never
+// matched to requests automatically, and a record only becomes a usable donor
+// profile once its owner claims it.
+
+const DIRECTORY_PAGE_SIZE = 24;
+
+async function loadImportedDonor(id: string): Promise<ImportedDonor | null> {
+  const value = cleanString(id, 200);
+  return value ? await getImportedDonor(value) : null;
+}
+
+app.get('/api/directory', async (req, res) => {
+  const group = typeof req.query.blood_group === 'string' && BLOOD_GROUPS.includes(req.query.blood_group as BloodGroup)
+    ? req.query.blood_group
+    : '';
+  const district = cleanString(req.query.district, 100) || '';
+  const sourceId = cleanString(req.query.source, 60) || '';
+  const search = cleanString(req.query.q, 60) || '';
+  const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
+  // Only unclaimed rows are browsable: once a profile is claimed its owner
+  // shows up in the real donor index instead.
+  const query = {
+    bloodGroups: group ? [group] : undefined,
+    district: district || undefined,
+    sourceId: sourceId || undefined,
+    claimStatus: 'UNCLAIMED',
+    search: search || undefined,
+    limit: DIRECTORY_PAGE_SIZE,
+    offset: (page - 1) * DIRECTORY_PAGE_SIZE
+  };
+
+  try {
+    const [donors, total] = await Promise.all([queryImportedDonors(query), countImportedDonors(query)]);
+    res.json({
+      donors: donors.map(toPublicImportedDonor),
+      total,
+      page,
+      page_size: DIRECTORY_PAGE_SIZE
+    });
+  } catch {
+    res.status(503).json({ error: 'Directory is unavailable' });
+  }
+});
+
+// Attribution for every listing that has been imported, so a donor can see
+// where their details were published and go back to the original.
+app.get('/api/directory/sources', async (_req, res) => {
+  try {
+    const summaries = await Promise.all(IMPORT_SOURCES.map(async source => ({
+      ...source,
+      total: await countImportedDonors({ sourceId: source.id }),
+      unclaimed: await countImportedDonors({ sourceId: source.id, claimStatus: 'UNCLAIMED' })
+    })));
+    res.json({ sources: summaries.filter(source => source.total > 0) });
+  } catch {
+    res.status(503).json({ error: 'Directory is unavailable' });
+  }
+});
+
+app.get('/api/directory/:id', async (req, res) => {
+  const donor = await loadImportedDonor(req.params.id);
+  if (!donor) return res.status(404).json({ error: 'Profile not found' });
+  res.json(toPublicImportedDonor(donor));
+});
+
+// Claiming turns an imported stub into the caller's own donor profile. It is
+// auto-approved only when the caller's verified phone is the number the source
+// published; anything else waits for a moderator, because nothing else in the
+// imported data proves ownership.
+app.post('/api/directory/:id/claim', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!auth.user.phone_verified_at) return res.status(403).json({ error: 'Verify your phone number before claiming a profile' });
+
+  const donor = await loadImportedDonor(req.params.id);
+  if (!donor) return res.status(404).json({ error: 'Profile not found' });
+
+  const name = optionalCleanString(req.body?.name, 100);
+  if (name === null) return validationError(res, 'Valid name is required');
+  const blood_group = req.body?.blood_group;
+  if (blood_group !== undefined && !isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
+  const location = req.body?.location === undefined ? undefined : parseLocation(req.body.location);
+  if (req.body?.location !== undefined && !location) return validationError(res, 'Valid location is required');
+
+  const decision = evaluateClaim(
+    donor,
+    { name, blood_group, district: location?.area_name },
+    auth.user.phone
+  );
+  if ('error' in decision) return validationError(res, decision.error);
+
+  // A district with no coordinates cannot be turned into a donor profile, so
+  // the claim form has to send a resolved location for those records.
+  const resolvedLocation = location || donor.location;
+  if (!resolvedLocation) return validationError(res, 'Valid location is required');
+
+  donor.claim_status = decision.status;
+  donor.claimed_by = auth.user.id;
+  donor.claimed_at = new Date().toISOString();
+  donor.claim_note = decision.reason;
+  donor.name = decision.resolved.name;
+  donor.blood_group = decision.resolved.blood_group;
+  donor.district = resolvedLocation.area_name;
+  donor.location = resolvedLocation;
+  await replaceImportedDonor(toImportedDonorRow(donor));
+
+  if (decision.status === 'CLAIMED') {
+    await applyClaimToProfile(auth.user, decision.resolved.blood_group, resolvedLocation);
+  }
+
+  await audit(auth.user.id, decision.status === 'CLAIMED' ? 'DIRECTORY_CLAIM_APPROVED' : 'DIRECTORY_CLAIM_SUBMITTED', 'IMPORTED_DONOR', donor.id, {
+    source_id: donor.source.id,
+    reason: decision.reason
+  });
+
+  res.json({ status: decision.status, reason: decision.reason, donor: toPublicImportedDonor(donor) });
+});
+
+/**
+ * Writes a claimed record onto the user's donor profile. Availability is left
+ * off deliberately: being listed by another organisation is not consent to be
+ * called by this one, so the donor has to opt in themselves.
+ */
+async function applyClaimToProfile(user: User, bloodGroup: string, location: { lat: number; lng: number; area_name: string }) {
+  const existing = user.donor_profile;
+  user.donor_profile = {
+    ...existing,
+    blood_group: bloodGroup,
+    location,
+    availability_status: existing?.availability_status || 'NOT_AVAILABLE',
+    deferral_status: existing?.deferral_status || 'NONE',
+    availability_history: existing?.availability_history || [{ status: 'NOT_AVAILABLE', changed_at: new Date().toISOString() }]
+  };
+  await saveToTable('common_users', user);
+  if (user.donor_profile.availability_status === 'AVAILABLE') {
+    await syncDonorToPartition(user);
+  }
+}
+
+// Claims that could not be verified automatically wait here for staff.
+app.get('/api/admin/directory/claims', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const donors: ImportedDonor[] = await queryImportedDonors({ claimStatus: 'PENDING_REVIEW', limit: 100 });
+    res.json({
+      claims: donors.map(donor => ({
+        ...toPublicImportedDonor(donor),
+        claimed_by: donor.claimed_by,
+        claimed_at: donor.claimed_at,
+        claim_note: donor.claim_note,
+        claimant: (() => {
+          const claimant = users.find(item => item.id === donor.claimed_by);
+          return claimant ? { id: claimant.id, name: claimant.name, phone: claimant.phone } : null;
+        })()
+      }))
+    });
+  } catch {
+    res.status(503).json({ error: 'Directory is unavailable' });
+  }
+});
+
+app.patch('/api/admin/directory/claims/:id', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Forbidden' });
+  const approve = req.body?.approve === true;
+
+  const donor = await loadImportedDonor(req.params.id);
+  if (!donor || donor.claim_status !== 'PENDING_REVIEW') return res.status(404).json({ error: 'Claim not found' });
+
+  const claimant = users.find(item => item.id === donor.claimed_by);
+  if (approve && !claimant) return validationError(res, 'Claimant account no longer exists');
+
+  if (approve) {
+    donor.claim_status = 'CLAIMED';
+    if (donor.location) await applyClaimToProfile(claimant!, donor.blood_group, donor.location);
+    await notify(claimant!.id, 'DIRECTORY_CLAIM', 'Profile claim approved', 'Your imported donor profile is now yours.', '/profile');
+  } else {
+    // Rejecting releases the record so someone else can claim it.
+    donor.claim_status = 'UNCLAIMED';
+    if (claimant) await notify(claimant.id, 'DIRECTORY_CLAIM', 'Profile claim declined', 'We could not verify your claim on that imported profile.', '/directory');
+    donor.claimed_by = undefined;
+    donor.claimed_at = undefined;
+  }
+  donor.claim_note = cleanString(req.body?.note, 200) || donor.claim_note;
+  await replaceImportedDonor(toImportedDonorRow(donor));
+  await audit(auth.user.id, approve ? 'DIRECTORY_CLAIM_APPROVED' : 'DIRECTORY_CLAIM_REJECTED', 'IMPORTED_DONOR', donor.id);
+
+  res.json({ status: donor.claim_status });
 });
 
 // Public network stats for the landing page.

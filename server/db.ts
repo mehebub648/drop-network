@@ -92,6 +92,130 @@ export async function getAllFromTable(name: string) {
   }
 }
 
+// --- Imported donor directory -------------------------------------------
+//
+// Imported donors are far more numerous than accounts, so unlike the other
+// tables they are never loaded into memory. The columns that the directory
+// filters on are stored as real columns so LanceDB can push the predicate
+// down; the full record still travels in `doc`.
+
+const IMPORTED_TABLE = 'imported_donors';
+
+function stringLiteral(value: string) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+export type ImportedDonorRow = {
+  id: string;
+  blood_group: string;
+  district: string;
+  phone: string;
+  claim_status: string;
+  source_id: string;
+  search_text: string;
+  doc: string;
+  vector: number[];
+};
+
+export async function ensureImportedDonorTable() {
+  const conn = await getDb();
+  const tables = await conn.tableNames();
+  if (tables.includes(IMPORTED_TABLE)) return await conn.openTable(IMPORTED_TABLE);
+
+  const table = await conn.createTable(IMPORTED_TABLE, [{
+    vector: [0, 0],
+    id: 'dummy',
+    blood_group: '',
+    district: '',
+    phone: '',
+    claim_status: '',
+    source_id: '',
+    search_text: '',
+    doc: '{}'
+  }]);
+  await table.delete(idFilter('dummy'));
+  return table;
+}
+
+export async function addImportedDonors(rows: ImportedDonorRow[]) {
+  if (rows.length === 0) return;
+  const table = await ensureImportedDonorTable();
+  await table.add(rows);
+}
+
+export async function deleteImportedDonors(ids: string[]) {
+  if (ids.length === 0) return;
+  const table = await ensureImportedDonorTable();
+  await table.delete(`id IN (${ids.map(stringLiteral).join(', ')})`);
+}
+
+/** Replaces a single row in place (LanceDB has no in-place update). */
+export async function replaceImportedDonor(row: ImportedDonorRow) {
+  await deleteImportedDonors([row.id]);
+  await addImportedDonors([row]);
+}
+
+export type ImportedDonorQuery = {
+  bloodGroups?: string[];
+  district?: string;
+  sourceId?: string;
+  claimStatus?: string;
+  /** Case-insensitive substring match against name/district/upazila. */
+  search?: string;
+  limit?: number;
+  offset?: number;
+};
+
+function buildImportedFilter(query: ImportedDonorQuery) {
+  const clauses: string[] = [];
+  if (query.bloodGroups?.length) {
+    clauses.push(`blood_group IN (${query.bloodGroups.map(stringLiteral).join(', ')})`);
+  }
+  if (query.district) clauses.push(`district = ${stringLiteral(query.district)}`);
+  if (query.sourceId) clauses.push(`source_id = ${stringLiteral(query.sourceId)}`);
+  if (query.claimStatus) clauses.push(`claim_status = ${stringLiteral(query.claimStatus)}`);
+  if (query.search) {
+    clauses.push(`search_text LIKE ${stringLiteral(`%${query.search.toLowerCase()}%`)}`);
+  }
+  return clauses.join(' AND ');
+}
+
+export async function queryImportedDonors(query: ImportedDonorQuery) {
+  const conn = await getDb();
+  const tables = await conn.tableNames();
+  if (!tables.includes(IMPORTED_TABLE)) return [];
+
+  const table = await conn.openTable(IMPORTED_TABLE);
+  const limit = Math.max(1, query.limit ?? 30);
+  const offset = Math.max(0, query.offset ?? 0);
+  const filter = buildImportedFilter(query);
+
+  // LanceDB has no OFFSET, so over-fetch by the offset and slice. Directory
+  // paging is shallow, which keeps this cheap.
+  let builder = table.query().limit(offset + limit);
+  if (filter) builder = builder.where(filter);
+  const results = await builder.toArray();
+  return results.slice(offset).map((row: any) => JSON.parse(row.doc));
+}
+
+export async function countImportedDonors(query: ImportedDonorQuery = {}) {
+  const conn = await getDb();
+  const tables = await conn.tableNames();
+  if (!tables.includes(IMPORTED_TABLE)) return 0;
+  const table = await conn.openTable(IMPORTED_TABLE);
+  const filter = buildImportedFilter(query);
+  return await table.countRows(filter || undefined);
+}
+
+export async function getImportedDonor(id: string) {
+  const conn = await getDb();
+  const tables = await conn.tableNames();
+  if (!tables.includes(IMPORTED_TABLE)) return null;
+  const table = await conn.openTable(IMPORTED_TABLE);
+  const results = await table.query().where(`id = ${stringLiteral(id)}`).limit(1).toArray();
+  return results.length > 0 ? JSON.parse((results[0] as any).doc) : null;
+}
+
 export async function saveToTable(name: string, obj: any, vector: number[] = [0,0]) {
   const table = await ensureTable(name);
   try {

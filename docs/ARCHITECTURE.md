@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.42`
+Current application version: `0.0.44`
 
 ## Overview
 
@@ -49,8 +49,8 @@ Entry points:
 
 Routes:
 
-- `/` shows the landing and blood request flow, plus live network stats, a
-  blood-compatibility chart, and a donor-eligibility FAQ.
+- `/` shows the landing and blood request flow, live network stats, request
+  preparation and safety guidance, and a donor-eligibility FAQ.
 - `/requests` lists bounded pages of public blood requests with server-side
   blood-group/district/urgency filters persisted in the URL.
 - `/request/:id` shows one request, donor matches, patient/contact details, and comments.
@@ -96,9 +96,8 @@ Client state:
 - Account and donor-match UI shows phone verification state. Production
   registration stays closed unless an HTTP SMS gateway is configured.
 - A React error boundary displays a fallback if a route render fails.
-- `LocaleProvider` persists English/Bangla selection and translates the shared
-  navigation shell. Detailed page/form copy remains an explicit localization
-  follow-up.
+- The interface uses consistent English production copy; no translation
+  provider or unfinished language control is exposed.
 - `RouteMetadata` updates route titles, descriptions, canonical URLs, and Open
   Graph fields. The public manifest and service worker provide an installable,
   cache-first fallback shell without caching API responses.
@@ -188,6 +187,13 @@ API routes:
 - `POST /api/requests/:id/comments` adds a comment with anonymous rate limits.
 - `DELETE /api/requests/:id/comments/:commentId` lets the request owner delete comments.
 - `PATCH /api/requests/:id/status` lets the request owner update request status.
+- `GET /api/directory` lists unclaimed imported donor stubs with masked phone
+  numbers, filtered by blood group, district, source, and name.
+  `GET /api/directory/sources` returns per-source attribution and counts, and
+  `GET /api/directory/:id` returns one masked record.
+- `POST /api/directory/:id/claim` claims an imported profile for the
+  authenticated, phone-verified caller. `GET`/`PATCH /api/admin/directory/claims`
+  let operators approve or release claims that could not be auto-verified.
 
 ## Data Storage
 
@@ -206,6 +212,12 @@ Tables:
 - `common_organizations` stores partner applications, verification state, and
   campaign records.
 - `donors_<district>_<blood_group>` stores searchable donor partitions.
+- `imported_donors` stores claimable donor stubs imported from other
+  organisations' public listings. Unlike every other table it is never loaded
+  into the runtime cache, because it is orders of magnitude larger than the
+  account tables. Its filter columns (`blood_group`, `district`, `phone`,
+  `claim_status`, `source_id`, `search_text`) are stored as real columns so
+  LanceDB can push predicates down; the full record still travels in `doc`.
 
 Records are stored as JSON strings in a `doc` field. LanceDB vectors use `[lng, lat]` so donor/request records can be searched by location.
 
@@ -218,6 +230,48 @@ Important helpers:
 - `removeDonorFromAllPartitions()` clears stale donor rows before profile resync.
 - `getAllFromTable()` loads saved JSON documents.
 - `saveToTable()` replaces a document by `id` using escaped ID filters.
+- `ensureImportedDonorTable()`, `addImportedDonors()`, `queryImportedDonors()`,
+  `countImportedDonors()`, `getImportedDonor()`, and `replaceImportedDonor()`
+  serve the imported directory without loading it into memory.
+
+## Imported Donor Directory
+
+Several Bangladesh organisations publish open donor listings. `scripts/scrape/`
+reads those listings and `scripts/import-donors.ts` loads them into
+`imported_donors`. Both are standalone scripts run through Docker Compose; the
+server never scrapes anything at runtime.
+
+- `server/importedDonors.ts` holds the shared registry (`IMPORT_SOURCES`), the
+  record shape, dedupe keys, phone masking, and the claim decision logic. It is
+  pure and unit-tested in `server/importedDonors.test.ts`.
+- `scripts/scrape/sources/*.ts` implement one listing each and stream
+  `ScrapedDonor` records; `scripts/scrape/index.ts` writes NDJSON per source to
+  `data/scraped/`. Adding a source means adding a descriptor to
+  `IMPORT_SOURCES` and a module that yields records.
+- `scripts/import-donors.ts` normalizes, dedupes, and writes the NDJSON into
+  LanceDB. Unrecognised blood groups and districts are blanked rather than
+  guessed, which turns them into fields a claimant has to complete.
+
+These people never registered here, so an imported record is a stub, not an
+account:
+
+- Phone numbers are only ever served masked (`+88017••••••78`).
+- Imported records never enter the donor match partitions and are never
+  invited to a request.
+- A record becomes a real donor profile only through
+  `POST /api/directory/:id/claim`. The claim is auto-approved only when the
+  claimant's own verified phone equals the number the source published;
+  everything else becomes `PENDING_REVIEW` for an operator, because nothing
+  else in the imported data proves ownership.
+- A claimed profile starts as `NOT_AVAILABLE`. Being listed by another
+  organisation is not consent to be contacted here, so the donor has to opt in.
+
+Commands:
+
+```
+docker compose --profile development run --rm app-dev npm run scrape -- --source=all
+docker compose --profile development run --rm app-dev npm run import-donors -- --in=data/scraped
+```
 
 ## Matching Logic
 
@@ -258,6 +312,8 @@ Ports:
 Environment:
 
 - `CORS_ORIGIN` optionally lists allowed cross-origin browser origins.
+- `APP_URL` sets the canonical public origin for generated public URLs and
+  defaults to `https://findadrop.org` for the production Compose service.
 - `LANCEDB_PATH` sets the datastore directory inside the container. Docker
   Compose sets it to `/data/lancedb`.
 - `ADMIN_PHONE` bootstraps the first verified administrator by normalized

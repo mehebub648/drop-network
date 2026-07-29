@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardList, Shield, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardList, Shield, UserCheck, Users } from 'lucide-react';
 import { api } from '../lib/api';
 
 type Overview = {
@@ -12,15 +12,19 @@ export default function AdminPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [organizations, setOrganizations] = useState<any[]>([]);
+  const [directoryClaims, setDirectoryClaims] = useState<any[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
 
   const load = async () => {
     try {
-      const [nextOverview, nextRequests, nextOrganizations] = await Promise.all([api.getAdminOverview(), api.getAdminRequests(), api.getAdminOrganizations()]);
+      const [nextOverview, nextRequests, nextOrganizations, nextClaims] = await Promise.all([
+        api.getAdminOverview(), api.getAdminRequests(), api.getAdminOrganizations(), api.getDirectoryClaims()
+      ]);
       setOverview(nextOverview);
       setRequests(nextRequests);
       setOrganizations(nextOrganizations);
+      setDirectoryClaims(nextClaims.claims);
       setError('');
     } catch (caught: any) {
       setError(caught.message || 'Could not load operations data.');
@@ -62,6 +66,26 @@ export default function AdminPage() {
         <section className="theme-card border border-slate-100 p-6">
           <h2 className="font-bold text-xl flex items-center gap-2"><Users className="w-5 h-5 text-primary" /> Organization applications</h2>
           <div className="mt-4 space-y-3">{organizations.length === 0 && <p className="text-sm text-slate-500">No applications.</p>}{organizations.map(org => <div key={org.id} className="rounded-xl border p-4 flex flex-col sm:flex-row gap-3 justify-between"><div><p className="font-bold">{org.name}</p><p className="text-xs text-slate-500">{org.status} · {org.type} · {org.district} · Ref {org.registration_reference}</p></div><div className="flex gap-2"><button onClick={() => run(org.id, () => api.reviewOrganization(org.id, 'VERIFIED', 'Organization reference reviewed.'))} className="px-3 py-2 border rounded-lg text-xs font-bold">Verify</button><button onClick={() => run(org.id, () => api.reviewOrganization(org.id, 'REJECTED', 'Verification requirements not met.'))} className="px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-bold">Reject</button></div></div>)}</div>
+        </section>
+
+        <section className="theme-card border border-slate-100 p-6">
+          <h2 className="font-bold text-xl flex items-center gap-2"><UserCheck className="w-5 h-5 text-primary" /> Imported profile claims</h2>
+          <p className="text-sm text-slate-500 mt-1">Claims that could not be verified automatically, because the source published no phone number or the claimant is calling from a different one.</p>
+          <div className="mt-4 space-y-3">
+            {directoryClaims.length === 0 && <p className="text-sm text-slate-500">No claims waiting for review.</p>}
+            {directoryClaims.map(claim => <div key={claim.id} className="rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+              <div>
+                <div className="font-bold text-sm">{claim.name} · {claim.blood_group} · {claim.district}</div>
+                <div className="text-xs text-slate-500 mt-1">
+                  Listed by {claim.source.organization} as {claim.phone_masked || 'no published number'} · claimed by {claim.claimant?.name || 'unknown'} ({claim.claimant?.phone || '—'}) · {claim.claim_note}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button disabled={busy === claim.id} onClick={() => run(claim.id, () => api.reviewDirectoryClaim(claim.id, true))} className="px-3 py-2 rounded-lg border text-xs font-bold">Approve</button>
+                <button disabled={busy === claim.id} onClick={() => run(claim.id, () => api.reviewDirectoryClaim(claim.id, false))} className="px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-bold">Decline</button>
+              </div>
+            </div>)}
+          </div>
         </section>
 
         <section className="theme-card border border-slate-100 p-6">

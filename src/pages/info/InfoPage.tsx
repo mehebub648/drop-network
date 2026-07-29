@@ -14,11 +14,3 @@ export function InfoPage({ eyebrow, title, intro, children }: { eyebrow: string;
     </article>
   );
 }
-
-export function DraftNotice({ children }: { children: ReactNode }) {
-  return (
-    <aside className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
-      <strong>Draft details to finalize:</strong> {children}
-    </aside>
-  );
-}
