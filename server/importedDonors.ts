@@ -12,6 +12,8 @@
 // published phone, or a claim from a different number - is queued for staff
 // review, because nothing in the imported data proves ownership.
 
+import { createHash } from 'node:crypto';
+
 export const IMPORTED_DONORS_TABLE = 'imported_donors';
 
 export const CLAIM_STATUSES = ['UNCLAIMED', 'PENDING_REVIEW', 'CLAIMED'] as const;
@@ -53,7 +55,10 @@ export const IMPORT_SOURCES: ImportSourceDescriptor[] = [
 ];
 
 export type ImportedDonor = {
+  /** Internal LanceDB row id. This value is never serialized publicly. */
   id: string;
+  /** Stable opaque id used by directory URLs and API lookups. */
+  public_id: string;
   source: ImportedDonorSource;
   source_ref: string;
   name: string;
@@ -102,14 +107,48 @@ export function dedupeKey(record: { phone: string; source_id: string; source_ref
   return record.phone ? `phone:${record.phone}` : `${record.source_id}:${record.source_ref}`;
 }
 
-/** Stable id so re-running an import updates rows instead of duplicating them. */
+function sha256Identity(namespace: 'public' | 'storage', key: string) {
+  return createHash('sha256')
+    .update(`drop:imported-donor:${namespace}:v1\0${key}`, 'utf8')
+    .digest('hex');
+}
+
+/**
+ * Stable opaque public id. The full dedupe key must never be embedded in a URL:
+ * phone-backed keys contain the donor's complete number.
+ */
 export function importedDonorId(key: string) {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < key.length; index += 1) {
-    hash ^= key.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `imp_${hash.toString(16).padStart(8, '0')}_${key.length.toString(36)}_${encodeURIComponent(key).slice(0, 48)}`;
+  return `imp_${sha256Identity('public', key)}`;
+}
+
+/** Stable internal id for newly imported storage rows. */
+export function importedDonorStorageId(key: string) {
+  return `imp_row_${sha256Identity('storage', key)}`;
+}
+
+type StoredImportedDonor = Omit<ImportedDonor, 'public_id'> & { public_id?: string };
+
+export function publicIdForImportedDonor(
+  donor: Pick<StoredImportedDonor, 'phone' | 'source' | 'source_ref' | 'public_id'>
+) {
+  if (donor.public_id && /^imp_[a-f0-9]{64}$/.test(donor.public_id)) return donor.public_id;
+  return importedDonorId(dedupeKey({
+    phone: donor.phone,
+    source_id: donor.source.id,
+    source_ref: donor.source_ref
+  }));
+}
+
+/**
+ * Hydrates legacy documents without changing their internal row id. This lets
+ * old claims remain readable while the datastore gains a separate public id.
+ */
+export function withImportedDonorIdentity(donor: StoredImportedDonor, storageId = donor.id): ImportedDonor {
+  return {
+    ...donor,
+    id: storageId,
+    public_id: publicIdForImportedDonor(donor)
+  };
 }
 
 export function toImportedDonor(
@@ -120,7 +159,8 @@ export function toImportedDonor(
   const key = dedupeKey(record);
   const location = record.district && resolveLocation ? resolveLocation(record.district) : null;
   return {
-    id: importedDonorId(key),
+    id: importedDonorStorageId(key),
+    public_id: importedDonorId(key),
     source: {
       id: record.source_id,
       organization: record.source_organization,
@@ -171,7 +211,7 @@ export function missingFields(donor: Pick<ImportedDonor, 'name' | 'phone' | 'blo
 
 export function toPublicImportedDonor(donor: ImportedDonor): PublicImportedDonor {
   return {
-    id: donor.id,
+    id: publicIdForImportedDonor(donor),
     name: donor.name,
     blood_group: donor.blood_group,
     district: donor.district,
@@ -194,16 +234,18 @@ export function toPublicImportedDonor(donor: ImportedDonor): PublicImportedDonor
  * with no district sit at the origin and are only reachable by filter.
  */
 export function toImportedDonorRow(donor: ImportedDonor) {
+  const storedDonor = withImportedDonorIdentity(donor);
   return {
-    vector: donor.location ? [donor.location.lng, donor.location.lat] : [0, 0],
-    id: donor.id,
-    blood_group: donor.blood_group,
-    district: donor.district,
-    phone: donor.phone,
-    claim_status: donor.claim_status,
-    source_id: donor.source.id,
-    search_text: `${donor.name} ${donor.district} ${donor.upazila}`.toLowerCase(),
-    doc: JSON.stringify(donor)
+    vector: storedDonor.location ? [storedDonor.location.lng, storedDonor.location.lat] : [0, 0],
+    id: storedDonor.id,
+    public_id: storedDonor.public_id,
+    blood_group: storedDonor.blood_group,
+    district: storedDonor.district,
+    phone: storedDonor.phone,
+    claim_status: storedDonor.claim_status,
+    source_id: storedDonor.source.id,
+    search_text: `${storedDonor.name} ${storedDonor.district} ${storedDonor.upazila}`.toLowerCase(),
+    doc: JSON.stringify(storedDonor)
   };
 }
 

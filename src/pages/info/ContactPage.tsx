@@ -25,7 +25,7 @@ export default function ContactPage() {
         <div className="grid sm:grid-cols-2 gap-3"><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Email" className="px-4 py-3 rounded-xl border" /><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="Bangladesh phone" className="px-4 py-3 rounded-xl border" /></div>
         <textarea required minLength={10} maxLength={2000} rows={5} value={form.message} onChange={e => setForm({ ...form, message: e.target.value })} placeholder="How can we help? Do not include passwords, OTPs, or unnecessary patient details." className="w-full px-4 py-3 rounded-xl border" />
         <p className="text-xs text-slate-500">Provide at least an email or Bangladesh phone number so the team can respond.</p>
-        {state.message && <p role="status" className={`text-sm font-semibold ${state.error ? 'text-red-600' : 'text-emerald-700'}`}>{state.message}</p>}
+        {state.message && <p role="status" className={`text-sm font-semibold ${state.error ? 'text-red-600' : 'text-green-700'}`}>{state.message}</p>}
         <button disabled={state.busy} className="px-5 py-3 bg-slate-900 text-white rounded-xl font-bold disabled:opacity-50"><Send className="inline w-4 h-4 mr-2" />{state.busy ? 'Sending…' : 'Send request'}</button>
       </form>
       <section>

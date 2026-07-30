@@ -49,20 +49,20 @@ export default function SettingsPage({ user }: { user: ProfileUser }) {
             <h3 className="font-extrabold flex items-center gap-2"><Bell className="w-5 h-5 text-primary" /> Notification preferences</h3>
             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mt-3">These choices are stored on this device only. Push and email delivery are not connected yet.</p>
             <div className="mt-4 space-y-3">
-              <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.urgentAlerts} onChange={event => setPreferences(current => ({ ...current, urgentAlerts: event.target.checked }))} className="w-4 h-4 accent-rose-600" /> <span className="font-medium">Urgent requests for my blood group</span></label>
-              <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.requestUpdates} onChange={event => setPreferences(current => ({ ...current, requestUpdates: event.target.checked }))} className="w-4 h-4 accent-rose-600" /> <span className="font-medium">Updates to my requests</span></label>
+              <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.urgentAlerts} onChange={event => setPreferences(current => ({ ...current, urgentAlerts: event.target.checked }))} className="w-4 h-4 accent-emerald-700" /> <span className="font-medium">Urgent requests for my blood group</span></label>
+              <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.requestUpdates} onChange={event => setPreferences(current => ({ ...current, requestUpdates: event.target.checked }))} className="w-4 h-4 accent-emerald-700" /> <span className="font-medium">Updates to my requests</span></label>
             </div>
           </section>
 
           <section className="pt-5 border-t border-slate-100">
             <h3 className="font-extrabold flex items-center gap-2"><LockKeyhole className="w-5 h-5 text-primary" /> Privacy</h3>
-            <p className="text-sm text-slate-500 mt-2">Your phone stays off public lists. Signed-in members viewing a request can access contact details for coordination. See the Privacy Policy for the full current behavior.</p>
+            <p className="text-sm text-slate-500 mt-2">Your phone stays off public search results. Signed-in members can see it only while your registered donor profile is opted in and available. Imported listings remain masked for everyone, and request contacts are limited to the owner and accepted donors. See the Privacy Policy for the full current behavior.</p>
           </section>
         </div>
 
         <div className="mt-7 flex items-center gap-3">
           <button type="button" onClick={save} className="px-5 py-3 bg-slate-900 text-white rounded-xl font-bold inline-flex items-center gap-2"><Save className="w-4 h-4" /> Save preferences</button>
-          {saved && <span className="text-sm font-bold text-emerald-700">Saved on this device.</span>}
+          {saved && <span className="text-sm font-bold text-green-700">Saved on this device.</span>}
         </div>
       </div>
 

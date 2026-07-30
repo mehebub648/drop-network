@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Droplet, Hospital, MapPin, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BadgeCheck, CheckCircle2, Droplet, ExternalLink, Hospital, MapPin, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
 import { BLOOD_GROUPS } from '../lib/blood';
+import {
+  COLLECTION_FACILITY_SOURCE_URL,
+  REGISTERED_BLOOD_BANKS
+} from '../lib/collectionFacilities';
 import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
 
 const COMPONENTS = [
@@ -70,6 +74,19 @@ export default function NewRequestPage({ user }: { user: { name: string; phone: 
   const [consent, setConsent] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const minimumNeededBy = useMemo(() => {
+    const minimum = new Date(Date.now() + 30 * 60 * 1000);
+    minimum.setSeconds(0, 0);
+    return new Date(minimum.getTime() - minimum.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  }, []);
+  const districtFacilities = useMemo(
+    () => REGISTERED_BLOOD_BANKS.filter(facility => facility.district === form.district),
+    [form.district]
+  );
+  const selectedFacility = useMemo(
+    () => districtFacilities.find(facility => facility.name.localeCompare(form.hospital_name.trim(), undefined, { sensitivity: 'accent' }) === 0),
+    [districtFacilities, form.hospital_name]
+  );
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(form)); }, [form]);
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm(current => ({ ...current, [key]: value }));
@@ -116,16 +133,23 @@ export default function NewRequestPage({ user }: { user: { name: string; phone: 
             {[
               ['Need', `${form.units_required} unit(s) of ${form.blood_group} ${COMPONENTS.find(item => item[0] === form.blood_component)?.[1]}`],
               ['When', new Date(form.needed_by).toLocaleString()],
-              ['Hospital', `${form.hospital_name}, ${form.hospital_address}`],
+              ['Collection facility', form.hospital_name],
+              ['Collection address', form.hospital_address],
               ['Location', form.district],
               ['Patient reference', form.patient_reference],
               ['Requester', `${form.requester_name} (${RELATIONSHIPS.find(item => item[0] === form.requester_relationship)?.[1]})`],
               ['Contact', `${form.contact_name} · ${form.contact_phone}`],
               ['Ward', form.ward || 'Not provided']
-            ].map(([label, value]) => <div key={label} className="rounded-2xl bg-slate-50 p-4"><dt className="text-xs uppercase tracking-widest text-slate-400 font-bold">{label}</dt><dd className="mt-1 font-bold text-slate-800">{value}</dd></div>)}
+            ].map(([label, value]) => <div key={label} className="rounded-2xl bg-slate-50 p-4"><dt className="text-xs uppercase tracking-widest text-slate-500 font-bold">{label}</dt><dd className="mt-1 font-bold text-slate-800">{value}</dd></div>)}
           </dl>
-          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 flex gap-3"><AlertTriangle className="w-5 h-5 flex-shrink-0" /><p>Drop coordinates volunteers only. The receiving hospital must confirm compatibility, eligibility, testing, and collection.</p></div>
-          <label className="mt-6 flex items-start gap-3 text-sm font-medium"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 w-4 h-4 accent-rose-600" /><span>I confirm the request is genuine, the details are accurate, I may publish the hospital and request information shown above, and I will close the request when the need ends.</span></label>
+          {selectedFacility && (
+            <p className="mt-5 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
+              <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              DGHS registry code {selectedFacility.registryCode}; categorized as a blood bank. Current service availability still needs direct confirmation.
+            </p>
+          )}
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 flex gap-3"><AlertTriangle className="w-5 h-5 flex-shrink-0" /><p>Drop coordinates volunteers only. Confirm with the collection facility that it can receive the donor, screen the blood, and arrange a clinically supervised transfusion.</p></div>
+          <label className="mt-6 flex items-start gap-3 text-sm font-medium"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 w-4 h-4 accent-primary" /><span>I confirm the request is genuine, the details are accurate, I may publish the collection facility and request information shown above, and I will close the request when the need ends.</span></label>
           {message && <p role="alert" className="mt-4 text-red-600 font-bold text-sm">{message}</p>}
           <button onClick={publish} disabled={saving || !consent} className="mt-6 w-full py-4 rounded-2xl bg-primary text-white font-extrabold disabled:opacity-50">{saving ? 'Publishing…' : 'Publish verified request'}</button>
         </div>
@@ -141,15 +165,43 @@ export default function NewRequestPage({ user }: { user: { name: string; phone: 
           <Field label="Blood group"><select required value={form.blood_group} onChange={e => set('blood_group', e.target.value)} className="input">{BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}</select></Field>
           <Field label="Component"><select required value={form.blood_component} onChange={e => set('blood_component', e.target.value)} className="input">{COMPONENTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
           <Field label="Units / bags"><input required type="number" min="1" max="20" value={form.units_required} onChange={e => set('units_required', Number(e.target.value))} className="input" /></Field>
-        </div><div className="mt-4"><Field label="Required date and time"><input required type="datetime-local" value={form.needed_by} onChange={e => set('needed_by', e.target.value)} className="input" /></Field></div></section>
-        <section><h2 className="font-extrabold flex items-center gap-2"><Hospital className="w-5 h-5 text-primary" /> Hospital and patient reference</h2><div className="mt-4 grid sm:grid-cols-2 gap-4">
-          <Field label="Hospital / blood bank"><input required maxLength={160} value={form.hospital_name} onChange={e => set('hospital_name', e.target.value)} className="input" /></Field>
-          <Field label="District"><select required value={form.district} onChange={e => set('district', e.target.value)} className="input">{BD_LOCATION_NAMES.map(district => <option key={district}>{district}</option>)}</select></Field>
-          <Field label="Hospital address"><input required maxLength={240} value={form.hospital_address} onChange={e => set('hospital_address', e.target.value)} className="input" /></Field>
-          <Field label="Ward / department"><input maxLength={100} value={form.ward} onChange={e => set('ward', e.target.value)} className="input" /></Field>
+        </div><div className="mt-4"><Field label="Required date and time"><input required type="datetime-local" min={minimumNeededBy} value={form.needed_by} onChange={e => set('needed_by', e.target.value)} className="input" /></Field></div></section>
+        <section>
+          <h2 className="font-extrabold flex items-center gap-2"><Hospital className="w-5 h-5 text-primary" /> Blood collection location</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Enter the exact facility where the donor will attend and blood will be collected. The district list below only suggests facilities categorized as <strong>Blood Bank</strong> in the supplied DGHS registry export.</p>
+          <div className="mt-4 grid sm:grid-cols-2 gap-4">
+          <Field label="District"><select required value={form.district} onChange={e => { set('district', e.target.value); set('hospital_name', ''); }} className="input">{BD_LOCATION_NAMES.map(district => <option key={district}>{district}</option>)}</select></Field>
+          <Field
+            label="Collection facility / hospital / blood bank"
+            hint={districtFacilities.length > 0 ? `${districtFacilities.length} DGHS blood-bank suggestion${districtFacilities.length === 1 ? '' : 's'} in ${form.district}; typing another facility is allowed.` : `No DGHS blood-bank suggestions are available for ${form.district}; enter the receiving facility manually.`}
+          >
+            <input
+              required
+              list="registered-blood-banks"
+              maxLength={160}
+              autoComplete="organization"
+              value={form.hospital_name}
+              onChange={e => set('hospital_name', e.target.value)}
+              className="input"
+              placeholder="Start typing the receiving facility"
+            />
+            <datalist id="registered-blood-banks">
+              {districtFacilities.map(facility => (
+                <option key={facility.registryCode} value={facility.name}>{facility.locality}</option>
+              ))}
+            </datalist>
+          </Field>
+          <Field label="Full collection address" hint="Include building, road or area, and any entrance instructions the donor needs."><input required maxLength={240} autoComplete="street-address" value={form.hospital_address} onChange={e => set('hospital_address', e.target.value)} className="input" placeholder="Building, road, area" /></Field>
+          <Field label="Blood bank / ward / department"><input maxLength={100} value={form.ward} onChange={e => set('ward', e.target.value)} className="input" placeholder="For example, Transfusion Medicine" /></Field>
           <Field label="Patient name (private)"><input required maxLength={120} value={form.patient_name} onChange={e => set('patient_name', e.target.value)} className="input" /></Field>
           <Field label="Hospital patient reference (private)"><input required maxLength={100} value={form.patient_reference} onChange={e => set('patient_reference', e.target.value)} className="input" /></Field>
-        </div></section>
+          </div>
+          <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-slate-600">
+            <BadgeCheck className="h-4 w-4 text-primary" aria-hidden="true" />
+            Registry suggestions are category-filtered, not a guarantee of today&apos;s capability.
+            <a className="inline-flex items-center gap-1 font-bold text-primary hover:underline" href={COLLECTION_FACILITY_SOURCE_URL} target="_blank" rel="noreferrer">View DGHS registry <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></a>
+          </p>
+        </section>
         <section><h2 className="font-extrabold flex items-center gap-2"><MapPin className="w-5 h-5 text-primary" /> Verified requester contact</h2><div className="mt-4 grid sm:grid-cols-2 gap-4">
           <Field label="Requester name"><input required maxLength={120} value={form.requester_name} onChange={e => set('requester_name', e.target.value)} className="input" /></Field>
           <Field label="Relationship"><select required value={form.requester_relationship} onChange={e => set('requester_relationship', e.target.value)} className="input">{RELATIONSHIPS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
@@ -157,12 +209,12 @@ export default function NewRequestPage({ user }: { user: { name: string; phone: 
           <Field label="Bangladesh mobile"><input required type="tel" value={form.contact_phone} onChange={e => set('contact_phone', e.target.value)} className="input" placeholder="+880 1712 345678" /></Field>
         </div></section>
         {message && <p role="alert" className="text-red-600 font-bold text-sm">{message}</p>}
-        <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-extrabold inline-flex justify-center items-center gap-2"><CheckCircle2 className="w-5 h-5" /> Review request</button>
+        <button className="w-full py-4 bg-primary text-white rounded-2xl font-extrabold inline-flex justify-center items-center gap-2 shadow-lg shadow-rose-950/15 transition-colors hover:bg-primary-dark"><CheckCircle2 className="w-5 h-5" /> Review request</button>
       </form>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <label className="block"><span className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">{label}</span>{children}</label>;
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return <label className="block"><span className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">{label}</span>{children}{hint && <span className="mt-2 block text-xs font-medium leading-5 text-slate-500">{hint}</span>}</label>;
 }

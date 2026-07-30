@@ -4,10 +4,13 @@ import {
   dedupeKey,
   evaluateClaim,
   importedDonorId,
+  importedDonorStorageId,
   maskPhone,
   missingFields,
   toImportedDonor,
+  toImportedDonorRow,
   toPublicImportedDonor,
+  withImportedDonorIdentity,
   type ImportedDonor
 } from './importedDonors';
 
@@ -29,6 +32,9 @@ test('records with the same phone collapse across sources', () => {
   const b = dedupeKey({ phone: '+8801961161996', source_id: 'quantum-method', source_ref: '332496' });
   assert.equal(a, b);
   assert.equal(importedDonorId(a), importedDonorId(b));
+  assert.equal(importedDonorStorageId(a), importedDonorStorageId(b));
+  assert.match(importedDonorId(a), /^imp_[a-f0-9]{64}$/);
+  assert.match(importedDonorStorageId(a), /^imp_row_[a-f0-9]{64}$/);
 });
 
 test('records without a phone stay unique per source', () => {
@@ -41,10 +47,37 @@ test('imported donors start unclaimed and never expose a raw phone publicly', ()
   const donor = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
   assert.equal(donor.claim_status, 'UNCLAIMED');
   const publicView = toPublicImportedDonor(donor);
+  const serialized = JSON.stringify(publicView);
   assert.equal(publicView.has_phone, true);
   assert.ok(!publicView.phone_masked.includes('61161'));
   assert.equal(publicView.phone_masked, '+88019••••••96');
   assert.deepEqual(publicView.missing_fields, []);
+  assert.equal(publicView.id, donor.public_id);
+  assert.notEqual(publicView.id, donor.id);
+  assert.equal(serialized.includes(scraped.phone), false);
+  assert.equal(serialized.includes(encodeURIComponent(scraped.phone)), false);
+  assert.equal(serialized.includes(encodeURIComponent(`phone:${scraped.phone}`)), false);
+  assert.equal(serialized.includes(donor.id), false);
+});
+
+test('storage rows keep separate internal and public identities', () => {
+  const donor = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
+  const row = toImportedDonorRow(donor);
+  assert.equal(row.id, donor.id);
+  assert.equal(row.public_id, donor.public_id);
+  assert.equal(JSON.parse(row.doc).public_id, donor.public_id);
+});
+
+test('legacy storage ids remain internal when public identity is hydrated', () => {
+  const donor = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
+  const legacyStorageId = 'imp_legacy_phone%3A%2B8801961161996';
+  const hydrated = withImportedDonorIdentity({ ...donor, id: legacyStorageId, public_id: undefined });
+  const publicView = toPublicImportedDonor(hydrated);
+
+  assert.equal(hydrated.id, legacyStorageId);
+  assert.match(hydrated.public_id, /^imp_[a-f0-9]{64}$/);
+  assert.equal(JSON.stringify(publicView).includes(legacyStorageId), false);
+  assert.equal(JSON.stringify(publicView).includes(scraped.phone), false);
 });
 
 test('masking keeps only the operator prefix and the last two digits', () => {

@@ -59,7 +59,7 @@ export default function ProfileRequestsPage() {
 
       {error && <p className="mt-5 text-sm font-bold text-red-600">{error}</p>}
       {loading ? (
-        <div className="py-16 flex justify-center"><div className="w-8 h-8 border-4 border-rose-100 border-t-primary rounded-full animate-spin" /></div>
+        <div className="py-16 flex justify-center"><div className="w-8 h-8 border-4 border-emerald-100 border-t-primary rounded-full animate-spin" /></div>
       ) : visible.length === 0 ? (
         <div className="py-14 text-center">
           <Heart className="w-10 h-10 text-slate-300 mx-auto" />
@@ -71,10 +71,10 @@ export default function ProfileRequestsPage() {
           {visible.map(request => (
             <article key={request.id} className="rounded-2xl border border-slate-200 p-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                <div className="w-12 h-12 rounded-xl bg-rose-50 text-primary font-extrabold flex items-center justify-center">{request.blood_group}</div>
+                <div className="w-12 h-12 rounded-xl bg-red-50 text-red-700 font-extrabold flex items-center justify-center">{request.blood_group}</div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={cn('text-[10px] px-2 py-1 rounded-full font-bold', request.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : request.status === 'FULFILLED' ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600')}>{request.status}</span>
+                    <span className={cn('text-[10px] px-2 py-1 rounded-full font-bold', request.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : request.status === 'FULFILLED' ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600')}>{request.status}</span>
                     <span className="text-xs text-slate-400">{formatDistanceToNow(new Date(request.created_at), { addSuffix: true })}</span>
                   </div>
                   <p className="font-bold mt-2 flex items-center gap-1.5"><MapPin className="w-4 h-4 text-slate-400" /> {request.location.area_name}</p>

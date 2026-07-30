@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Flag, Heart, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, User as UserIcon, Users, Zap } from 'lucide-react';
+import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Flag, Heart, Hospital, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, User as UserIcon, Users, Zap } from 'lucide-react';
 import { api, BROWSER_FINGERPRINT } from '../lib/api';
 import { BLOOD_GROUPS, compatibleDonorsFor, DONATION_INTERVAL_DAYS, getEligibility, getUrgency, URGENCY_ORDER } from '../lib/blood';
+import { REGISTERED_BLOOD_BANKS } from '../lib/collectionFacilities';
 import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
 import { cn } from '../lib/utils';
 import { UrgencyBadge } from '../components/UrgencyBadge';
@@ -45,7 +46,20 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   };
 
   // Editing State
-  const [editData, setEditData] = useState<any>({ patient_name: '', requester_name: '', needed_by: '', contacts: [] });
+  const [editData, setEditData] = useState<any>({
+    patient_name: '',
+    requester_name: '',
+    needed_by: '',
+    hospital_name: '',
+    hospital_address: '',
+    ward: '',
+    district: '',
+    contacts: []
+  });
+  const editFacilitySuggestions = useMemo(
+    () => REGISTERED_BLOOD_BANKS.filter(facility => facility.district === editData.district),
+    [editData.district]
+  );
 
   useEffect(() => {
     async function load() {
@@ -57,6 +71,10 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           patient_name: payload.request.patient_name || '',
           requester_name: payload.request.requester_name || '',
           needed_by: payload.request.needed_by ? new Date(payload.request.needed_by).toISOString().slice(0, 16) : '',
+          hospital_name: payload.request.hospital_name || '',
+          hospital_address: payload.request.hospital_address || '',
+          ward: payload.request.ward || '',
+          district: payload.request.location?.area_name || '',
           contacts: payload.request.contacts || []
         });
       } catch (e) {
@@ -84,8 +102,14 @@ export default function RequestDetailsPage({ user }: { user: any }) {
 
   const handleSaveDetails = async () => {
     if (data?.request) {
+      const location = getLocationByName(editData.district);
+      if (!location) {
+        setActionMessage({ type: 'error', text: 'Choose a valid collection district.' });
+        return;
+      }
       const formattedData = {
         ...editData,
+        location,
         needed_by: editData.needed_by ? new Date(editData.needed_by).toISOString() : undefined
       };
       setActionMessage(null);
@@ -163,7 +187,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     } catch (error: any) { setActionMessage({ type: 'error', text: error.message || 'Could not submit the report.' }); }
   };
 
-  if (loading) return <div className="flex justify-center p-12"><div className="w-10 h-10 border-[3px] border-rose-100 border-t-primary rounded-full animate-spin"></div></div>;
+  if (loading) return <div className="flex justify-center p-12"><div className="w-10 h-10 border-[3px] border-emerald-100 border-t-primary rounded-full animate-spin"></div></div>;
   if (loadError) return (
     <div className="max-w-3xl mx-auto theme-card p-10 text-center border border-slate-100">
       <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
@@ -199,14 +223,14 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       {actionMessage && (
         <div className={cn(
           "px-5 py-3 rounded-2xl text-sm font-bold",
-          actionMessage.type === 'success' ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
+          actionMessage.type === 'success' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
         )}>
           {actionMessage.text}
         </div>
       )}
 
       {/* Main Request Header */}
-      <div className="theme-card p-6 md:p-8 bg-rose-50/50 border border-rose-100 shadow-sm relative overflow-hidden">
+      <div className="theme-card p-6 md:p-8 bg-emerald-50/40 border border-emerald-100 shadow-sm relative overflow-hidden">
         {request.status === 'FULFILLED' && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
             <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
@@ -229,32 +253,37 @@ export default function RequestDetailsPage({ user }: { user: any }) {
 
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 relative z-0">
           <div className="flex items-start gap-5">
-             <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white border border-rose-100 flex items-center justify-center text-primary text-2xl md:text-3xl font-extrabold shadow-sm flex-shrink-0">
+             <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center text-red-700 text-2xl md:text-3xl font-extrabold shadow-sm flex-shrink-0">
                {request.blood_group}
              </div>
              <div>
                 <div className="flex items-center gap-3 mb-1 flex-wrap">
-                  <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm border border-emerald-200">
-                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div> Active
+                  <span className="bg-green-100 text-green-800 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm border border-green-200">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div> Active
                   </span>
                   <UrgencyBadge neededBy={request.needed_by} />
                   <span className="text-xs font-bold text-slate-400">ID: #{request.id.split('-')[1]}</span>
                 </div>
-                <h3 className="font-bold text-xl md:text-2xl text-slate-900 mt-2 flex items-center gap-1.5">
-                  <MapPin className="w-5 h-5 text-slate-400" />
-                  {request.location.area_name}
-                </h3>
+                <h1 className="mt-2 flex items-start gap-2 text-xl font-bold text-slate-900 md:text-2xl">
+                  <Hospital className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                  <span>{request.hospital_name || 'Collection facility'}</span>
+                </h1>
+                <p className="mt-2 flex items-start gap-1.5 text-sm font-semibold text-slate-600">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                  <span>{request.hospital_address ? `${request.hospital_address}, ` : ''}{request.location.area_name}</span>
+                </p>
+                {request.ward && <p className="mt-1 pl-5 text-xs font-semibold text-slate-500">{request.ward}</p>}
                  <p className="text-sm font-semibold text-slate-500 flex items-center gap-1.5 mt-2">
-                   <Calendar className="w-4 h-4 text-emerald-500" />
+                   <Calendar className="w-4 h-4 text-primary" />
                    Needed: <span className="text-slate-700">{request.needed_by ? new Date(request.needed_by).toLocaleDateString() : 'ASAP'}</span>
                  </p>
                  <p className="text-sm font-semibold text-slate-600 mt-2">
-                   {request.units_required || 1} unit(s) · {(request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase()} · {request.hospital_name}
+                   {request.units_required || 1} unit(s) · {(request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase()}
                  </p>
                 <p className="text-xs font-semibold text-slate-500 mt-2 flex items-center gap-1.5 flex-wrap">
                   <Droplet className="w-3.5 h-3.5 text-primary" /> Compatible donors:
                   {compatibleDonorsFor(request.blood_group).map(g => (
-                    <span key={g} className="px-1.5 py-0.5 bg-white border border-rose-100 rounded-md text-primary font-bold text-[11px]">{g}</span>
+                    <span key={g} className="px-1.5 py-0.5 bg-white border border-red-100 rounded-md text-red-700 font-bold text-[11px]">{g}</span>
                   ))}
                 </p>
              </div>
@@ -269,11 +298,11 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         </div>
 
         {request.status === 'ACTIVE' && (
-          <div className="flex items-center gap-3 mt-6 pt-5 border-t border-rose-100 relative z-0">
+          <div className="flex items-center gap-3 mt-6 pt-5 border-t border-emerald-100 relative z-0">
             <span className="text-xs font-bold uppercase tracking-widest text-slate-400 mr-1">Spread the word</span>
             <button
               onClick={() => shareRequest('whatsapp')}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center gap-2"
             >
               <Share2 className="w-4 h-4" /> WhatsApp
             </button>
@@ -304,21 +333,67 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           <div className="space-y-4 fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Patient Name</label>
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Collection district</label>
+                <select
+                  value={editData.district}
+                  onChange={e => setEditData({ ...editData, district: e.target.value, hospital_name: '' })}
+                  className="input"
+                >
+                  {BD_LOCATION_NAMES.map(district => <option key={district}>{district}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Collection facility</label>
+                <input
+                  required
+                  list="edit-registered-blood-banks"
+                  type="text"
+                  value={editData.hospital_name}
+                  onChange={e => setEditData({ ...editData, hospital_name: e.target.value })}
+                  className="input"
+                  placeholder="Hospital or blood bank"
+                />
+                <datalist id="edit-registered-blood-banks">
+                  {editFacilitySuggestions.map(facility => <option key={facility.registryCode} value={facility.name}>{facility.locality}</option>)}
+                </datalist>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Full collection address</label>
+                <input
+                  required
+                  type="text"
+                  value={editData.hospital_address}
+                  onChange={e => setEditData({ ...editData, hospital_address: e.target.value })}
+                  className="input"
+                  placeholder="Building, road, area"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Blood bank / ward / department</label>
+                <input
+                  type="text"
+                  value={editData.ward}
+                  onChange={e => setEditData({ ...editData, ward: e.target.value })}
+                  className="input"
+                  placeholder="For example, Transfusion Medicine"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Patient Name</label>
                 <input 
                   type="text" value={editData.patient_name} onChange={e => setEditData({...editData, patient_name: e.target.value})}
                   className="w-full px-4 py-3 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary text-sm font-medium outline-none" placeholder="Enter patient name..."
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Requester Name</label>
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Requester Name</label>
                 <input 
                   type="text" value={editData.requester_name} onChange={e => setEditData({...editData, requester_name: e.target.value})}
                   className="w-full px-4 py-3 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary text-sm font-medium outline-none" placeholder="Who is requesting?"
                 />
               </div>
               <div className="md:col-span-2 relative">
-                <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Needed By (Date)</label>
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Needed By (Date)</label>
                 <div className="relative">
                   <input 
                     type="date" value={editData.needed_by ? new Date(editData.needed_by).toISOString().slice(0, 10) : ''} 
@@ -448,7 +523,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         ) : (
           <div className="grid gap-4">
             {matches.map((m, i) => (
-              <div key={i} className="theme-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-rose-200 border border-slate-100 transition-colors shadow-sm bg-white">
+              <div key={i} className="theme-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-emerald-200 border border-slate-100 transition-colors shadow-sm bg-white">
                 <div className="flex items-center gap-5 flex-1">
                   <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl overflow-hidden bg-slate-50 flex-shrink-0 flex items-center justify-center text-primary text-xl font-extrabold border border-slate-100">
                     {m.blood_group}
@@ -457,7 +532,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-lg text-slate-900">{m.name}</span>
                       <VerifiedBadge verified={Boolean(m.is_verified)} compact />
-                      <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Available</span>
+                      <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Available</span>
                     </div>
                     <div className="text-sm font-semibold text-slate-500 mt-1 flex items-center gap-2">
                       <span>{m.distance_km} km away</span>
@@ -522,7 +597,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               value={anonName}
               onChange={e => setAnonName(e.target.value)}
               placeholder="Your Name (required)"
-              className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-rose-200 focus:ring-4 focus:ring-rose-50 text-sm font-medium outline-none transition-all w-[240px]"
+              className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50 text-sm font-medium outline-none transition-all w-[240px]"
             />
           )}
           <div className="flex gap-3">
@@ -531,7 +606,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               value={newComment} 
               onChange={e => setNewComment(e.target.value)}
               placeholder="Type your comment or question..."
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-rose-200 focus:ring-4 focus:ring-rose-50 text-sm font-medium outline-none transition-all"
+              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50 text-sm font-medium outline-none transition-all"
               onKeyDown={e => e.key === 'Enter' && submitComment()}
             />
             <button onClick={submitComment} className="px-5 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform shadow-sm">

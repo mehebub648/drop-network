@@ -226,6 +226,15 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to update user');
   },
 
+  async revokeAdminUserSessions(id: string, reason: string) {
+    const res = await fetch(`${API_BASE}/admin/users/${id}/revoke-sessions`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    return readJsonOrThrow(res, 'Failed to revoke member sessions');
+  },
+
   async getAdminRequests() {
     const res = await fetch(`${API_BASE}/admin/requests`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load requests');
@@ -267,8 +276,22 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load requests');
   },
 
-  // Imported directory. Contact numbers come back masked; the full number is
-  // only ever known to the person who claims the profile.
+  async searchDonors(params: {
+    blood_group: string;
+    location: { lat: number; lng: number; area_name: string };
+  }) {
+    const query = new URLSearchParams({
+      blood_group: params.blood_group,
+      lat: String(params.location.lat),
+      lng: String(params.location.lng),
+      area_name: params.location.area_name
+    });
+    const res = await fetch(`${API_BASE}/donors/search?${query}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to search available donors');
+  },
+
+  // Imported archive. Contact numbers stay masked for every caller; claiming
+  // verifies ownership but does not turn third-party publication into consent.
   async getDirectory(params: { blood_group?: string; district?: string; source?: string; q?: string; page?: number } = {}) {
     const query = new URLSearchParams();
     if (params.blood_group) query.set('blood_group', params.blood_group);

@@ -78,7 +78,7 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
             {editingId && <button type="button" onClick={resetForm} className="px-3 py-3 bg-slate-100 rounded-xl font-bold">Cancel</button>}
           </div>
         </form>
-        {message && <p className={message.type === 'success' ? 'mt-4 text-emerald-700 font-bold text-sm' : 'mt-4 text-red-600 font-bold text-sm'}>{message.text}</p>}
+        {message && <p className={message.type === 'success' ? 'mt-4 text-green-700 font-bold text-sm' : 'mt-4 text-red-600 font-bold text-sm'}>{message.text}</p>}
       </div>
 
       <div className="theme-card border border-slate-100 p-6">

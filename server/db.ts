@@ -1,6 +1,11 @@
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 import fs from 'fs';
+import {
+  toImportedDonorRow,
+  withImportedDonorIdentity,
+  type ImportedDonor
+} from './importedDonors';
 
 // Storage location for the LanceDB data files.
 // In production, set LANCEDB_PATH to a path backed by a persistent volume
@@ -100,6 +105,8 @@ export async function getAllFromTable(name: string) {
 // down; the full record still travels in `doc`.
 
 const IMPORTED_TABLE = 'imported_donors';
+const PUBLIC_ID_BACKFILL_BATCH_SIZE = 1_000;
+let importedTableReady: Promise<Awaited<ReturnType<typeof prepareImportedDonorTable>>> | null = null;
 
 function stringLiteral(value: string) {
   return `'${String(value).replace(/'/g, "''")}'`;
@@ -107,6 +114,7 @@ function stringLiteral(value: string) {
 
 export type ImportedDonorRow = {
   id: string;
+  public_id: string;
   blood_group: string;
   district: string;
   phone: string;
@@ -117,14 +125,53 @@ export type ImportedDonorRow = {
   vector: number[];
 };
 
-export async function ensureImportedDonorTable() {
+function importedDonorFromRow(row: Record<string, unknown>): ImportedDonor {
+  const parsed = JSON.parse(String(row.doc || '{}')) as ImportedDonor;
+  return withImportedDonorIdentity(
+    {
+      ...parsed,
+      public_id: typeof row.public_id === 'string' ? row.public_id : parsed.public_id
+    },
+    String(row.id)
+  );
+}
+
+async function backfillImportedDonorPublicIds(table: lancedb.Table) {
+  while (true) {
+    const legacyRows = await table
+      .query()
+      .where(`public_id IS NULL OR public_id = ''`)
+      .limit(PUBLIC_ID_BACKFILL_BATCH_SIZE)
+      .toArray();
+    if (legacyRows.length === 0) return;
+
+    const backfilledRows = legacyRows.map((row: unknown) =>
+      toImportedDonorRow(importedDonorFromRow(row as Record<string, unknown>))
+    );
+    await table
+      .mergeInsert('id')
+      .whenMatchedUpdateAll()
+      .execute(backfilledRows);
+  }
+}
+
+async function prepareImportedDonorTable() {
   const conn = await getDb();
   const tables = await conn.tableNames();
-  if (tables.includes(IMPORTED_TABLE)) return await conn.openTable(IMPORTED_TABLE);
+  if (tables.includes(IMPORTED_TABLE)) {
+    const table = await conn.openTable(IMPORTED_TABLE);
+    const schema = await table.schema();
+    if (!schema.fields.some(field => field.name === 'public_id')) {
+      await table.addColumns([{ name: 'public_id', valueSql: "''" }]);
+    }
+    await backfillImportedDonorPublicIds(table);
+    return table;
+  }
 
   const table = await conn.createTable(IMPORTED_TABLE, [{
     vector: [0, 0],
     id: 'dummy',
+    public_id: '',
     blood_group: '',
     district: '',
     phone: '',
@@ -137,21 +184,42 @@ export async function ensureImportedDonorTable() {
   return table;
 }
 
+export async function ensureImportedDonorTable() {
+  if (!importedTableReady) importedTableReady = prepareImportedDonorTable();
+  try {
+    return await importedTableReady;
+  } catch (error) {
+    importedTableReady = null;
+    throw error;
+  }
+}
+
 export async function addImportedDonors(rows: ImportedDonorRow[]) {
   if (rows.length === 0) return;
   const table = await ensureImportedDonorTable();
   await table.add(rows);
 }
 
-export async function deleteImportedDonors(ids: string[]) {
+export async function deleteImportedDonorsByStorageIds(ids: string[]) {
   if (ids.length === 0) return;
   const table = await ensureImportedDonorTable();
   await table.delete(`id IN (${ids.map(stringLiteral).join(', ')})`);
 }
 
+export async function deleteImportedDonorsByPublicIds(publicIds: string[]) {
+  if (publicIds.length === 0) return;
+  const table = await ensureImportedDonorTable();
+  await table.delete(`public_id IN (${publicIds.map(stringLiteral).join(', ')})`);
+}
+
+/** @deprecated Prefer an explicit storage-id or public-id deletion helper. */
+export async function deleteImportedDonors(ids: string[]) {
+  return await deleteImportedDonorsByStorageIds(ids);
+}
+
 /** Replaces a single row in place (LanceDB has no in-place update). */
 export async function replaceImportedDonor(row: ImportedDonorRow) {
-  await deleteImportedDonors([row.id]);
+  await deleteImportedDonorsByStorageIds([row.id]);
   await addImportedDonors([row]);
 }
 
@@ -181,11 +249,7 @@ function buildImportedFilter(query: ImportedDonorQuery) {
 }
 
 export async function queryImportedDonors(query: ImportedDonorQuery) {
-  const conn = await getDb();
-  const tables = await conn.tableNames();
-  if (!tables.includes(IMPORTED_TABLE)) return [];
-
-  const table = await conn.openTable(IMPORTED_TABLE);
+  const table = await ensureImportedDonorTable();
   const limit = Math.max(1, query.limit ?? 30);
   const offset = Math.max(0, query.offset ?? 0);
   const filter = buildImportedFilter(query);
@@ -195,25 +259,23 @@ export async function queryImportedDonors(query: ImportedDonorQuery) {
   let builder = table.query().limit(offset + limit);
   if (filter) builder = builder.where(filter);
   const results = await builder.toArray();
-  return results.slice(offset).map((row: any) => JSON.parse(row.doc));
+  return results
+    .slice(offset)
+    .map((row: unknown) => importedDonorFromRow(row as Record<string, unknown>));
 }
 
 export async function countImportedDonors(query: ImportedDonorQuery = {}) {
-  const conn = await getDb();
-  const tables = await conn.tableNames();
-  if (!tables.includes(IMPORTED_TABLE)) return 0;
-  const table = await conn.openTable(IMPORTED_TABLE);
+  const table = await ensureImportedDonorTable();
   const filter = buildImportedFilter(query);
   return await table.countRows(filter || undefined);
 }
 
-export async function getImportedDonor(id: string) {
-  const conn = await getDb();
-  const tables = await conn.tableNames();
-  if (!tables.includes(IMPORTED_TABLE)) return null;
-  const table = await conn.openTable(IMPORTED_TABLE);
-  const results = await table.query().where(`id = ${stringLiteral(id)}`).limit(1).toArray();
-  return results.length > 0 ? JSON.parse((results[0] as any).doc) : null;
+export async function getImportedDonor(publicId: string) {
+  const table = await ensureImportedDonorTable();
+  const results = await table.query().where(`public_id = ${stringLiteral(publicId)}`).limit(1).toArray();
+  return results.length > 0
+    ? importedDonorFromRow(results[0] as unknown as Record<string, unknown>)
+    : null;
 }
 
 export async function saveToTable(name: string, obj: any, vector: number[] = [0,0]) {

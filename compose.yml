@@ -18,7 +18,9 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     volumes:
-      - drop_lancedb:/data/lancedb
+      # Bind mount rather than a named volume so the datastore is a directory
+      # you can back up, copy, or inspect directly on the host.
+      - ./data/lancedb:/data/lancedb
     restart: unless-stopped
 
   app-dev:
@@ -47,11 +49,13 @@ services:
     volumes:
       - .:/app
       - drop_node_modules:/app/node_modules
-      - drop_lancedb_dev:/data/lancedb
+      # Development keeps its own directory so experiments never touch the
+      # production datastore.
+      - ./data/lancedb-dev:/data/lancedb
     stdin_open: true
     tty: true
 
 volumes:
-  drop_lancedb:
+  # LanceDB now lives in ./data on the host; only the dependency cache still
+  # needs a named volume (it must not shadow the host node_modules).
   drop_node_modules:
-  drop_lancedb_dev:

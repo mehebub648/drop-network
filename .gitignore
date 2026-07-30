@@ -8,5 +8,6 @@ coverage/
 .env*
 !.env.example
 
-# Scraped donor listings are large working data, not source.
-data/scraped/
+# Local runtime data: the LanceDB datastore and scraped donor listings.
+# Large, machine-local, and contains personal data - never commit it.
+data/

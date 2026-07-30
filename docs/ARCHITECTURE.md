@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.44`
+Current application version: `0.0.50`
 
 ## Overview
 
@@ -8,23 +8,30 @@ Drop Network is a single Node.js application for urgent blood donation matching.
 
 - A React 19 single-page frontend in `src/`.
 - An Express API in `server/server.ts`.
-- A LanceDB data store under `/data/lancedb` inside Docker, backed by persistent
-  Docker volumes.
+- A LanceDB data store mounted at `/data/lancedb` inside Docker, bind-mounted
+  from `./data/` on the host so the datastore is a directory you can back up,
+  copy, or inspect directly.
 - Vite middleware in development and static `dist/` serving in production.
 - Docker targets for development, build, and production runtime.
 
-The app is currently self-contained. There is no external auth provider, SMS gateway, or hosted database integration.
+The app is currently self-contained. There is no external auth provider or
+hosted database integration. `server/sms.ts` can call a configured
+provider-neutral HTTP SMS gateway; when no channel is configured, non-production
+environments use console delivery while production fails closed.
 
 ## Runtime Flow
 
 1. The server starts from `server/server.ts`.
-2. `initDbData()` loads users, sessions, and blood requests from LanceDB tables.
-3. Active requests with past `expires_at` timestamps are marked `CANCELLED`.
-4. No data is seeded; the datastore starts empty and is populated only by real
+2. `initDbData()` loads users, sessions, and blood requests from LanceDB tables
+   and migrates legacy operational roles to the staff hierarchy.
+3. The first imported-directory access ensures the `public_id` column exists
+   and non-destructively backfills opaque IDs for legacy rows.
+4. Active requests with past `expires_at` timestamps are marked `CANCELLED`.
+5. No data is seeded; the datastore starts empty and is populated only by real
    user activity.
-5. In development, Express mounts Vite middleware for the React app.
-6. In production, Express serves the built frontend from `dist/`.
-7. The frontend talks to the backend through relative `/api` routes.
+6. In development, Express mounts Vite middleware for the React app.
+7. In production, Express serves the built frontend from `dist/`.
+8. The frontend talks to the backend through relative `/api` routes.
 
 ## Frontend
 
@@ -32,32 +39,42 @@ Entry points:
 
 - `src/main.tsx` mounts React into `#root`.
 - `src/App.tsx` owns application auth state and wires the route tree.
-- `src/pages/` contains route-level screens; each existing public, auth,
-  request, and profile screen lives in its own module.
+- `src/pages/` contains route-level screens, including `DonorSearchPage` for
+  public registered-donor discovery and `AdminPage` for role-aware operations.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
-- `src/components/` contains shared layout, error-boundary, and status UI.
+- `src/components/` contains shared layout, authentication shell,
+  error-boundary, metadata, and status UI.
 - The shared layout supplies the site header and institutional footer. The
   footer links product, company, legal, and safety routes.
 - `src/lib/locations.ts`, `src/lib/urgency.ts`, and `src/lib/utils.ts` contain
-  shared frontend constants and utilities.
+  shared frontend constants and utilities. `src/lib/collectionFacilities.ts`
+  contains the category-filtered DGHS collection-facility suggestions.
 - `src/lib/api.ts` wraps all fetch calls to `/api`.
 - `src/lib/blood.ts` holds blood-domain helpers: the compatibility maps,
   urgency derivation from the needed-by date, and the configurable donor
   eligibility calculation. The compatibility map mirrors the server's.
-- `src/index.css` contains global styles and Tailwind CSS usage.
+- `src/index.css` defines the responsive white-and-blood-red component system,
+  admin workspace layout, shared controls, and Tailwind CSS usage.
 
 Routes:
 
-- `/` shows the landing and blood request flow, live network stats, request
-  preparation and safety guidance, and a donor-eligibility FAQ.
+- `/` is a search-led landing page with public donor filters, network context,
+  privacy explanations, request preparation, safety guidance, and FAQs.
 - `/requests` lists bounded pages of public blood requests with server-side
-  blood-group/district/urgency filters persisted in the URL.
-- `/request/:id` shows one request, donor matches, patient/contact details, and comments.
+  blood-group/district/urgency filters persisted in the URL and makes the
+  collection facility visible on each request card.
+- `/request/:id` shows one request, its collection facility and address, donor
+  matches, patient/contact details, and comments. Owners can correct the
+  collection location while a request is active.
 - `/login` logs in an existing user.
 - `/register` verifies a Bangladesh mobile by OTP before creating an account.
-- `/request/new` keeps an offline-safe local form draft, presents a review
-  step, then creates a private server draft and explicitly publishes it.
+- `/request/new` keeps an offline-safe local form draft, collects the exact
+  collection facility/address, presents a review step, then creates a private
+  server draft and explicitly publishes it. Suggestions are limited to the 198
+  supplied DGHS registry rows whose facility type is `Blood Bank`; manual entry
+  remains available and registry inclusion is not presented as proof of current
+  service availability.
 - `/profile` redirects authenticated members to `/profile/donor`.
 - `/profile/account` edits the member name and phone and shows joined and
   verification information.
@@ -71,11 +88,19 @@ Routes:
 - `/profile/settings` stores device-local preferences, downloads the complete
   server-side account export, and starts password-confirmed anonymization.
 - `/forgot-password` resets a password after registered-phone OTP verification.
+- `/directory` publicly searches opted-in, currently available registered
+  donors. Guests can search and see non-contact result fields; signed-in active
+  members can also receive participating donors' phone numbers.
+- `/directory/imported` browses the separately labelled, always-masked archive
+  of third-party public listings.
+- `/directory/imported/:id` shows and claims one imported record by opaque
+  public ID. `/directory/:id` remains a compatibility alias.
 - `/about` explains the service mission, matching model, and limitations.
 - `/contact` submits validated support, privacy, safety, and partnership
   tickets to the protected operations queue.
-- `/admin` gives authorized support, moderator, verifier, and administrator
-  roles an operational dashboard for reports, tickets, and request review.
+- `/admin` is a capability-aware operations workspace. Visible sections cover
+  overview, members, requests, reports, support, partners, imported claims,
+  audit history, and safe system context according to staff role.
 - `/partners` lists verified hospitals, blood banks, NGOs, and current donation
   campaigns and accepts verified-member organization applications.
 - `/privacy` documents current data collection, visibility, storage, cookies,
@@ -93,8 +118,12 @@ Client state:
 - A legacy `drop_fingerprint` remains for old comment attribution and ownership
   migration. New blood requests require a verified account.
 - Auth state is derived from whether `GET /api/me` succeeds.
-- Account and donor-match UI shows phone verification state. Production
-  registration stays closed unless an HTTP SMS gateway is configured.
+- Public donor discovery omits phone fields for guests and reveals them only
+  after the caller has an active authenticated session. Imported contacts
+  remain masked regardless of authentication.
+- Account and donor-match UI shows phone verification state. Registration and
+  recovery display a development-only notice when OTPs use console delivery;
+  production stays closed unless an HTTP SMS gateway is configured.
 - A React error boundary displays a fallback if a route render fails.
 - The interface uses consistent English production copy; no translation
   provider or unfinished language control is exposed.
@@ -104,7 +133,11 @@ Client state:
 
 ## Backend
 
-`server/server.ts` owns the API, an in-memory write-through runtime cache, session issuance, request validation, and static serving. `server/sms.ts` holds a dormant SMS provider abstraction for a future phone-verification flow.
+`server/server.ts` owns the API, an in-memory write-through runtime cache,
+session issuance, request validation, capability enforcement, and static
+serving. `server/sms.ts` resolves either the configured HTTP transport or the
+non-production console transport and never silently downgrades an explicitly
+incomplete provider.
 
 Security middleware:
 
@@ -120,6 +153,9 @@ Security middleware:
   cookie (`Secure` in production) with a 7-day TTL. CSRF is mitigated by the
   Lax cookie, JSON-only request bodies, and locked-down CORS in production.
 - API responses never include the `password` field (`sanitizeUser`).
+- Admin actions are capability-checked by `staff_role`. Member suspension,
+  staff assignment, and session revocation enforce hierarchy and self/last-
+  superadmin protections, require reasons, and write before/after audit context.
 
 Main data types:
 
@@ -139,12 +175,19 @@ API routes:
 - `POST /api/auth/login` authenticates by phone and password, sets the
   `drop_session` cookie, and returns the sanitized user.
 - `POST /api/auth/otp/request` and `/api/auth/otp/verify` create purpose-bound,
-  expiring phone-verification tokens through the configured SMS provider.
+  expiring phone-verification tokens. Non-production uses console delivery when
+  no channel is configured; production and incomplete explicit HTTP settings
+  fail closed. A failed send invalidates the new challenge so it creates no
+  false cooldown.
 - `POST /api/auth/register` consumes a registration token, creates a verified
   user, and starts an optional donor profile as unavailable.
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `POST /api/auth/reset-password` consumes a verified recovery challenge,
   changes the password, and revokes every existing session.
+- `GET /api/donors/search?blood_group&lat&lng&area_name` is optional-auth
+  discovery for verified, eligible, currently available registered donors
+  inside the configured radius. It returns `{ donors, total, contact_access,
+  query }`, caps results at 50, and omits `phone` for guests.
 - `GET /api/me` returns the authenticated user.
 - `PATCH /api/me` validates and updates the authenticated user's name and
   phone, rejects duplicate phone numbers, and refreshes donor partitions.
@@ -171,8 +214,10 @@ API routes:
   delivery; external SMS/push delivery remains provider work.
 - `POST /api/reports`, `POST /api/me/blocks/:userId`, and
   `POST /api/support/tickets` provide member safety and public support entry
-  points. Admin routes under `/api/admin` expose role-gated overview, user,
-  request, report, ticket, and immutable audit operations.
+  points. Admin routes under `/api/admin` expose capability-gated overview,
+  users, status/staff updates, session revocation, request/report/ticket/
+  organization/claim queues, immutable audit history, and secret-safe system
+  information.
 - Public and protected `/api/organizations` routes support directory listing,
   applications, operator review, role assignment, and campaign publication.
 - `GET /api/stats` returns public network counts (registered/available donors,
@@ -180,9 +225,10 @@ API routes:
 - `GET /api/requests` lists active, non-expired public blood requests without
   requester phone or contact details and returns bounded pagination metadata.
 - `GET /api/requests/:id` returns request details and donor matches. Contact
-  details and donor phone numbers are included only for authenticated users or
-  the request owner; `requester_phone` stays owner-only. Donor match records
-  also expose each account's non-sensitive `is_verified` flag.
+  details are purpose-limited to the request owner and donors who accepted an
+  invitation; `requester_phone` stays owner-only. Donor match records expose
+  each account's non-sensitive `is_verified` flag without making request
+  contacts generally available to signed-in members.
 - `PATCH /api/requests/:id/details` lets the request owner update patient, requester, date, and contacts.
 - `POST /api/requests/:id/comments` adds a comment with anonymous rate limits.
 - `DELETE /api/requests/:id/comments/:commentId` lets the request owner delete comments.
@@ -190,7 +236,9 @@ API routes:
 - `GET /api/directory` lists unclaimed imported donor stubs with masked phone
   numbers, filtered by blood group, district, source, and name.
   `GET /api/directory/sources` returns per-source attribution and counts, and
-  `GET /api/directory/:id` returns one masked record.
+  `GET /api/directory/:id` addresses one record by opaque `public_id` and always
+  masks its phone. Claimed or pending records are readable only by the claimant
+  or active staff.
 - `POST /api/directory/:id/claim` claims an imported profile for the
   authenticated, phone-verified caller. `GET`/`PATCH /api/admin/directory/claims`
   let operators approve or release claims that could not be auto-verified.
@@ -215,9 +263,12 @@ Tables:
 - `imported_donors` stores claimable donor stubs imported from other
   organisations' public listings. Unlike every other table it is never loaded
   into the runtime cache, because it is orders of magnitude larger than the
-  account tables. Its filter columns (`blood_group`, `district`, `phone`,
-  `claim_status`, `source_id`, `search_text`) are stored as real columns so
+  account tables. Its filter columns (`public_id`, `blood_group`, `district`,
+  `phone`, `claim_status`, `source_id`, `search_text`) are stored as real columns so
   LanceDB can push predicates down; the full record still travels in `doc`.
+  Internal row IDs are never exposed through the API. Existing tables receive
+  the `public_id` column through schema evolution and a batched, non-destructive
+  backfill that preserves row identity and claim state.
 
 Records are stored as JSON strings in a `doc` field. LanceDB vectors use `[lng, lat]` so donor/request records can be searched by location.
 
@@ -230,9 +281,10 @@ Important helpers:
 - `removeDonorFromAllPartitions()` clears stale donor rows before profile resync.
 - `getAllFromTable()` loads saved JSON documents.
 - `saveToTable()` replaces a document by `id` using escaped ID filters.
-- `ensureImportedDonorTable()`, `addImportedDonors()`, `queryImportedDonors()`,
-  `countImportedDonors()`, `getImportedDonor()`, and `replaceImportedDonor()`
-  serve the imported directory without loading it into memory.
+- `ensureImportedDonorTable()`, `addImportedDonors()`, public/storage-specific
+  deletion helpers, `queryImportedDonors()`, `countImportedDonors()`,
+  `getImportedDonor()`, and `replaceImportedDonor()` serve the imported archive
+  without loading it into memory.
 
 ## Imported Donor Directory
 
@@ -242,8 +294,9 @@ reads those listings and `scripts/import-donors.ts` loads them into
 server never scrapes anything at runtime.
 
 - `server/importedDonors.ts` holds the shared registry (`IMPORT_SOURCES`), the
-  record shape, dedupe keys, phone masking, and the claim decision logic. It is
-  pure and unit-tested in `server/importedDonors.test.ts`.
+  record shape, dedupe keys, opaque SHA-256 public/storage identities, phone
+  masking, and claim decision logic. Public IDs contain neither raw nor
+  URI-encoded phone or source keys. The helpers are unit-tested.
 - `scripts/scrape/sources/*.ts` implement one listing each and stream
   `ScrapedDonor` records; `scripts/scrape/index.ts` writes NDJSON per source to
   `data/scraped/`. Adding a source means adding a descriptor to
@@ -275,10 +328,12 @@ docker compose --profile development run --rm app-dev npm run import-donors -- -
 
 ## Matching Logic
 
-Donor search is partitioned by district and blood group, and is
-compatibility-aware: a request for group G searches the partitions of every
-donor group medically compatible with G (e.g. an A+ request also searches A-,
-O+, and O- partitions). Request creation and request detail views:
+Public donor discovery and request matching share authoritative user safety
+state. Public `/directory` discovery returns only eligible, opted-in,
+`AVAILABLE` registered donors; the optional session controls whether the phone
+field is present. Request matching is compatibility-aware: a request for group
+G searches every donor group medically compatible with G (e.g. an A+ request
+also searches A-, O+, and O- donors). Both flows:
 
 1. Look up the compatible donor groups for the requested `blood_group`
    (`COMPATIBLE_DONORS` in `server/server.ts`, mirrored in `src/lib/blood.ts`).
@@ -317,13 +372,25 @@ Environment:
 - `LANCEDB_PATH` sets the datastore directory inside the container. Docker
   Compose sets it to `/data/lancedb`.
 - `ADMIN_PHONE` bootstraps the first verified administrator by normalized
-  Bangladesh phone; further role changes require an administrator.
+  Bangladesh phone as `SUPERADMIN`; further staff changes require the
+  `MANAGE_STAFF` capability.
+- `SMS_PROVIDER` selects `http` or the development-only `console` transport.
+  A blank value automatically selects console only outside production.
+- `SMS_HTTP_ENDPOINT` and `SMS_HTTP_TOKEN` are both required when
+  `SMS_PROVIDER=http`; an incomplete explicit configuration fails closed.
 
-Persistent Docker volumes:
+Persistent storage:
 
-- `drop_lancedb` mounted at `/data/lancedb` for the production service.
-- `drop_lancedb_dev` mounted at `/data/lancedb` for the development service.
-- `drop_node_modules` holds development dependencies.
+- `./data/lancedb` is bind-mounted at `/data/lancedb` for the production
+  service.
+- `./data/lancedb-dev` is bind-mounted at `/data/lancedb` for the development
+  service, so experiments never touch production data.
+- `./data/scraped` holds the NDJSON produced by `npm run scrape`.
+- `drop_node_modules` is the one remaining named volume; it holds development
+  dependencies and must stay a volume so it does not shadow the host
+  `node_modules`.
+
+`./data/` is git-ignored: it is large and holds personal data.
 
 The production image runs as the unprivileged `node` user and owns
 `/data/lancedb`.
@@ -342,7 +409,8 @@ Operational endpoints and jobs:
 ## Current Constraints
 
 - Production registration requires `SMS_PROVIDER=http`, `SMS_HTTP_ENDPOINT`,
-  and `SMS_HTTP_TOKEN`. The console provider is development-only.
+  and `SMS_HTTP_TOKEN`. Blank-provider console fallback and an explicit console
+  provider are non-production only.
 - Notification choices are currently device-local preferences; there is no
   push or email delivery provider.
 - The following fingerprint limitation now applies only to legacy anonymous

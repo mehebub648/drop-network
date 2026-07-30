@@ -4,7 +4,7 @@
   "description": "Bangladesh community blood donor matching network",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#e11d48",
+  "background_color": "#fffafa",
+  "theme_color": "#be123c",
   "icons": [{ "src": "/drop-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

@@ -52,8 +52,8 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
 
   return (
     <div className="space-y-6">
-      <div className={cn('theme-card border p-6 flex gap-4', eligibility.eligible ? 'border-emerald-100 bg-emerald-50/40' : 'border-rose-100')}>
-        <div className={cn('w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0', eligibility.eligible ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-50 text-primary')}>
+      <div className={cn('theme-card border p-6 flex gap-4', eligibility.eligible ? 'border-green-100 bg-green-50/40' : 'border-rose-100')}>
+        <div className={cn('w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0', eligibility.eligible ? 'bg-green-100 text-green-700' : 'bg-rose-50 text-primary')}>
           {eligibility.eligible ? <CheckCircle2 className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
         </div>
         <div>
@@ -90,7 +90,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
             </select>
           </div>
         </div>
-        {message && <p className={message.type === 'success' ? 'mt-4 text-emerald-700 font-bold text-sm' : 'mt-4 text-red-600 font-bold text-sm'}>{message.text}</p>}
+        {message && <p className={message.type === 'success' ? 'mt-4 text-green-700 font-bold text-sm' : 'mt-4 text-red-600 font-bold text-sm'}>{message.text}</p>}
         <button disabled={saving} className="mt-6 inline-flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl font-bold disabled:opacity-50"><Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save donor profile'}</button>
       </form>
 

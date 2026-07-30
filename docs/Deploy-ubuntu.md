@@ -99,19 +99,30 @@ docker compose --profile development stop app-dev
 
 ## 5. Persistent Data
 
-Named volumes hold runtime data:
+Runtime data lives in `./data/` on the host, not inside Docker volumes, so you
+can back it up or inspect it with ordinary tools:
 
-1. `drop_lancedb` mounted at `/data/lancedb` for the default production-style service.
-2. `drop_lancedb_dev` mounted at `/data/lancedb` for development.
-3. `drop_node_modules` for development dependencies.
+1. `./data/lancedb` mounted at `/data/lancedb` for the default production-style service.
+2. `./data/lancedb-dev` mounted at `/data/lancedb` for development.
+3. `./data/scraped` holds scraped donor listings (NDJSON).
+4. `drop_node_modules` is the only named volume left, for development dependencies.
 
-To remove containers and volumes:
+`./data/` is git-ignored because it is large and holds personal data. Back it up
+by copying the directory while the containers are stopped:
+
+```bash
+docker compose --profile development down
+tar czf drop-data-$(date +%F).tar.gz data/
+```
+
+To remove containers and the dependency volume:
 
 ```bash
 docker compose --profile development down -v
 ```
 
-Use that only when you intentionally want to reset local state.
+That no longer deletes your data — `./data/` survives. Delete that directory by
+hand if you intentionally want to reset local state.
 
 ### Importing public donor listings
 

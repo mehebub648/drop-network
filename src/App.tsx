@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import { api } from './lib/api';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
@@ -29,6 +29,8 @@ import RouteMetadata from './components/RouteMetadata';
 import PartnersPage from './pages/PartnersPage';
 import DirectoryPage from './pages/DirectoryPage';
 import ClaimProfilePage from './pages/ClaimProfilePage';
+import DonorSearchPage from './pages/DonorSearchPage';
+import { getSafeReturnTo } from './lib/navigation';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -57,11 +59,15 @@ export default function App() {
     setUser(null);
   };
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-red-100 border-t-primary rounded-full animate-spin"></div>
-    </div>;
-  }
+  const requireUser = (element: ReactNode) => loading
+    ? <RouteLoading />
+    : user
+      ? element
+      : <Navigate to="/login" replace />;
+  const isStaff = Boolean(
+    user?.staff_role ||
+    user?.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role))
+  );
 
   return (
     <BrowserRouter>
@@ -71,14 +77,16 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LandingPage user={user} />} />
             <Route path="/request/:id" element={<RequestDetailsPage user={user} />} />
-            <Route path="/request/new" element={user ? <NewRequestPage user={user} /> : <Navigate to="/login" />} />
+            <Route path="/request/new" element={requireUser(<NewRequestPage user={user} />)} />
             <Route path="/requests" element={<RequestsPage />} />
-            <Route path="/directory" element={<DirectoryPage />} />
+            <Route path="/directory" element={<DonorSearchPage user={user} authLoading={loading} />} />
+            <Route path="/directory/imported" element={<DirectoryPage />} />
+            <Route path="/directory/imported/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
             <Route path="/directory/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
-            <Route path="/login" element={!user ? <LoginPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
-            <Route path="/register" element={!user ? <RegisterPage onLogin={fetchUser} /> : <Navigate to="/profile" />} />
-            <Route path="/forgot-password" element={!user ? <ForgotPasswordPage /> : <Navigate to="/profile/security" />} />
-            <Route path="/profile" element={user ? <ProfileLayout user={user} /> : <Navigate to="/login" />}>
+            <Route path="/login" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile"><LoginPage onLogin={fetchUser} /></GuestOnlyRoute>} />
+            <Route path="/register" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile/donor"><RegisterPage onLogin={fetchUser} /></GuestOnlyRoute>} />
+            <Route path="/forgot-password" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile/security"><ForgotPasswordPage /></GuestOnlyRoute>} />
+            <Route path="/profile" element={requireUser(<ProfileLayout user={user} />)}>
               <Route index element={<Navigate to="donor" replace />} />
               <Route path="account" element={<AccountPage user={user} onUpdate={fetchUser} />} />
               <Route path="donor" element={<DonorPage user={user} onUpdate={fetchUser} />} />
@@ -94,11 +102,39 @@ export default function App() {
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/safety" element={<SafetyPage />} />
             <Route path="/partners" element={<PartnersPage user={user} />} />
-            <Route path="/admin" element={user?.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role)) ? <AdminPage /> : <Navigate to="/" />} />
+            <Route path="/admin" element={loading ? <RouteLoading /> : isStaff ? <AdminPage user={user} /> : <Navigate to="/" replace />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Layout>
       </ErrorBoundary>
     </BrowserRouter>
   );
+}
+
+function RouteLoading() {
+  return (
+    <div className="min-h-[45vh] flex items-center justify-center" role="status" aria-live="polite">
+      <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
+        <span className="h-5 w-5 rounded-full border-2 border-emerald-100 border-t-emerald-700 animate-spin" aria-hidden="true" />
+        Loading your account…
+      </div>
+    </div>
+  );
+}
+
+function GuestOnlyRoute({
+  user,
+  loading,
+  fallback,
+  children
+}: {
+  user: any;
+  loading: boolean;
+  fallback: string;
+  children: ReactNode;
+}) {
+  const [searchParams] = useSearchParams();
+  const returnTo = getSafeReturnTo(searchParams.get('returnTo'), fallback);
+  if (loading) return <RouteLoading />;
+  return user ? <Navigate to={returnTo} replace /> : children;
 }

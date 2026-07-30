@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { getLocationByName } from '../src/lib/locations';
-import { addImportedDonors, deleteImportedDonors, ensureImportedDonorTable } from '../server/db';
+import { addImportedDonors, deleteImportedDonorsByPublicIds, ensureImportedDonorTable } from '../server/db';
 import {
   dedupeKey,
   toImportedDonor,
@@ -138,8 +138,9 @@ async function main() {
   await ensureImportedDonorTable();
   for (let index = 0; index < donors.length; index += BATCH_SIZE) {
     const batch = donors.slice(index, index + BATCH_SIZE);
-    // Replace-on-reimport: drop any existing rows for these ids first.
-    await deleteImportedDonors(batch.map(donor => donor.id));
+    // Public ids remain stable across the legacy and opaque storage-id formats,
+    // so reimports replace old rows instead of leaving duplicates behind.
+    await deleteImportedDonorsByPublicIds(batch.map(donor => donor.public_id));
     await addImportedDonors(batch.map(toImportedDonorRow));
     console.log(`imported ${Math.min(index + BATCH_SIZE, donors.length)}/${donors.length}`);
   }

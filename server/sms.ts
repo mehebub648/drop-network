@@ -3,15 +3,17 @@ export interface SmsProvider {
   sendOtp(phone: string, code: string): Promise<void>;
 }
 
+export type SmsEnvironment = Readonly<Record<string, string | undefined>>;
+
 /**
  * Provider-neutral HTTP gateway. The configured endpoint receives a JSON body
  * containing `phone`, `code`, and `message`. Authentication is sent through a
  * bearer token so deployments can use a small gateway adapter for their
  * preferred Bangladesh SMS vendor without coupling the app to one SDK.
  */
-function createHttpProvider(): SmsProvider | null {
-  const endpoint = process.env.SMS_HTTP_ENDPOINT?.trim();
-  const token = process.env.SMS_HTTP_TOKEN?.trim();
+function createHttpProvider(environment: SmsEnvironment): SmsProvider | null {
+  const endpoint = environment.SMS_HTTP_ENDPOINT?.trim();
+  const token = environment.SMS_HTTP_TOKEN?.trim();
   if (!endpoint || !token) return null;
 
   return {
@@ -34,8 +36,8 @@ function createHttpProvider(): SmsProvider | null {
   };
 }
 
-function createDevelopmentConsoleProvider(): SmsProvider | null {
-  if (process.env.NODE_ENV === 'production') return null;
+function createDevelopmentConsoleProvider(environment: SmsEnvironment): SmsProvider | null {
+  if (environment.NODE_ENV === 'production') return null;
   return {
     name: 'console',
     async sendOtp(phone, code) {
@@ -44,17 +46,24 @@ function createDevelopmentConsoleProvider(): SmsProvider | null {
   };
 }
 
-export function getSmsProvider(): SmsProvider | null {
-  switch ((process.env.SMS_PROVIDER || '').trim().toLowerCase()) {
+export function getSmsProvider(environment: SmsEnvironment = process.env): SmsProvider | null {
+  const configuredProvider = (environment.SMS_PROVIDER || '').trim().toLowerCase();
+
+  // Development remains a real OTP flow even without an external channel:
+  // codes go to the process console. Production must always fail closed.
+  if (!configuredProvider) return createDevelopmentConsoleProvider(environment);
+
+  switch (configuredProvider) {
     case 'http':
-      return createHttpProvider();
+      // An explicitly selected HTTP provider is never silently downgraded.
+      return createHttpProvider(environment);
     case 'console':
-      return createDevelopmentConsoleProvider();
+      return createDevelopmentConsoleProvider(environment);
     default:
       return null;
   }
 }
 
-export function isSmsConfigured(): boolean {
-  return getSmsProvider() !== null;
+export function isSmsConfigured(environment: SmsEnvironment = process.env): boolean {
+  return getSmsProvider(environment) !== null;
 }

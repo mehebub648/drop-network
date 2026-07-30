@@ -19,8 +19,8 @@ export default function ProfileLayout({ user }: { user: ProfileUser }) {
 
   return (
     <div className="space-y-7">
-      <div className="theme-card border border-slate-100 p-6 flex flex-col gap-5 sm:flex-row sm:items-center">
-        <div className="w-16 h-16 rounded-2xl bg-rose-50 text-primary flex items-center justify-center text-xl font-extrabold border border-rose-100">
+      <div className="theme-card flex flex-col gap-5 overflow-hidden p-6 sm:flex-row sm:items-center sm:p-8">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-xl font-extrabold text-primary">
           {initials}
         </div>
         <div className="flex-1">
@@ -32,9 +32,9 @@ export default function ProfileLayout({ user }: { user: ProfileUser }) {
         </div>
       </div>
 
-      <div className="grid gap-7 lg:grid-cols-[220px_1fr]">
-        <nav className="theme-card border border-slate-100 p-3 h-fit overflow-x-auto" aria-label="Profile">
-          <div className="flex lg:flex-col gap-1 min-w-max">
+      <div className="grid gap-7 lg:grid-cols-[240px_1fr]">
+        <nav className="theme-card h-fit overflow-x-auto p-2 sm:p-3" aria-label="Profile">
+          <div className="flex min-w-max gap-1 lg:flex-col">
             {items.map(item => {
               const Icon = item.icon;
               return (
@@ -43,7 +43,7 @@ export default function ProfileLayout({ user }: { user: ProfileUser }) {
                   to={item.to}
                   className={({ isActive }) => cn(
                     'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-colors',
-                    isActive ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    isActive ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-950'
                   )}
                 >
                   <Icon className="w-4 h-4" />

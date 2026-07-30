@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.44`
+Current version: `0.0.50`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -44,28 +44,42 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   `https://findadrop.org`; development uses its localhost origin.
 - `CORS_ORIGIN` can list allowed cross-origin browser origins; same-origin
   production requests do not need it.
-- `LANCEDB_PATH` is set inside Docker Compose to `/data/lancedb`, backed by a
-  persistent Docker volume.
-- Registration requires a verified Bangladesh mobile. Development can use
-  `SMS_PROVIDER=console`; production requires the provider-neutral HTTP SMS
-  gateway settings documented in `.env.example`.
-- Creating a public request requires a verified account, complete hospital and
-  patient-reference details, a future required time, a verified contact, and
-  explicit review/consent before publication.
+- `LANCEDB_PATH` is set inside Docker Compose to `/data/lancedb`, bind-mounted
+  from `./data/lancedb` (production) or `./data/lancedb-dev` (development) on
+  the host. The datastore is a plain directory you can back up or copy; it is
+  git-ignored because it holds personal data.
+- Registration requires a verified Bangladesh mobile. Outside production, an
+  unconfigured OTP channel prints the code to protected server logs; production
+  requires the complete provider-neutral HTTP SMS gateway settings documented
+  in `.env.example` and never falls back to console delivery.
+- `/directory` lets anyone search registered donors by blood group and district.
+  Results include only verified, eligible members who explicitly marked
+  themselves available. Guests never receive phone numbers; signed-in active
+  members can view those opted-in donor contacts.
+- Creating a public request requires a verified account, the exact blood
+  collection facility and address, patient-reference details, a future required
+  time, a verified contact, and explicit review/consent before publication.
+  The form suggests 198 entries categorized as `Blood Bank` in the supplied
+  DGHS facility export. Other facilities can still be entered manually, and
+  every requester is warned to confirm current collection, screening, and
+  transfusion arrangements directly.
 - Requesters invite eligible donors privately. Donors can accept, decline,
   report arrival/donation, and reveal coordination contacts only after
   acceptance. A donation counts only after requester confirmation.
 - Set `ADMIN_PHONE` to a verified member's normalized Bangladesh phone to
-  bootstrap the first administrator. Operators handle reports and support
-  tickets at `/admin`; administrative actions are audited.
+  bootstrap the first superadmin. `/admin` is a capability-aware workspace for
+  member status and staff roles, request/report/support/partner/claim queues,
+  audit history, safe system context, and session revocation. Hierarchy-sensitive
+  actions require a reason and are audited.
 - Members can recover passwords by verified SMS, inspect and revoke signed-in
   devices, download a server-side data export, and anonymize their account.
 - Public requests use server-side filters and bounded pagination with URL-based
   filter state. `/health`, `/ready`, and Prometheus-format `/metrics` support
   production probes and monitoring.
-- The app ships an installable offline shell, route-specific SEO/social
-  metadata, a generated sitemap/robots policy, accessible focus behavior, and
-  consistent production English copy.
+- The responsive white-and-blood-red interface includes a public search-led
+  landing page, mobile navigation, redesigned authentication and information
+  screens, an installable offline shell, route-specific SEO/social metadata,
+  accessible focus behavior, and consistent production English copy.
 - Verified hospitals, blood banks, and NGOs can be reviewed by operators,
   listed in the public partner directory, and publish donation campaigns.
 
@@ -87,10 +101,14 @@ docker compose --profile development run --rm app-dev npm run import-donors -- -
 counts without writing, `--source=<id>` to run one listing, and `--limit=<n>` to
 cap a run.
 
-Imported people never registered here, so their phone numbers are always served
-masked and a record only becomes a usable donor profile when its owner claims it
-at `/directory`. See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the
-claim rules and how to add a source.
+Imported people never registered here, so `/directory/imported` always serves
+their phone numbers masked, including to signed-in members. Detail and claim
+screens use `/directory/imported/:id` with opaque public IDs that contain no
+phone or source key. A successful claim verifies ownership but starts the
+registered donor profile unavailable; the owner must separately opt in before
+appearing in live search. See
+[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the claim rules and how to
+add a source.
 
 ## Validation
 

@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.44`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.50`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -17,8 +17,16 @@ delivered.
   motion foundations exist, but complete WCAG 2.2 AA review, screen-reader
   testing, target-size/contrast audit, and responsive browser matrix remain.
 
-- [ ] **Pervasive `any` and limited focused tests.** Blood-domain unit coverage
-  now exists; add API integration and browser coverage as workflows expand.
+- [ ] **Pervasive `any` and limited focused tests.** Blood-domain and privacy
+  helper coverage now exists; add direct donor-search/admin API integration and
+  focused component/browser coverage as workflows expand.
+- [ ] **Runtime cache has a 10,000-row load ceiling.** `getAllFromTable()` in
+  `server/db.ts` caps account-backed tables at 10,000 rows. Remove or explicitly
+  paginate this limit before registered donor volume can exceed it, otherwise
+  startup state and public live search can be incomplete.
+- [ ] **Route-level bundle splitting.** The production frontend bundle is about
+  860 kB minified and triggers Vite's 500 kB chunk warning. Lazy-load larger
+  route modules, especially the administration workspace, before traffic grows.
 - [ ] **Seven truncated upazila/blood-group combinations.** The Bangladesh
   Scouts register caps every search at 500 rows. The 0.0.44 full run hit that
   cap in exactly seven places: Rajshahi/Bagmara (A+, B+, O+),
@@ -48,19 +56,24 @@ These cannot be finished by editing code alone.
 
 - [ ] **Production SMS gateway credentials** - point the provider-neutral HTTP
   adapter at a monitored Bangladesh SMS gateway. Production registration is
-  intentionally unavailable until these values are configured.
+  intentionally unavailable until these values are configured; the automatic
+  console fallback is non-production development behavior only.
 - [ ] **Geocoding / maps** - Google Maps / Mapbox / OSM-Nominatim key to convert
   districts and GPS into real coordinates and render a map.
 - [ ] **Browser geolocation** - HTTPS origin + permission flow wired into search.
 - [ ] **Hosted, persistent database** - managed datastore + connection string;
-  local `.lancedb/` plus in-memory cache won't survive multi-instance/redeploys.
+  the host-bound `./data/lancedb` directory survives ordinary container
+  recreation, but the in-memory cache and local datastore are not suitable for
+  multi-instance hosting.
 - [ ] **External push / SMS / email notification delivery** - persisted in-app
   notifications and invitations exist; FCM/APNs or a transactional provider
   plus delivery receipts are still required for off-site alerts.
 - [ ] **Partner operating agreements and clinical confirmation.** Organization
   applications, verification, directory listing, roles, and campaigns exist;
   real partners still need contracts, reviewer ownership, and a process for
-  hospitals to confirm completed donations.
+  hospitals to confirm completed donations. The static DGHS `Blood Bank`
+  suggestions also need a periodic registry refresh and facility-level
+  confirmation before any current-service guarantee can be shown.
 - [ ] **Production hosting & TLS** - provision the deploy target and a
   TLS-terminating reverse proxy for `findadrop.org`. The canonical `APP_URL` is
   configured, but the production session cookie requires a real HTTPS host.

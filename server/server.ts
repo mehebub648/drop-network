@@ -7,11 +7,12 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
+import { randomInt } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, queryImportedDonors, countImportedDonors, getImportedDonor, replaceImportedDonor } from './db';
 import { evaluateClaim, toImportedDonorRow, toPublicImportedDonor, IMPORT_SOURCES, type ImportedDonor } from './importedDonors';
 import { getSmsProvider, isSmsConfigured } from './sms';
-import { canAssignStaffRole, canEditMember, canManageMember, capabilitiesFor, hasCapability, isStaffRole, legacyStaffRole, type StaffRole } from './adminPolicy';
+import { canAssignStaffRole, canEditMember, canManageMember, capabilitiesFor, hasCapability, isStaffRole, legacyStaffRole, type AdminCapability, type StaffRole } from './adminPolicy';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -29,6 +30,7 @@ const SESSION_COOKIE = 'drop_session';
 // (e.g. "anon") can't collide with comment author ids or claim ownership.
 const MIN_FINGERPRINT_LENGTH = 16;
 const BCRYPT_ROUNDS = 10;
+const PUBLIC_DONOR_SEARCH_LIMIT = 50;
 const STARTED_AT = Date.now();
 let isReady = false;
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
@@ -509,7 +511,7 @@ async function enforceStaleAvailability() {
   }
 }
 
-type DonorRecord = Pick<User, 'id' | 'name' | 'phone' | 'is_verified' | 'blocked_user_ids'> & { donor_profile: DonorProfile };
+type DonorRecord = Pick<User, 'id' | 'name' | 'phone' | 'is_verified' | 'blocked_user_ids' | 'account_status' | 'deleted_at'> & { donor_profile: DonorProfile };
 
 type DonorMatch = {
   user_id: string;
@@ -558,6 +560,7 @@ async function findDonorMatches(
 
   return dbMatches
     .filter(u => u.id !== excludeUserId)
+    .filter(u => u.account_status !== 'SUSPENDED' && !u.deleted_at && u.is_verified)
     .filter(u => !u.blocked_user_ids?.includes(excludeUserId) && !requester?.blocked_user_ids?.includes(u.id))
     .filter(u => donorGroups.includes(u.donor_profile.blood_group as BloodGroup))
     .filter(u => u.donor_profile.availability_status === 'AVAILABLE')
@@ -634,15 +637,35 @@ function getCurrentAuth(req: express.Request) {
   if (!session) return null;
 
   const user = users.find(u => u.id === session.user_id);
-  return user && user.account_status !== 'SUSPENDED' ? { user, session } : null;
+  return user && user.account_status !== 'SUSPENDED' && !user.deleted_at ? { user, session } : null;
 }
 
 function isOperator(user: User | undefined) {
   return hasCapability(user, 'DASHBOARD');
 }
 
-function isAdmin(user: User | undefined) {
-  return hasCapability(user, 'EDIT_USERS');
+function requireStaffCapability(
+  req: express.Request,
+  res: express.Response,
+  capability: AdminCapability
+) {
+  const auth = getCurrentAuth(req);
+  if (!auth || !hasCapability(auth.user, capability)) {
+    res.status(403).json({ error: 'Required staff capability is missing' });
+    return null;
+  }
+  return auth;
+}
+
+function adminUserAuditSnapshot(user: User) {
+  return {
+    id: user.id,
+    account_status: user.account_status || 'ACTIVE',
+    staff_role: user.staff_role || null,
+    suspension_reason: user.suspension_reason || null,
+    suspended_at: user.suspended_at || null,
+    suspended_by: user.suspended_by || null
+  };
 }
 
 async function issueSession(userId: string, req: express.Request) {
@@ -716,6 +739,41 @@ app.get('/api/config/public', (_req, res) => {
   });
 });
 
+app.get('/api/donors/search', async (req, res) => {
+  const bloodGroup = req.query.blood_group;
+  const location = parseLocation({
+    lat: req.query.lat,
+    lng: req.query.lng,
+    area_name: req.query.area_name
+  });
+  if (!isOneOf(bloodGroup, BLOOD_GROUPS) || !location) {
+    return validationError(res, 'Valid blood group, latitude, longitude, and area name are required');
+  }
+
+  const auth = getCurrentAuth(req);
+  const matches = await findDonorMatches(location, bloodGroup, auth?.user.id || '', Boolean(auth));
+  const donors = matches.slice(0, PUBLIC_DONOR_SEARCH_LIMIT).map(match => ({
+    user_id: match.user_id,
+    name: match.name,
+    ...(auth ? { phone: match.phone } : {}),
+    blood_group: match.blood_group,
+    distance_km: match.distance_km,
+    availability_status: match.availability_status,
+    is_verified: match.is_verified
+  }));
+
+  res.json({
+    donors,
+    total: matches.length,
+    contact_access: auth ? 'authenticated' : 'login_required',
+    query: {
+      blood_group: bloodGroup,
+      area_name: location.area_name,
+      radius_km: MATCH_RADIUS_KM
+    }
+  });
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok', uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000) }));
 app.get('/ready', (_req, res) => res.status(isReady ? 200 : 503).json({ status: isReady ? 'ready' : 'starting' }));
 app.get('/metrics', (_req, res) => {
@@ -756,11 +814,12 @@ app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
 
   const recent = otpChallenges.find(challenge =>
     challenge.phone === phone && challenge.purpose === purpose &&
+    new Date(challenge.expires_at).getTime() > Date.now() &&
     Date.now() - new Date(challenge.created_at).getTime() < 60_000
   );
   if (recent) return res.status(429).json({ error: 'Wait before requesting another code' });
 
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = String(randomInt(100000, 1_000_000));
   const now = Date.now();
   const challenge: OtpChallenge = {
     id: uuidv4(), phone, purpose,
@@ -770,8 +829,33 @@ app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
     attempts: 0
   };
   otpChallenges.push(challenge);
-  await saveToTable('common_otps', challenge);
-  await provider.sendOtp(phone, code);
+  try {
+    await saveToTable('common_otps', challenge);
+  } catch {
+    otpChallenges = otpChallenges.filter(item => item.id !== challenge.id);
+    challenge.expires_at = new Date(0).toISOString();
+    try {
+      await saveToTable('common_otps', challenge);
+    } catch {
+      // There is no in-memory cooldown even when persistence is unavailable.
+    }
+    return res.status(503).json({ error: 'Phone verification is temporarily unavailable' });
+  }
+  try {
+    await provider.sendOtp(phone, code);
+  } catch {
+    otpChallenges = otpChallenges.filter(item => item.id !== challenge.id);
+    challenge.expires_at = new Date(0).toISOString();
+    challenge.verification_expires_at = new Date(0).toISOString();
+    try {
+      await saveToTable('common_otps', challenge);
+    } catch {
+      // The in-memory challenge is already gone. Avoid exposing datastore or
+      // provider details while readiness monitoring reports persistent errors.
+    }
+    const status = provider.name === 'http' ? 502 : 503;
+    return res.status(status).json({ error: 'Verification code delivery failed; please try again' });
+  }
   res.json({ success: true, provider: provider.name });
 });
 
@@ -882,8 +966,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     phone,
     name,
     password: await bcrypt.hash(password, BCRYPT_ROUNDS),
-    // Phone verification is not wired up yet (no SMS provider); accounts start
-    // unverified until a real OTP flow exists.
+    // Registration only reaches this point after a purpose-bound OTP challenge
+    // has verified control of the submitted phone number.
     is_verified: true,
     phone_verified_at: new Date().toISOString(),
     roles: ['MEMBER'],
@@ -1447,70 +1531,224 @@ app.post('/api/support/tickets', async (req, res) => {
   res.status(201).json({ id: ticket.id, status: ticket.status });
 });
 
-app.get('/api/admin/overview', (req, res) => {
-  const auth = getCurrentAuth(req);
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+app.get('/api/admin/overview', async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'DASHBOARD');
+  if (!auth) return;
+
+  let pendingDirectoryClaims: number | null = null;
+  if (hasCapability(auth.user, 'MODERATE_CONTENT')) {
+    try {
+      pendingDirectoryClaims = await Promise.race([
+        countImportedDonors({ claimStatus: 'PENDING_REVIEW' }),
+        new Promise<null>(resolve => {
+          const timer = setTimeout(() => resolve(null), 2_000);
+          timer.unref();
+        })
+      ]);
+    } catch {
+      pendingDirectoryClaims = null;
+    }
+  }
+
   res.json({
+    viewer: {
+      staff_role: auth.user.staff_role,
+      capabilities: capabilitiesFor(auth.user.staff_role)
+    },
     counts: {
       users: users.length,
       verified_users: users.filter(user => user.is_verified).length,
       suspended_users: users.filter(user => user.account_status === 'SUSPENDED').length,
+      staff_users: users.filter(user => user.staff_role).length,
+      registered_donors: users.filter(user => user.donor_profile).length,
+      available_donors: users.filter(user =>
+        user.account_status !== 'SUSPENDED' &&
+        !user.deleted_at &&
+        user.is_verified &&
+        user.donor_profile?.availability_status === 'AVAILABLE' &&
+        donorEligibility(user.donor_profile).eligible
+      ).length,
       active_requests: requests.filter(request => ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)).length,
       open_reports: moderationReports.filter(report => report.status === 'OPEN').length,
       open_tickets: supportTickets.filter(ticket => ticket.status !== 'CLOSED').length,
+      pending_directory_claims: pendingDirectoryClaims,
       confirmed_donations: donorResponses.filter(response => response.status === 'DONATED' && response.donor_confirmed_at && response.requester_confirmed_at).length,
+      pending_organizations: organizations.filter(item => item.status === 'PENDING').length,
       verified_organizations: organizations.filter(item => item.status === 'VERIFIED').length
     },
-    reports: [...moderationReports].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100),
-    tickets: [...supportTickets].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100)
+    reports: hasCapability(auth.user, 'MODERATE_CONTENT')
+      ? [...moderationReports].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100)
+      : [],
+    tickets: hasCapability(auth.user, 'MANAGE_SUPPORT')
+      ? [...supportTickets].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100)
+      : [],
+    system: {
+      readiness: isReady ? 'ready' : 'starting',
+      environment: IS_PRODUCTION ? 'production' : 'development',
+      uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000),
+      sms_configured: isSmsConfigured(),
+      storage: 'lancedb',
+      donation_interval_days: DONATION_INTERVAL_DAYS,
+      availability_ttl_days: AVAILABILITY_TTL_DAYS,
+      match_radius_km: MATCH_RADIUS_KM
+    }
   });
 });
 
 app.get('/api/admin/users', (req, res) => {
-  const auth = getCurrentAuth(req);
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  const auth = requireStaffCapability(req, res, 'VIEW_USERS');
+  if (!auth) return;
   const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
   res.json(users.filter(user => !search || user.name.toLowerCase().includes(search) || user.phone.includes(search)).slice(0, 200).map(sanitizeUser));
 });
 
 app.patch('/api/admin/users/:id', async (req, res) => {
-  const auth = getCurrentAuth(req);
+  const auth = requireStaffCapability(req, res, 'VIEW_USERS');
+  if (!auth) return;
   const target = users.find(user => user.id === req.params.id);
-  if (!auth || !isAdmin(auth.user)) return res.status(403).json({ error: 'Administrator access required' });
   if (!target) return res.status(404).json({ error: 'User not found' });
-  if (target.id === auth.user.id && req.body?.account_status === 'SUSPENDED') return res.status(409).json({ error: 'You cannot suspend your own account' });
+
   const accountStatus = req.body?.account_status;
-  const roles = req.body?.roles;
-  if (accountStatus !== undefined && !isOneOf(accountStatus, ['ACTIVE', 'SUSPENDED'] as const)) return validationError(res, 'Valid account status is required');
-  if (roles !== undefined && (!Array.isArray(roles) || roles.some(role => !['MEMBER', 'SUPPORT', 'MODERATOR', 'VERIFIER', 'ORGANIZATION_OPERATOR', 'ADMIN'].includes(role)))) return validationError(res, 'Valid roles are required');
-  if (accountStatus) target.account_status = accountStatus;
-  if (req.body?.suspension_reason !== undefined) target.suspension_reason = optionalCleanString(req.body.suspension_reason, 500) || undefined;
-  if (roles) target.roles = [...new Set(roles as string[])];
+  const reason = optionalCleanString(req.body?.reason, 500);
+  const suspensionReason = optionalCleanString(req.body?.suspension_reason, 500);
+  const staffRoleProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'staff_role');
+  const requestedStaffRole = req.body?.staff_role;
+  const nextStaffRole = requestedStaffRole === null || requestedStaffRole === ''
+    ? undefined
+    : requestedStaffRole;
+
+  if (accountStatus !== undefined && !isOneOf(accountStatus, ['ACTIVE', 'SUSPENDED'] as const)) {
+    return validationError(res, 'Valid account status is required');
+  }
+  if (req.body?.reason !== undefined && !reason) return validationError(res, 'Valid reason is required');
+  if (req.body?.suspension_reason !== undefined && !suspensionReason) return validationError(res, 'Valid suspension reason is required');
+  if (staffRoleProvided && nextStaffRole !== undefined && !isStaffRole(nextStaffRole)) {
+    return validationError(res, 'Valid staff role is required');
+  }
+
+  const currentStatus = target.account_status || 'ACTIVE';
+  const statusChanged = accountStatus !== undefined && accountStatus !== currentStatus;
+  const suspensionReasonChanged = req.body?.suspension_reason !== undefined && suspensionReason !== target.suspension_reason;
+  const staffRoleChanged = staffRoleProvided && nextStaffRole !== target.staff_role;
+  if (!statusChanged && !suspensionReasonChanged && !staffRoleChanged) {
+    return res.json(sanitizeUser(target));
+  }
+
+  if (statusChanged && !canManageMember(auth.user, target)) {
+    return res.status(403).json({ error: 'You cannot change this account status' });
+  }
+  if (suspensionReasonChanged && !canManageMember(auth.user, target) && !canEditMember(auth.user, target)) {
+    return res.status(403).json({ error: 'You cannot edit this member' });
+  }
+
+  const activeSuperadmins = users.filter(user =>
+    user.staff_role === 'SUPERADMIN' && user.account_status !== 'SUSPENDED' && !user.deleted_at
+  ).length;
+  if (
+    staffRoleChanged &&
+    target.staff_role === 'SUPERADMIN' &&
+    nextStaffRole !== 'SUPERADMIN' &&
+    activeSuperadmins <= 1
+  ) {
+    return res.status(409).json({ error: 'The last active superadmin cannot be demoted' });
+  }
+  if (staffRoleChanged && !canAssignStaffRole(auth.user, target, nextStaffRole, activeSuperadmins)) {
+    return res.status(403).json({ error: 'You cannot assign this staff role' });
+  }
+  if (
+    statusChanged &&
+    accountStatus === 'SUSPENDED' &&
+    target.staff_role === 'SUPERADMIN' &&
+    activeSuperadmins <= 1
+  ) {
+    return res.status(409).json({ error: 'The last active superadmin cannot be suspended' });
+  }
+  if ((statusChanged || staffRoleChanged || suspensionReasonChanged) && !reason) {
+    return validationError(res, 'A reason is required for account and staff changes');
+  }
+
+  const resultingStatus = accountStatus || currentStatus;
+  if (suspensionReasonChanged && resultingStatus !== 'SUSPENDED') {
+    return validationError(res, 'Suspension reason is only valid for a suspended account');
+  }
+
+  const before = adminUserAuditSnapshot(target);
+  const now = new Date().toISOString();
+  let revokedSessions = 0;
+
+  if (accountStatus !== undefined) {
+    target.account_status = accountStatus;
+    if (accountStatus === 'SUSPENDED') {
+      target.suspension_reason = suspensionReason || reason || target.suspension_reason;
+      target.suspended_at = statusChanged ? now : target.suspended_at;
+      target.suspended_by = auth.user.id;
+    } else {
+      target.suspension_reason = undefined;
+      target.suspended_at = undefined;
+      target.suspended_by = undefined;
+    }
+  } else if (suspensionReasonChanged) {
+    target.suspension_reason = suspensionReason;
+  }
+  if (staffRoleChanged) target.staff_role = nextStaffRole;
+
   await saveToTable('common_users', target);
-  if (target.account_status === 'SUSPENDED') {
+  if (statusChanged && target.account_status === 'SUSPENDED') {
     for (const session of sessions.filter(item => item.user_id === target.id && !item.revoked_at)) {
-      session.revoked_at = new Date().toISOString();
+      session.revoked_at = now;
       await saveToTable('common_sessions', session);
+      revokedSessions += 1;
     }
     await removeDonorFromAllPartitions(target.id);
   }
-  await audit(auth.user.id, 'USER_ADMIN_UPDATED', 'USER', target.id, { account_status: target.account_status, roles: target.roles });
+
+  await audit(auth.user.id, 'USER_ADMIN_UPDATED', 'USER', target.id, {
+    reason,
+    before,
+    after: adminUserAuditSnapshot(target),
+    revoked_sessions: revokedSessions
+  });
   res.json(sanitizeUser(target));
 });
 
+app.post('/api/admin/users/:id/revoke-sessions', async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'REVOKE_SESSIONS');
+  if (!auth) return;
+  const target = users.find(user => user.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (!canEditMember(auth.user, target)) {
+    return res.status(403).json({ error: 'You cannot revoke sessions for this member' });
+  }
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason) return validationError(res, 'A reason is required to revoke sessions');
+
+  const now = new Date().toISOString();
+  let revokedSessions = 0;
+  for (const session of sessions.filter(item => item.user_id === target.id && !item.revoked_at)) {
+    session.revoked_at = now;
+    await saveToTable('common_sessions', session);
+    revokedSessions += 1;
+  }
+  await audit(auth.user.id, 'USER_SESSIONS_REVOKED', 'USER', target.id, {
+    reason,
+    revoked_sessions: revokedSessions
+  });
+  res.json({ success: true, revoked_sessions: revokedSessions });
+});
+
 app.get('/api/admin/requests', (req, res) => {
-  const auth = getCurrentAuth(req);
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
   const status = typeof req.query.status === 'string' ? req.query.status : '';
   res.json(requests.filter(request => !status || request.status === status).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 200));
 });
 
 app.patch('/api/admin/requests/:id', async (req, res) => {
-  const auth = getCurrentAuth(req);
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
   const request = requests.find(item => item.id === req.params.id);
   const status = req.body?.status;
   const note = optionalCleanString(req.body?.note, 500);
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
   if (!request) return res.status(404).json({ error: 'Request not found' });
   if (!isOneOf(status, ['ACTIVE', 'REJECTED', 'CANCELLED'] as const)) return validationError(res, 'Valid moderation status is required');
   request.status = status;
@@ -1521,12 +1759,22 @@ app.patch('/api/admin/requests/:id', async (req, res) => {
   res.json(request);
 });
 
+app.get('/api/admin/reports', (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
+  const status = typeof req.query.status === 'string' ? req.query.status : '';
+  res.json(moderationReports
+    .filter(report => !status || report.status === status)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 200));
+});
+
 app.patch('/api/admin/reports/:id', async (req, res) => {
-  const auth = getCurrentAuth(req);
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
   const report = moderationReports.find(item => item.id === req.params.id);
   const status = req.body?.status;
   const note = optionalCleanString(req.body?.resolution_note, 1000);
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
   if (!report) return res.status(404).json({ error: 'Report not found' });
   if (!isOneOf(status, ['REVIEWING', 'RESOLVED', 'DISMISSED'] as const)) return validationError(res, 'Valid report status is required');
   report.status = status; report.assigned_to = auth.user.id; report.resolution_note = note; report.updated_at = new Date().toISOString();
@@ -1535,11 +1783,21 @@ app.patch('/api/admin/reports/:id', async (req, res) => {
   res.json(report);
 });
 
+app.get('/api/admin/tickets', (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_SUPPORT');
+  if (!auth) return;
+  const status = typeof req.query.status === 'string' ? req.query.status : '';
+  res.json(supportTickets
+    .filter(ticket => !status || ticket.status === status)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 200));
+});
+
 app.patch('/api/admin/tickets/:id', async (req, res) => {
-  const auth = getCurrentAuth(req);
+  const auth = requireStaffCapability(req, res, 'MANAGE_SUPPORT');
+  if (!auth) return;
   const ticket = supportTickets.find(item => item.id === req.params.id);
   const status = req.body?.status;
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
   if (!isOneOf(status, ['OPEN', 'IN_PROGRESS', 'CLOSED'] as const)) return validationError(res, 'Valid ticket status is required');
   ticket.status = status; ticket.owner_id = auth.user.id; ticket.updated_at = new Date().toISOString();
@@ -1549,8 +1807,8 @@ app.patch('/api/admin/tickets/:id', async (req, res) => {
 });
 
 app.get('/api/admin/audit', (req, res) => {
-  const auth = getCurrentAuth(req);
-  if (!auth || !isAdmin(auth.user)) return res.status(403).json({ error: 'Administrator access required' });
+  const auth = requireStaffCapability(req, res, 'VIEW_AUDIT');
+  if (!auth) return;
   res.json([...auditEvents].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 500));
 });
 
@@ -1582,16 +1840,16 @@ app.post('/api/organizations', async (req, res) => {
 });
 
 app.get('/api/admin/organizations', (req, res) => {
-  const auth = getCurrentAuth(req);
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
+  const auth = requireStaffCapability(req, res, 'MANAGE_ORGANIZATIONS');
+  if (!auth) return;
   res.json(organizations);
 });
 
 app.patch('/api/admin/organizations/:id', async (req, res) => {
-  const auth = getCurrentAuth(req);
+  const auth = requireStaffCapability(req, res, 'MANAGE_ORGANIZATIONS');
+  if (!auth) return;
   const organization = organizations.find(item => item.id === req.params.id);
   const status = req.body?.status;
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Operator access required' });
   if (!organization) return res.status(404).json({ error: 'Organization not found' });
   if (!isOneOf(status, ['VERIFIED', 'REJECTED', 'SUSPENDED'] as const)) return validationError(res, 'Valid organization status required');
   organization.status = status; organization.verification_note = optionalCleanString(req.body?.note, 500) || undefined; organization.updated_at = new Date().toISOString();
@@ -1610,7 +1868,7 @@ app.patch('/api/admin/organizations/:id', async (req, res) => {
 app.post('/api/organizations/:id/campaigns', async (req, res) => {
   const auth = getCurrentAuth(req);
   const organization = organizations.find(item => item.id === req.params.id && item.status === 'VERIFIED');
-  if (!auth || !organization || (organization.owner_id !== auth.user.id && !isOperator(auth.user))) return res.status(403).json({ error: 'Verified organization operator required' });
+  if (!auth || !organization || (organization.owner_id !== auth.user.id && !hasCapability(auth.user, 'MANAGE_ORGANIZATIONS'))) return res.status(403).json({ error: 'Verified organization operator required' });
   const title = cleanString(req.body?.title, 160); const location = cleanString(req.body?.location, 200);
   const starts_at = req.body?.starts_at; const ends_at = req.body?.ends_at;
   if (!title || !location || !starts_at || !ends_at || new Date(ends_at).getTime() <= new Date(starts_at).getTime()) return validationError(res, 'Valid campaign details and date range are required');
@@ -1686,6 +1944,11 @@ app.get('/api/directory/sources', async (_req, res) => {
 app.get('/api/directory/:id', async (req, res) => {
   const donor = await loadImportedDonor(req.params.id);
   if (!donor) return res.status(404).json({ error: 'Profile not found' });
+  if (donor.claim_status !== 'UNCLAIMED') {
+    const auth = getCurrentAuth(req);
+    const canViewClaim = Boolean(auth && (donor.claimed_by === auth.user.id || isOperator(auth.user)));
+    if (!canViewClaim) return res.status(404).json({ error: 'Profile not found' });
+  }
   res.json(toPublicImportedDonor(donor));
 });
 
@@ -1765,8 +2028,8 @@ async function applyClaimToProfile(user: User, bloodGroup: string, location: { l
 
 // Claims that could not be verified automatically wait here for staff.
 app.get('/api/admin/directory/claims', async (req, res) => {
-  const auth = getCurrentAuth(req);
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
   try {
     const donors: ImportedDonor[] = await queryImportedDonors({ claimStatus: 'PENDING_REVIEW', limit: 100 });
     res.json({
@@ -1787,8 +2050,8 @@ app.get('/api/admin/directory/claims', async (req, res) => {
 });
 
 app.patch('/api/admin/directory/claims/:id', async (req, res) => {
-  const auth = getCurrentAuth(req);
-  if (!auth || !isOperator(auth.user)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
   const approve = req.body?.approve === true;
 
   const donor = await loadImportedDonor(req.params.id);

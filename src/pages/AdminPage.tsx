@@ -1,126 +1,938 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardList, Shield, UserCheck, Users } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  BadgeCheck,
+  Building2,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  Database,
+  HeartPulse,
+  LayoutDashboard,
+  LockKeyhole,
+  RefreshCw,
+  Search,
+  Server,
+  ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserCheck,
+  UserCog,
+  Users,
+  X,
+  XCircle
+} from 'lucide-react';
 import { api } from '../lib/api';
 
-type Overview = {
-  counts: Record<string, number>;
-  reports: any[];
-  tickets: any[];
+type Capability =
+  | 'DASHBOARD'
+  | 'MODERATE_CONTENT'
+  | 'SUSPEND_MEMBER'
+  | 'VIEW_USERS'
+  | 'EDIT_USERS'
+  | 'REVOKE_SESSIONS'
+  | 'MANAGE_SUPPORT'
+  | 'MANAGE_ORGANIZATIONS'
+  | 'VIEW_AUDIT'
+  | 'MANAGE_STAFF';
+
+type StaffRole = 'MODERATOR' | 'ADMIN' | 'SUPERADMIN';
+
+type AdminViewer = {
+  id: string;
+  name: string;
+  phone: string;
+  staff_role?: StaffRole;
 };
 
-export default function AdminPage() {
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [requests, setRequests] = useState<any[]>([]);
-  const [organizations, setOrganizations] = useState<any[]>([]);
-  const [directoryClaims, setDirectoryClaims] = useState<any[]>([]);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState('');
+type Overview = {
+  viewer?: { staff_role?: StaffRole; capabilities?: Capability[] };
+  counts: Record<string, number>;
+  reports?: AdminRecord[];
+  tickets?: AdminRecord[];
+  system?: Record<string, string | number | boolean | null | undefined>;
+};
 
-  const load = async () => {
+type AdminRecord = {
+  id: string;
+  [key: string]: any;
+};
+
+type TabId = 'overview' | 'members' | 'requests' | 'reports' | 'support' | 'organizations' | 'claims' | 'audit' | 'system';
+
+type DialogState = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  tone?: 'default' | 'danger';
+  reasonLabel?: string;
+  reasonRequired?: boolean;
+  onConfirm: (reason: string) => Promise<void>;
+};
+
+const roleCapabilities: Record<StaffRole, Capability[]> = {
+  MODERATOR: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS'],
+  ADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT'],
+  SUPERADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_STAFF']
+};
+
+const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capability?: Capability }> = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'members', label: 'Members', icon: Users, capability: 'VIEW_USERS' },
+  { id: 'requests', label: 'Requests', icon: HeartPulse, capability: 'MODERATE_CONTENT' },
+  { id: 'reports', label: 'Reports', icon: ShieldAlert, capability: 'MODERATE_CONTENT' },
+  { id: 'support', label: 'Support', icon: ClipboardList, capability: 'MANAGE_SUPPORT' },
+  { id: 'organizations', label: 'Partners', icon: Building2, capability: 'MANAGE_ORGANIZATIONS' },
+  { id: 'claims', label: 'Claims', icon: UserCheck, capability: 'MANAGE_ORGANIZATIONS' },
+  { id: 'audit', label: 'Audit log', icon: LockKeyhole, capability: 'VIEW_AUDIT' },
+  { id: 'system', label: 'System', icon: Server }
+];
+
+const countLabels: Record<string, string> = {
+  users: 'Members',
+  verified_users: 'Verified members',
+  suspended_users: 'Suspended',
+  registered_donors: 'Registered donors',
+  available_donors: 'Available donors',
+  total_requests: 'All requests',
+  active_requests: 'Active requests',
+  open_reports: 'Open reports',
+  open_tickets: 'Open tickets',
+  confirmed_donations: 'Confirmed donations',
+  verified_organizations: 'Verified partners',
+  pending_organizations: 'Partner reviews',
+  pending_directory_claims: 'Profile claims'
+};
+
+export default function AdminPage({ user }: { user: AdminViewer }) {
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [members, setMembers] = useState<AdminRecord[]>([]);
+  const [requests, setRequests] = useState<AdminRecord[]>([]);
+  const [organizations, setOrganizations] = useState<AdminRecord[]>([]);
+  const [claims, setClaims] = useState<AdminRecord[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AdminRecord[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [requestStatus, setRequestStatus] = useState('');
+  const [auditSearch, setAuditSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [dialog, setDialog] = useState<DialogState | null>(null);
+
+  const capabilities = useMemo(() => {
+    const resolved = overview?.viewer?.capabilities;
+    return new Set<Capability>(resolved?.length ? resolved : user.staff_role ? roleCapabilities[user.staff_role] : []);
+  }, [overview?.viewer?.capabilities, user.staff_role]);
+  const can = (capability: Capability) => capabilities.has(capability);
+
+  const visibleTabs = tabs.filter(tab => !tab.capability || can(tab.capability));
+
+  const loadOverview = async () => {
+    const next = await api.getAdminOverview();
+    setOverview({
+      ...next,
+      counts: next.counts || {},
+      reports: next.reports || [],
+      tickets: next.tickets || []
+    });
+  };
+
+  const loadTab = async (tab: TabId) => {
+    setLoading(true);
+    setError('');
     try {
-      const [nextOverview, nextRequests, nextOrganizations, nextClaims] = await Promise.all([
-        api.getAdminOverview(), api.getAdminRequests(), api.getAdminOrganizations(), api.getDirectoryClaims()
-      ]);
-      setOverview(nextOverview);
-      setRequests(nextRequests);
-      setOrganizations(nextOrganizations);
-      setDirectoryClaims(nextClaims.claims);
-      setError('');
+      if (tab === 'overview' || tab === 'reports' || tab === 'support' || tab === 'system') {
+        await loadOverview();
+      } else if (tab === 'members') {
+        setMembers(await api.getAdminUsers(userSearch));
+      } else if (tab === 'requests') {
+        setRequests(await api.getAdminRequests());
+      } else if (tab === 'organizations') {
+        setOrganizations(await api.getAdminOrganizations());
+      } else if (tab === 'claims') {
+        const result = await api.getDirectoryClaims();
+        setClaims(result.claims || []);
+      } else if (tab === 'audit') {
+        setAuditEvents(await api.getAuditLog());
+      }
     } catch (caught: any) {
-      setError(caught.message || 'Could not load operations data.');
+      setError(caught.message || 'Could not load this administration area.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    void loadTab(activeTab);
+  }, [activeTab]);
 
-  const run = async (key: string, action: () => Promise<unknown>) => {
+  const refresh = () => loadTab(activeTab);
+
+  const run = async (key: string, action: () => Promise<unknown>, successMessage: string) => {
     setBusy(key);
     setError('');
-    try { await action(); await load(); }
-    catch (caught: any) { setError(caught.message || 'The update failed.'); }
-    finally { setBusy(''); }
+    setNotice('');
+    try {
+      await action();
+      setNotice(successMessage);
+      await refresh();
+    } catch (caught: any) {
+      setError(caught.message || 'The update could not be completed.');
+    } finally {
+      setBusy('');
+    }
   };
 
-  if (!overview && !error) return <div className="py-20 text-center text-slate-500">Loading operations console…</div>;
+  const openAction = (next: DialogState) => setDialog(next);
 
-  const labels: Record<string, string> = {
-    users: 'Members', verified_users: 'Verified members', suspended_users: 'Suspended', active_requests: 'Active requests',
-    open_reports: 'Open reports', open_tickets: 'Open tickets', confirmed_donations: 'Confirmed donations'
+  const submitMemberSearch = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      setMembers(await api.getAdminUsers(userSearch));
+    } catch (caught: any) {
+      setError(caught.message || 'Could not search members.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredRequests = requests.filter(request => !requestStatus || request.status === requestStatus);
+  const filteredAudit = auditEvents.filter(event => {
+    const query = auditSearch.trim().toLowerCase();
+    return !query || [event.action, event.target_type, event.target_id, event.actor_id]
+      .some(value => String(value || '').toLowerCase().includes(query));
+  });
+
+  return (
+    <div className="admin-shell">
+      <header className="admin-hero">
+        <div>
+          <div className="eyebrow"><ShieldCheck className="h-4 w-4" /> Protected operations</div>
+          <h1>Administration center</h1>
+          <p>Review network activity, protect members, resolve queues, and inspect every privileged change from one role-aware workspace.</p>
+        </div>
+        <div className="admin-identity">
+          <span className="admin-avatar" aria-hidden="true">{initials(user.name)}</span>
+          <div>
+            <strong>{user.name}</strong>
+            <span>{overview?.viewer?.staff_role || user.staff_role || 'Staff'}</span>
+          </div>
+          <button className="icon-button" onClick={() => void refresh()} aria-label="Refresh current view" title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </header>
+
+      <div className="admin-layout">
+        <aside className="admin-sidebar" aria-label="Administration sections">
+          <div className="admin-sidebar-label">Workspace</div>
+          <nav>
+            {visibleTabs.map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={activeTab === tab.id ? 'is-active' : ''}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+          <div className="admin-access-card">
+            <LockKeyhole className="h-5 w-5" />
+            <strong>Least-privilege access</strong>
+            <p>You only see controls allowed for your assigned staff role.</p>
+          </div>
+        </aside>
+
+        <main className="admin-content">
+          {error && <div role="alert" className="alert alert-error"><AlertTriangle className="h-5 w-5" />{error}</div>}
+          {notice && <div role="status" className="alert alert-success"><CheckCircle2 className="h-5 w-5" />{notice}</div>}
+          {loading && !overview ? <LoadingState /> : (
+            <>
+              {activeTab === 'overview' && overview && (
+                <OverviewPanel
+                  overview={overview}
+                  can={can}
+                  onNavigate={setActiveTab}
+                />
+              )}
+
+              {activeTab === 'members' && (
+                <section>
+                  <PanelHeader
+                    eyebrow="People and access"
+                    title="Member management"
+                    description="Find accounts, inspect donor state, suspend unsafe access, revoke sessions, and manage staff hierarchy."
+                  />
+                  <form onSubmit={submitMemberSearch} className="admin-filter-bar">
+                    <label className="search-field">
+                      <Search className="h-4 w-4" />
+                      <span className="sr-only">Search members</span>
+                      <input value={userSearch} onChange={event => setUserSearch(event.target.value)} placeholder="Search name or Bangladesh phone" />
+                    </label>
+                    <button className="button button-primary" disabled={loading}>Search members</button>
+                  </form>
+                  {loading ? <LoadingRows /> : members.length === 0 ? (
+                    <EmptyState icon={Users} title="No members found" description="Try a broader name or phone search." />
+                  ) : (
+                    <div className="admin-record-list">
+                      {members.map(member => {
+                        const targetIsStaff = Boolean(member.staff_role);
+                        const canTouchTarget = member.id !== user.id && (user.staff_role === 'SUPERADMIN' || !targetIsStaff);
+                        return (
+                          <article key={member.id} className="admin-record">
+                            <div className="record-primary">
+                              <span className="admin-avatar admin-avatar-small" aria-hidden="true">{initials(member.name)}</span>
+                              <div>
+                                <div className="record-title-row">
+                                  <h3>{member.name}</h3>
+                                  <StatusBadge value={member.account_status || 'ACTIVE'} />
+                                  {member.staff_role && <StatusBadge value={member.staff_role} tone="purple" />}
+                                  {member.is_verified && <span className="verified-label"><BadgeCheck className="h-3.5 w-3.5" /> Verified phone</span>}
+                                </div>
+                                <p>{member.phone} · Joined {formatDate(member.created_at)}</p>
+                                <div className="record-facts">
+                                  <span>{member.donor_profile?.blood_group || 'No donor profile'}</span>
+                                  <span>{member.donor_profile?.location?.area_name || 'No district'}</span>
+                                  <span>{humanize(member.donor_profile?.availability_status || 'NOT_AVAILABLE')}</span>
+                                </div>
+                                {member.suspension_reason && <p className="record-note">Reason: {member.suspension_reason}</p>}
+                              </div>
+                            </div>
+                            <div className="record-actions">
+                              {can('REVOKE_SESSIONS') && member.id !== user.id && (
+                                <button
+                                  className="button button-secondary"
+                                  disabled={busy === `sessions-${member.id}`}
+                                  onClick={() => openAction({
+                                    title: `Sign ${member.name} out everywhere?`,
+                                    description: 'Every active session for this member will be revoked. Their password is not changed.',
+                                    confirmLabel: 'Revoke sessions',
+                                    reasonLabel: 'Operational reason',
+                                    reasonRequired: true,
+                                    onConfirm: reason => run(`sessions-${member.id}`, () => api.revokeAdminUserSessions(member.id, reason), 'Member sessions revoked.')
+                                  })}
+                                >
+                                  Revoke sessions
+                                </button>
+                              )}
+                              {can('SUSPEND_MEMBER') && canTouchTarget && (
+                                <button
+                                  className={`button ${member.account_status === 'SUSPENDED' ? 'button-secondary' : 'button-danger'}`}
+                                  disabled={busy === `status-${member.id}`}
+                                  onClick={() => {
+                                    const reactivating = member.account_status === 'SUSPENDED';
+                                    openAction({
+                                      title: reactivating ? `Reactivate ${member.name}?` : `Suspend ${member.name}?`,
+                                      description: reactivating
+                                        ? 'The member will be able to sign in again. Donor availability must still be reconfirmed.'
+                                        : 'Active sessions will be revoked and the donor will be removed from available matches.',
+                                      confirmLabel: reactivating ? 'Reactivate member' : 'Suspend member',
+                                      tone: reactivating ? 'default' : 'danger',
+                                      reasonLabel: reactivating ? 'Reactivation note' : 'Suspension reason',
+                                      reasonRequired: true,
+                                      onConfirm: reason => run(
+                                        `status-${member.id}`,
+                                        () => api.updateAdminUser(member.id, {
+                                          account_status: reactivating ? 'ACTIVE' : 'SUSPENDED',
+                                          suspension_reason: reactivating ? '' : reason,
+                                          reason
+                                        }),
+                                        reactivating ? 'Member reactivated.' : 'Member suspended.'
+                                      )
+                                    });
+                                  }}
+                                >
+                                  {member.account_status === 'SUSPENDED' ? 'Reactivate' : 'Suspend'}
+                                </button>
+                              )}
+                              {can('MANAGE_STAFF') && member.id !== user.id && (
+                                <StaffRoleControl
+                                  value={member.staff_role || ''}
+                                  disabled={busy === `role-${member.id}`}
+                                  onChange={nextRole => openAction({
+                                    title: `Change staff access for ${member.name}?`,
+                                    description: nextRole
+                                      ? `This assigns the ${nextRole.toLowerCase()} role and its protected capabilities.`
+                                      : 'This removes access to the administration center.',
+                                    confirmLabel: nextRole ? 'Assign staff role' : 'Remove staff access',
+                                    tone: nextRole ? 'default' : 'danger',
+                                    reasonLabel: 'Reason for access change',
+                                    reasonRequired: true,
+                                    onConfirm: reason => run(
+                                      `role-${member.id}`,
+                                      () => api.updateAdminUser(member.id, { staff_role: nextRole || null, reason }),
+                                      'Staff access updated.'
+                                    )
+                                  })}
+                                />
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {activeTab === 'requests' && (
+                <section>
+                  <PanelHeader
+                    eyebrow="Content operations"
+                    title="Blood request review"
+                    description="Inspect active and historical requests, then record a reasoned moderation decision."
+                  />
+                  <div className="admin-filter-bar">
+                    <label className="select-field">
+                      <SlidersHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Filter request status</span>
+                      <select value={requestStatus} onChange={event => setRequestStatus(event.target.value)}>
+                        <option value="">All statuses</option>
+                        {['DRAFT', 'ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'].map(status => <option key={status}>{status}</option>)}
+                      </select>
+                    </label>
+                    <span className="filter-count">{filteredRequests.length} visible request{filteredRequests.length === 1 ? '' : 's'}</span>
+                  </div>
+                  {loading ? <LoadingRows /> : filteredRequests.length === 0 ? (
+                    <EmptyState icon={HeartPulse} title="No requests in this view" description="Change the status filter or refresh the queue." />
+                  ) : (
+                    <div className="admin-record-list">
+                      {filteredRequests.map(request => (
+                        <article key={request.id} className="admin-record">
+                          <div className="blood-mark">{request.blood_group}</div>
+                          <div className="record-primary record-primary-grow">
+                            <div>
+                              <div className="record-title-row">
+                                <h3>{request.hospital_name || 'Hospital not supplied'}</h3>
+                                <StatusBadge value={request.status} />
+                              </div>
+                              <p>{humanize(request.blood_component || 'WHOLE_BLOOD')} · {request.location?.area_name || 'Unknown district'} · Needed {formatDateTime(request.needed_by)}</p>
+                              <div className="record-facts">
+                                <span>{request.units_required || 1} unit{request.units_required === 1 ? '' : 's'}</span>
+                                <span>Created {formatDateTime(request.created_at)}</span>
+                                <span>Requester: {request.requester_name || request.user_id}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="record-actions">
+                            {request.status !== 'ACTIVE' && (
+                              <ActionButton
+                                label="Approve"
+                                onClick={() => requestAction(request, 'ACTIVE')}
+                                disabled={busy === request.id}
+                              />
+                            )}
+                            {!['REJECTED', 'FULFILLED', 'CANCELLED'].includes(request.status) && (
+                              <ActionButton
+                                label="Reject"
+                                danger
+                                onClick={() => requestAction(request, 'REJECTED')}
+                                disabled={busy === request.id}
+                              />
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {activeTab === 'reports' && overview && (
+                <QueuePanel
+                  title="Safety reports"
+                  eyebrow="Trust and safety"
+                  description="Triage reported requests, comments, and accounts. Resolution notes become part of the audit record."
+                  records={overview.reports || []}
+                  emptyTitle="No reports in the queue"
+                  renderRecord={report => (
+                    <article key={report.id} className="admin-record">
+                      <div className="record-icon record-icon-amber"><AlertTriangle className="h-5 w-5" /></div>
+                      <div className="record-primary record-primary-grow">
+                        <div>
+                          <div className="record-title-row"><h3>{humanize(report.reason)}</h3><StatusBadge value={report.status} /></div>
+                          <p>{report.target_type} · {report.target_id}</p>
+                          <p className="record-note">{report.details || 'No additional details were supplied.'}</p>
+                        </div>
+                      </div>
+                      <div className="record-actions">
+                        {report.status === 'OPEN' && <ActionButton label="Start review" onClick={() => void run(report.id, () => api.updateReport(report.id, 'REVIEWING'), 'Report assigned for review.')} disabled={busy === report.id} />}
+                        {!['RESOLVED', 'DISMISSED'].includes(report.status) && (
+                          <>
+                            <ActionButton label="Resolve" onClick={() => reportAction(report, 'RESOLVED')} disabled={busy === report.id} />
+                            <ActionButton label="Dismiss" danger onClick={() => reportAction(report, 'DISMISSED')} disabled={busy === report.id} />
+                          </>
+                        )}
+                      </div>
+                    </article>
+                  )}
+                />
+              )}
+
+              {activeTab === 'support' && overview && (
+                <QueuePanel
+                  title="Support inbox"
+                  eyebrow="Member care"
+                  description="Review account, safety, privacy, and partnership messages without exposing them to lower-privilege roles."
+                  records={overview.tickets || []}
+                  emptyTitle="The support inbox is clear"
+                  renderRecord={ticket => (
+                    <article key={ticket.id} className="admin-record">
+                      <div className="record-icon"><ClipboardList className="h-5 w-5" /></div>
+                      <div className="record-primary record-primary-grow">
+                        <div>
+                          <div className="record-title-row"><h3>{ticket.name}</h3><StatusBadge value={ticket.status} /><StatusBadge value={ticket.category} tone="purple" /></div>
+                          <p>{ticket.email || ticket.phone || 'No reply channel'} · Received {formatDateTime(ticket.created_at)}</p>
+                          <p className="record-note">{ticket.message}</p>
+                        </div>
+                      </div>
+                      <div className="record-actions">
+                        {ticket.status === 'OPEN' && <ActionButton label="Assign to me" onClick={() => void run(ticket.id, () => api.updateTicket(ticket.id, 'IN_PROGRESS'), 'Ticket assigned.')} disabled={busy === ticket.id} />}
+                        {ticket.status !== 'CLOSED' && <ActionButton label="Close" onClick={() => void run(ticket.id, () => api.updateTicket(ticket.id, 'CLOSED'), 'Ticket closed.')} disabled={busy === ticket.id} />}
+                      </div>
+                    </article>
+                  )}
+                />
+              )}
+
+              {activeTab === 'organizations' && (
+                <section>
+                  <PanelHeader
+                    eyebrow="Partner network"
+                    title="Organization review"
+                    description="Verify hospitals, blood banks, and NGOs only after reviewing their supplied reference and contact details."
+                  />
+                  {loading ? <LoadingRows /> : organizations.length === 0 ? (
+                    <EmptyState icon={Building2} title="No organization applications" description="New applications will appear here for review." />
+                  ) : (
+                    <div className="admin-record-list">
+                      {organizations.map(org => (
+                        <article key={org.id} className="admin-record">
+                          <div className="record-icon"><Building2 className="h-5 w-5" /></div>
+                          <div className="record-primary record-primary-grow">
+                            <div>
+                              <div className="record-title-row"><h3>{org.name}</h3><StatusBadge value={org.status} /><StatusBadge value={org.type} tone="purple" /></div>
+                              <p>{org.district} · {org.phone} · Ref {org.registration_reference}</p>
+                              <p className="record-note">{org.address}</p>
+                            </div>
+                          </div>
+                          <div className="record-actions">
+                            {org.status !== 'VERIFIED' && <ActionButton label="Verify" onClick={() => organizationAction(org, 'VERIFIED')} disabled={busy === org.id} />}
+                            {org.status !== 'REJECTED' && <ActionButton label="Reject" danger onClick={() => organizationAction(org, 'REJECTED')} disabled={busy === org.id} />}
+                            {org.status === 'VERIFIED' && <ActionButton label="Suspend" danger onClick={() => organizationAction(org, 'SUSPENDED')} disabled={busy === org.id} />}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {activeTab === 'claims' && (
+                <section>
+                  <PanelHeader
+                    eyebrow="Identity review"
+                    title="Imported profile claims"
+                    description="Compare the public source listing with the verified claimant before assigning an imported record."
+                  />
+                  {loading ? <LoadingRows /> : claims.length === 0 ? (
+                    <EmptyState icon={UserCheck} title="No claims awaiting review" description="Claims that cannot be matched by phone will appear here." />
+                  ) : (
+                    <div className="admin-record-list">
+                      {claims.map(claim => (
+                        <article key={claim.id} className="admin-record admin-record-stacked">
+                          <div className="claim-compare">
+                            <div>
+                              <span className="compare-label">Source listing</span>
+                              <strong>{claim.name}</strong>
+                              <p>{claim.blood_group || 'Missing group'} · {claim.district || 'Missing district'} · {claim.phone_masked || 'No published number'}</p>
+                              <small>{claim.source?.organization}</small>
+                            </div>
+                            <div>
+                              <span className="compare-label">Verified claimant</span>
+                              <strong>{claim.claimant?.name || 'Account unavailable'}</strong>
+                              <p>{claim.claimant?.phone || 'No account phone'}</p>
+                              <small>{claim.claim_note || 'Manual review required'}</small>
+                            </div>
+                          </div>
+                          <div className="record-actions">
+                            <ActionButton label="Approve claim" onClick={() => claimAction(claim, true)} disabled={busy === claim.id} />
+                            <ActionButton label="Decline" danger onClick={() => claimAction(claim, false)} disabled={busy === claim.id} />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {activeTab === 'audit' && (
+                <section>
+                  <PanelHeader
+                    eyebrow="Accountability"
+                    title="Immutable audit trail"
+                    description="Search recent privileged actions by actor, action, target type, or target identifier."
+                  />
+                  <div className="admin-filter-bar">
+                    <label className="search-field">
+                      <Search className="h-4 w-4" />
+                      <span className="sr-only">Filter audit log</span>
+                      <input value={auditSearch} onChange={event => setAuditSearch(event.target.value)} placeholder="Filter audit events" />
+                    </label>
+                    <span className="filter-count">{filteredAudit.length} event{filteredAudit.length === 1 ? '' : 's'}</span>
+                  </div>
+                  {loading ? <LoadingRows /> : filteredAudit.length === 0 ? (
+                    <EmptyState icon={LockKeyhole} title="No matching audit events" description="Try another actor, action, or target." />
+                  ) : (
+                    <div className="audit-list">
+                      {filteredAudit.map(event => (
+                        <article key={event.id} className="audit-event">
+                          <span className="audit-dot" aria-hidden="true" />
+                          <div>
+                            <div className="record-title-row"><h3>{humanize(event.action)}</h3><StatusBadge value={event.target_type} tone="purple" /></div>
+                            <p>Actor {event.actor_id} · Target {event.target_id}</p>
+                            <time>{formatDateTime(event.created_at)}</time>
+                            {event.metadata && <details><summary>View change metadata</summary><pre>{JSON.stringify(event.metadata, null, 2)}</pre></details>}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {activeTab === 'system' && overview && (
+                <section>
+                  <PanelHeader
+                    eyebrow="Read-only operations"
+                    title="System status"
+                    description="Safe runtime and policy information. Secrets, password hashes, OTPs, and session tokens are never shown."
+                  />
+                  <div className="system-grid">
+                    {Object.entries(overview.system || {}).map(([key, value]) => (
+                      <div key={key} className="system-card">
+                        {key.includes('database') || key.includes('storage') ? <Database className="h-5 w-5" /> : <Server className="h-5 w-5" />}
+                        <span>{humanize(key)}</span>
+                        <strong>{formatSystemValue(value)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  {Object.keys(overview.system || {}).length === 0 && (
+                    <EmptyState icon={Server} title="No system summary returned" description="The API is healthy, but this deployment has not exposed the safe system summary yet." />
+                  )}
+                  <div className="admin-guidance">
+                    <ShieldCheck className="h-6 w-6" />
+                    <div><strong>Operational safety</strong><p>Use health, readiness, and deployment monitoring for diagnosis. This panel intentionally never exposes credentials or raw authentication material.</p></div>
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </main>
+      </div>
+
+      {dialog && (
+        <ActionDialog
+          state={dialog}
+          busy={Boolean(busy)}
+          onClose={() => setDialog(null)}
+          onDone={() => setDialog(null)}
+        />
+      )}
+    </div>
+  );
+
+  function requestAction(request: AdminRecord, status: 'ACTIVE' | 'REJECTED') {
+    openAction({
+      title: status === 'ACTIVE' ? 'Approve this blood request?' : 'Reject this blood request?',
+      description: `${request.blood_group} at ${request.hospital_name || request.location?.area_name}. The requester will be notified of this decision.`,
+      confirmLabel: status === 'ACTIVE' ? 'Approve request' : 'Reject request',
+      tone: status === 'ACTIVE' ? 'default' : 'danger',
+      reasonLabel: 'Moderation note',
+      reasonRequired: true,
+      onConfirm: reason => run(request.id, () => api.moderateRequest(request.id, status, reason), `Request ${status === 'ACTIVE' ? 'approved' : 'rejected'}.`)
+    });
+  }
+
+  function reportAction(report: AdminRecord, status: 'RESOLVED' | 'DISMISSED') {
+    openAction({
+      title: status === 'RESOLVED' ? 'Resolve this report?' : 'Dismiss this report?',
+      description: 'Add a concise reason so another operator can understand the decision later.',
+      confirmLabel: status === 'RESOLVED' ? 'Resolve report' : 'Dismiss report',
+      tone: status === 'RESOLVED' ? 'default' : 'danger',
+      reasonLabel: 'Resolution note',
+      reasonRequired: true,
+      onConfirm: reason => run(report.id, () => api.updateReport(report.id, status, reason), 'Report updated.')
+    });
+  }
+
+  function organizationAction(org: AdminRecord, status: 'VERIFIED' | 'REJECTED' | 'SUSPENDED') {
+    openAction({
+      title: `${humanize(status)} ${org.name}?`,
+      description: 'This changes how the organization and its public campaigns appear across the network.',
+      confirmLabel: status === 'VERIFIED' ? 'Verify organization' : status === 'REJECTED' ? 'Reject application' : 'Suspend organization',
+      tone: status === 'VERIFIED' ? 'default' : 'danger',
+      reasonLabel: 'Review note',
+      reasonRequired: true,
+      onConfirm: reason => run(org.id, () => api.reviewOrganization(org.id, status, reason), 'Organization review saved.')
+    });
+  }
+
+  function claimAction(claim: AdminRecord, approve: boolean) {
+    openAction({
+      title: approve ? `Approve ${claim.claimant?.name || 'this claimant'}?` : 'Decline this profile claim?',
+      description: approve
+        ? 'The imported listing will become the claimant’s donor profile, starting unavailable until they opt in.'
+        : 'The listing will be released for another legitimate owner to claim.',
+      confirmLabel: approve ? 'Approve claim' : 'Decline claim',
+      tone: approve ? 'default' : 'danger',
+      reasonLabel: 'Review note',
+      reasonRequired: true,
+      onConfirm: reason => run(claim.id, () => api.reviewDirectoryClaim(claim.id, approve, reason), approve ? 'Claim approved.' : 'Claim declined.')
+    });
+  }
+}
+
+function OverviewPanel({ overview, can, onNavigate }: {
+  overview: Overview;
+  can: (capability: Capability) => boolean;
+  onNavigate: (tab: TabId) => void;
+}) {
+  const priorityCounts = ['active_requests', 'available_donors', 'open_reports', 'open_tickets', 'pending_organizations', 'pending_directory_claims'];
+  const countEntries = Object.entries(overview.counts || {});
+  const orderedCounts = [
+    ...priorityCounts.flatMap(key => key in overview.counts ? [[key, overview.counts[key]] as [string, number]] : []),
+    ...countEntries.filter(([key]) => !priorityCounts.includes(key))
+  ].slice(0, 12);
+
+  const queues = [
+    { label: 'Request review', value: overview.counts.active_requests || 0, icon: HeartPulse, tab: 'requests' as TabId, capability: 'MODERATE_CONTENT' as Capability },
+    { label: 'Safety reports', value: overview.counts.open_reports || 0, icon: ShieldAlert, tab: 'reports' as TabId, capability: 'MODERATE_CONTENT' as Capability },
+    { label: 'Support tickets', value: overview.counts.open_tickets || 0, icon: ClipboardList, tab: 'support' as TabId, capability: 'MANAGE_SUPPORT' as Capability },
+    { label: 'Partner reviews', value: overview.counts.pending_organizations || 0, icon: Building2, tab: 'organizations' as TabId, capability: 'MANAGE_ORGANIZATIONS' as Capability }
+  ].filter(queue => can(queue.capability));
+
+  return (
+    <section>
+      <PanelHeader
+        eyebrow="Network command center"
+        title="Today’s operational picture"
+        description="Live workload, trust signals, and safe system context for the areas your role is allowed to manage."
+      />
+      <div className="metric-grid">
+        {orderedCounts.map(([key, value], index) => (
+          <div key={key}>
+            <MetricCard label={countLabels[key] || humanize(key)} value={value} featured={index < 4} />
+          </div>
+        ))}
+      </div>
+      <div className="overview-grid">
+        <div className="admin-panel">
+          <div className="panel-title-row"><div><span className="eyebrow">Queues</span><h2>Needs attention</h2></div><Activity className="h-5 w-5" /></div>
+          <div className="queue-links">
+            {queues.map(queue => {
+              const Icon = queue.icon;
+              return (
+                <button key={queue.tab} onClick={() => onNavigate(queue.tab)}>
+                  <span className="record-icon"><Icon className="h-5 w-5" /></span>
+                  <span><strong>{queue.label}</strong><small>{queue.value === 0 ? 'Queue is clear' : `${queue.value} item${queue.value === 1 ? '' : 's'} waiting`}</small></span>
+                  <span className={`queue-count ${queue.value > 0 ? 'has-work' : ''}`}>{queue.value}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="admin-panel">
+          <div className="panel-title-row"><div><span className="eyebrow">Access</span><h2>Your capabilities</h2></div><ShieldCheck className="h-5 w-5" /></div>
+          <div className="capability-list">
+            {(overview.viewer?.capabilities || []).map(capability => <span key={capability}><CheckCircle2 className="h-3.5 w-3.5" />{humanize(capability)}</span>)}
+          </div>
+          <p className="panel-footnote">Backend policy checks every action again. Hidden controls are convenience, not the security boundary.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PanelHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
+  return (
+    <header className="panel-header">
+      <span className="eyebrow">{eyebrow}</span>
+      <h2>{title}</h2>
+      <p>{description}</p>
+    </header>
+  );
+}
+
+function MetricCard({ label, value, featured }: { label: string; value: number; featured?: boolean }) {
+  return (
+    <div className={`metric-card ${featured ? 'metric-card-featured' : ''}`}>
+      <span>{label}</span>
+      <strong>{new Intl.NumberFormat().format(value)}</strong>
+      <small>{value === 0 ? 'No current items' : 'Current total'}</small>
+    </div>
+  );
+}
+
+function QueuePanel({ title, eyebrow, description, records, emptyTitle, renderRecord }: {
+  title: string;
+  eyebrow: string;
+  description: string;
+  records: AdminRecord[];
+  emptyTitle: string;
+  renderRecord: (record: AdminRecord) => ReactNode;
+}) {
+  return (
+    <section>
+      <PanelHeader eyebrow={eyebrow} title={title} description={description} />
+      {records.length === 0
+        ? <EmptyState icon={CheckCircle2} title={emptyTitle} description="There is nothing waiting for action right now." />
+        : <div className="admin-record-list">{records.map(renderRecord)}</div>}
+    </section>
+  );
+}
+
+function StatusBadge({ value, tone }: { value: string; tone?: 'purple' }) {
+  const normalized = String(value || 'UNKNOWN').toUpperCase();
+  const semantic = tone || (
+    ['ACTIVE', 'VERIFIED', 'RESOLVED', 'FULFILLED', 'CLAIMED'].includes(normalized) ? 'positive'
+      : ['SUSPENDED', 'REJECTED', 'CANCELLED', 'DISMISSED'].includes(normalized) ? 'negative'
+        : ['OPEN', 'PENDING', 'PENDING_REVIEW', 'REVIEWING', 'IN_PROGRESS'].includes(normalized) ? 'warning'
+          : 'neutral'
+  );
+  return <span className={`status-badge status-${semantic}`}>{humanize(normalized)}</span>;
+}
+
+function ActionButton({ label, onClick, disabled, danger }: { label: string; onClick: () => void; disabled?: boolean; danger?: boolean }) {
+  return <button onClick={onClick} disabled={disabled} className={`button ${danger ? 'button-danger' : 'button-secondary'}`}>{label}</button>;
+}
+
+function StaffRoleControl({ value, disabled, onChange }: { value: string; disabled?: boolean; onChange: (value: string) => void }) {
+  return (
+    <label className="compact-select">
+      <span className="sr-only">Staff role</span>
+      <UserCog className="h-4 w-4" />
+      <select value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
+        <option value="">Member only</option>
+        <option value="MODERATOR">Moderator</option>
+        <option value="ADMIN">Admin</option>
+        <option value="SUPERADMIN">Superadmin</option>
+      </select>
+    </label>
+  );
+}
+
+function EmptyState({ icon: Icon, title, description }: { icon: typeof Users; title: string; description: string }) {
+  return (
+    <div className="admin-empty">
+      <span><Icon className="h-6 w-6" /></span>
+      <h3>{title}</h3>
+      <p>{description}</p>
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="admin-empty" role="status">
+      <span><RefreshCw className="h-6 w-6 animate-spin" /></span>
+      <h3>Loading administration data</h3>
+      <p>Checking your role and the latest operational queues.</p>
+    </div>
+  );
+}
+
+function LoadingRows() {
+  return (
+    <div className="admin-record-list" aria-label="Loading records">
+      {[0, 1, 2].map(item => <div key={item} className="admin-record admin-skeleton"><span /><div><i /><i /></div></div>)}
+    </div>
+  );
+}
+
+function ActionDialog({ state, busy, onClose, onDone }: {
+  state: DialogState;
+  busy: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+
+  const confirm = async () => {
+    if (state.reasonRequired && reason.trim().length < 3) {
+      setError('Add a clear reason of at least 3 characters.');
+      return;
+    }
+    setError('');
+    try {
+      await state.onConfirm(reason.trim());
+      onDone();
+    } catch (caught: any) {
+      setError(caught.message || 'The action failed.');
+    }
   };
 
   return (
-    <div className="space-y-8">
-      <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-primary">Operations</p>
-        <h1 className="text-3xl font-bold text-slate-900 mt-2">Safety and moderation console</h1>
-        <p className="text-slate-600 mt-2">Review reports, support requests, and public blood requests. Every decision is written to the audit log.</p>
+    <div className="dialog-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && !busy && onClose()}>
+      <div className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title">
+        <button className="icon-button dialog-close" onClick={onClose} disabled={busy} aria-label="Close dialog"><X className="h-4 w-4" /></button>
+        <span className={`dialog-icon ${state.tone === 'danger' ? 'dialog-icon-danger' : ''}`}>
+          {state.tone === 'danger' ? <XCircle className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
+        </span>
+        <h2 id="action-dialog-title">{state.title}</h2>
+        <p>{state.description}</p>
+        {state.reasonLabel && (
+          <label className="dialog-field">
+            <span>{state.reasonLabel}{state.reasonRequired ? ' *' : ''}</span>
+            <textarea value={reason} onChange={event => setReason(event.target.value)} rows={4} maxLength={500} placeholder="Record the reason for this action" autoFocus />
+          </label>
+        )}
+        {error && <div role="alert" className="dialog-error">{error}</div>}
+        <div className="dialog-actions">
+          <button className="button button-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className={`button ${state.tone === 'danger' ? 'button-danger' : 'button-primary'}`} onClick={() => void confirm()} disabled={busy}>
+            {busy ? 'Saving…' : state.confirmLabel}
+          </button>
+        </div>
       </div>
-      {error && <div role="alert" className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm font-semibold text-red-700">{error}</div>}
-      {overview && <>
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Operational metrics">
-          {Object.entries(overview.counts).map(([key, value]) => (
-            <div key={key} className="theme-card border border-slate-100 p-5"><div className="text-2xl font-bold">{value}</div><div className="text-sm text-slate-500 mt-1">{labels[key] || key}</div></div>
-          ))}
-        </section>
-
-        <section className="theme-card border border-slate-100 p-6">
-          <h2 className="font-bold text-xl flex items-center gap-2"><Users className="w-5 h-5 text-primary" /> Organization applications</h2>
-          <div className="mt-4 space-y-3">{organizations.length === 0 && <p className="text-sm text-slate-500">No applications.</p>}{organizations.map(org => <div key={org.id} className="rounded-xl border p-4 flex flex-col sm:flex-row gap-3 justify-between"><div><p className="font-bold">{org.name}</p><p className="text-xs text-slate-500">{org.status} · {org.type} · {org.district} · Ref {org.registration_reference}</p></div><div className="flex gap-2"><button onClick={() => run(org.id, () => api.reviewOrganization(org.id, 'VERIFIED', 'Organization reference reviewed.'))} className="px-3 py-2 border rounded-lg text-xs font-bold">Verify</button><button onClick={() => run(org.id, () => api.reviewOrganization(org.id, 'REJECTED', 'Verification requirements not met.'))} className="px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-bold">Reject</button></div></div>)}</div>
-        </section>
-
-        <section className="theme-card border border-slate-100 p-6">
-          <h2 className="font-bold text-xl flex items-center gap-2"><UserCheck className="w-5 h-5 text-primary" /> Imported profile claims</h2>
-          <p className="text-sm text-slate-500 mt-1">Claims that could not be verified automatically, because the source published no phone number or the claimant is calling from a different one.</p>
-          <div className="mt-4 space-y-3">
-            {directoryClaims.length === 0 && <p className="text-sm text-slate-500">No claims waiting for review.</p>}
-            {directoryClaims.map(claim => <div key={claim.id} className="rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-              <div>
-                <div className="font-bold text-sm">{claim.name} · {claim.blood_group} · {claim.district}</div>
-                <div className="text-xs text-slate-500 mt-1">
-                  Listed by {claim.source.organization} as {claim.phone_masked || 'no published number'} · claimed by {claim.claimant?.name || 'unknown'} ({claim.claimant?.phone || '—'}) · {claim.claim_note}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button disabled={busy === claim.id} onClick={() => run(claim.id, () => api.reviewDirectoryClaim(claim.id, true))} className="px-3 py-2 rounded-lg border text-xs font-bold">Approve</button>
-                <button disabled={busy === claim.id} onClick={() => run(claim.id, () => api.reviewDirectoryClaim(claim.id, false))} className="px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-bold">Decline</button>
-              </div>
-            </div>)}
-          </div>
-        </section>
-
-        <section className="theme-card border border-slate-100 p-6">
-          <h2 className="font-bold text-xl flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-amber-500" /> Reports</h2>
-          <div className="mt-4 space-y-3">
-            {overview.reports.length === 0 && <p className="text-sm text-slate-500">No reports.</p>}
-            {overview.reports.map(report => <div key={report.id} className="rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-              <div><div className="font-bold text-sm">{report.target_type}: {report.reason}</div><div className="text-xs text-slate-500 mt-1">{report.status} · {report.details || 'No additional detail'}</div></div>
-              <div className="flex gap-2"><button disabled={busy === report.id} onClick={() => run(report.id, () => api.updateReport(report.id, 'REVIEWING'))} className="px-3 py-2 rounded-lg border text-xs font-bold">Review</button><button disabled={busy === report.id} onClick={() => run(report.id, () => api.updateReport(report.id, 'RESOLVED'))} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold">Resolve</button></div>
-            </div>)}
-          </div>
-        </section>
-
-        <section className="theme-card border border-slate-100 p-6">
-          <h2 className="font-bold text-xl flex items-center gap-2"><ClipboardList className="w-5 h-5 text-primary" /> Support queue</h2>
-          <div className="mt-4 space-y-3">
-            {overview.tickets.length === 0 && <p className="text-sm text-slate-500">No support tickets.</p>}
-            {overview.tickets.map(ticket => <div key={ticket.id} className="rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-              <div><div className="font-bold text-sm">{ticket.category}: {ticket.name}</div><div className="text-xs text-slate-500 mt-1">{ticket.status} · {ticket.message}</div></div>
-              <div className="flex gap-2"><button disabled={busy === ticket.id} onClick={() => run(ticket.id, () => api.updateTicket(ticket.id, 'IN_PROGRESS'))} className="px-3 py-2 rounded-lg border text-xs font-bold">Assign to me</button><button disabled={busy === ticket.id} onClick={() => run(ticket.id, () => api.updateTicket(ticket.id, 'CLOSED'))} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold">Close</button></div>
-            </div>)}
-          </div>
-        </section>
-
-        <section className="theme-card border border-slate-100 p-6">
-          <h2 className="font-bold text-xl flex items-center gap-2"><Shield className="w-5 h-5 text-primary" /> Recent requests</h2>
-          <div className="mt-4 space-y-3">
-            {requests.slice(0, 30).map(request => <div key={request.id} className="rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-              <div><div className="font-bold text-sm">{request.blood_group} {request.component} · {request.hospital_name}</div><div className="text-xs text-slate-500 mt-1">{request.status} · {request.location?.area_name}</div></div>
-              <div className="flex gap-2"><button disabled={busy === request.id} onClick={() => run(request.id, () => api.moderateRequest(request.id, 'ACTIVE', 'Reviewed by an operator.'))} className="px-3 py-2 rounded-lg border text-xs font-bold"><CheckCircle2 className="inline w-3 h-3 mr-1" />Approve</button><button disabled={busy === request.id} onClick={() => run(request.id, () => api.moderateRequest(request.id, 'REJECTED', 'Removed after moderation review.'))} className="px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-bold">Reject</button></div>
-            </div>)}
-          </div>
-        </section>
-      </>}
-      <p className="text-xs text-slate-500 flex gap-2 items-center"><Users className="w-4 h-4" /> Role and suspension management is available through the protected admin API; a dedicated user-management view will follow.</p>
     </div>
   );
+}
+
+function initials(name: string) {
+  return String(name || 'Staff').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+}
+
+function humanize(value: unknown) {
+  return String(value || 'Unknown').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function formatDate(value: unknown) {
+  if (!value) return 'Unknown';
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function formatDateTime(value: unknown) {
+  if (!value) return 'Not supplied';
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? 'Not supplied' : date.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatSystemValue(value: unknown) {
+  if (typeof value === 'boolean') return value ? 'Enabled' : 'Disabled';
+  if (value === null || value === undefined || value === '') return 'Not configured';
+  return String(value);
 }

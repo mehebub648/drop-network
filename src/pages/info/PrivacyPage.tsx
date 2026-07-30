@@ -3,7 +3,7 @@ import { InfoPage } from './InfoPage';
 
 export default function PrivacyPage() {
   return (
-    <InfoPage eyebrow="Legal" title="Privacy Policy" intro="Effective 22 July 2026. This policy explains what Drop currently collects, why it is used, where it is stored, and when another member can see it.">
+    <InfoPage eyebrow="Legal" title="Privacy Policy" intro="Effective 29 July 2026. This policy explains what Drop currently collects, why it is used, where it is stored, and when another member can see it.">
       <section>
         <h2>Information we collect</h2>
         <p>When you create or use an account, Drop can store your name, phone number, password hash, blood group, district and approximate district coordinates, availability, verification status, last donation date, and donation-history entries. Blood requests can include patient and requester names, blood group, district, needed-by date, contact people, comments, status, and creation time.</p>
@@ -14,7 +14,9 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Who can see phone numbers</h2>
-        <p>Public request lists do not include phone numbers or contact details. On a request page, signed-in members can see the request contact details and donor phone numbers so they can coordinate. The request creator’s account phone number is reserved for the request owner. Information you add to comments may be visible publicly, so do not post phone numbers or sensitive medical details there.</p>
+        <p>Public donor searches can show an opted-in member’s name, blood group, approximate location or distance, verification signal, and current availability, but never their phone number. A signed-in member can see the phone number only while that registered donor has explicitly marked themselves available.</p>
+        <p className="mt-3">Imported listings from other public sources stay in a separate archive. Their phone numbers remain masked for everyone, including signed-in members, because publication elsewhere is not consent to reveal contact details on Drop.</p>
+        <p className="mt-3">Public request lists do not include private contact details. Request contacts are limited to the request owner and donors who accept an invitation for that request. Information you add to comments may be visible publicly, so do not post phone numbers or sensitive medical details there.</p>
       </section>
       <section>
         <h2>Storage and security</h2>
@@ -22,11 +24,11 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Sharing and service providers</h2>
-        <p>Drop does not currently send account data to advertising networks or an SMS provider. We may disclose information when required by law, to protect people from credible harm, or to infrastructure providers needed to operate the service once those providers are introduced. This policy should be updated before such a provider is enabled.</p>
+        <p>Drop does not send account data to advertising networks. When an SMS channel is configured, the destination phone number and one-time verification message are sent to that delivery provider. We may also disclose limited information when required by law, to protect people from credible harm, or to infrastructure providers needed to operate the service.</p>
       </section>
       <section>
         <h2>Verification and OTP</h2>
-        <p>Registration uses a short-lived SMS code. Verification confirms control of a phone number and must not be treated as identity or clinical confirmation. OTP challenges are purpose-bound and expire; operational retention will be finalized before production launch.</p>
+        <p>Registration and password recovery use a short-lived, purpose-bound code. Verification confirms control of a phone number and must not be treated as identity or clinical confirmation. In non-production development environments only, if no OTP delivery channel is configured, the code is printed to protected server logs so developers can complete the flow. Production never falls back to console delivery.</p>
       </section>
       <section>
         <h2>Your choices</h2>

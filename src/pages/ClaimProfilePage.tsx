@@ -76,7 +76,7 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
     return (
       <div className="max-w-xl mx-auto theme-card p-12 text-center border border-slate-100 shadow-sm">
         <p className="text-slate-600 font-bold">{error || 'Profile not found.'}</p>
-        <Link to="/directory" className="text-primary font-bold hover:underline mt-4 inline-block">Back to the directory</Link>
+        <Link to="/directory/imported" className="text-primary font-bold hover:underline mt-4 inline-block">Back to the imported archive</Link>
       </div>
     );
   }
@@ -86,7 +86,7 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
     return (
       <div className="max-w-xl mx-auto theme-card p-10 text-center border border-slate-100 shadow-sm space-y-4 fade-in">
         {approved
-          ? <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
+          ? <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto" />
           : <Clock className="w-12 h-12 text-amber-500 mx-auto" />}
         <h1 className="text-2xl font-extrabold text-slate-900">
           {approved ? 'Profile claimed' : 'Claim sent for review'}
@@ -97,8 +97,8 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
             ? 'Your donor profile has been filled in. You are still marked unavailable until you choose to turn availability on.'
             : 'We could not verify ownership automatically, so a moderator will check this claim before the profile becomes yours.'}
         </p>
-        <button onClick={() => navigate(approved ? '/profile/donor' : '/directory')} className="theme-button px-6 py-3 font-bold">
-          {approved ? 'Go to my donor profile' : 'Back to the directory'}
+        <button onClick={() => navigate(approved ? '/profile/donor' : '/directory/imported')} className="theme-button px-6 py-3 font-bold">
+          {approved ? 'Go to my donor profile' : 'Back to the imported archive'}
         </button>
       </div>
     );
