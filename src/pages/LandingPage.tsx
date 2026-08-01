@@ -16,6 +16,7 @@ import {
 import { api } from '../lib/api';
 import { DONATION_INTERVAL_DAYS } from '../lib/blood';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
+import SearchJourneySteps from '../components/search/SearchJourneySteps';
 import {
   readSearchDraft,
   writeSearchDraft,
@@ -36,18 +37,18 @@ type NetworkStats = {
 const steps = [
   {
     icon: Search,
-    title: 'Search openly',
-    body: 'Choose a blood group and district to see opted-in donors who have marked themselves available. No account is needed to search.'
+    title: 'Search the right place',
+    body: 'Choose a blood group, district and upazila to see registered donors and attributed public listings. No account is needed to browse.'
   },
   {
     icon: LockKeyhole,
-    title: 'Protect contact details',
-    body: 'Public results never expose a phone number. Sign in before a participating donor’s contact can be shown.'
+    title: 'Compare useful matches',
+    body: 'See registration, availability and donation context before choosing anyone. Every phone number stays masked.'
   },
   {
     icon: HeartHandshake,
-    title: 'Coordinate responsibly',
-    body: 'Confirm the need with the hospital, contact donors respectfully, and complete every donation through an appropriate clinical facility.'
+    title: 'Open one contact safely',
+    body: 'Confirm the patient details, sign in, and open one contact at a time. Each reveal is tied to the request and recorded.'
   }
 ];
 
@@ -75,7 +76,9 @@ export default function LandingPage({ user }: { user: any }) {
   };
 
   const search = () => {
-    writeSearchDraft(draft);
+    const nextDraft = { ...draft, request_id: undefined };
+    setDraft(nextDraft);
+    writeSearchDraft(nextDraft);
     const query = new URLSearchParams({
       blood_group: draft.blood_group,
       district: draft.district,
@@ -86,31 +89,31 @@ export default function LandingPage({ user }: { user: any }) {
 
 
   return (
-    <div className="space-y-16 pb-8 sm:space-y-20 lg:space-y-24">
-      <section className="relative overflow-hidden rounded-[2rem] border border-emerald-100 bg-white px-5 py-8 shadow-[0_24px_70px_-44px_rgba(4,120,87,0.45)] sm:px-8 sm:py-12 lg:px-12 lg:py-16">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-emerald-100/60 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-rose-100/60 blur-3xl" />
+    <div className="space-y-12 pb-8 sm:space-y-16 lg:space-y-20">
+      <section className="relative overflow-hidden rounded-[2rem] border border-rose-100 bg-[linear-gradient(135deg,#ffffff_0%,#fffafa_48%,#fff1f2_100%)] px-5 py-7 shadow-[0_28px_80px_-52px_rgba(136,19,55,0.55)] sm:px-8 sm:py-10 lg:px-10 lg:py-12">
+        <div className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-rose-200/45 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 left-1/4 h-64 w-64 rounded-full bg-amber-100/45 blur-3xl" />
 
-        <div className="relative grid items-center gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-14">
+        <div className="relative grid items-center gap-8 lg:grid-cols-[0.82fr_1.18fr] lg:gap-10 xl:gap-14">
           <div>
-            <div className="inline-flex min-h-10 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold uppercase tracking-[0.14em] text-emerald-800">
+            <div className="inline-flex min-h-9 items-center gap-2 rounded-full border border-rose-200 bg-white/85 px-4 text-[11px] font-extrabold uppercase tracking-[0.14em] text-rose-800 shadow-sm">
               <Sparkles className="h-4 w-4" aria-hidden="true" />
-              Community blood coordination
+              One connected search
             </div>
-            <h1 className="mt-6 max-w-3xl text-4xl font-extrabold leading-[1.08] tracking-[-0.035em] text-slate-950 sm:text-5xl lg:text-6xl">
-              Find an available blood donor, without a login wall.
+            <h1 className="mt-5 max-w-3xl text-4xl font-extrabold leading-[1.07] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-[3.35rem] xl:text-6xl">
+              Find the right blood donor, without losing your place.
             </h1>
-            <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
-              Search donors across Bangladesh by blood group, district and upazila. There is no separate
-              request form: the details you give to unlock a phone number are your request.
+            <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
+              Start here, compare private matches on the directory, then continue to a protected contact.
+              Your search details move with you through every step.
             </p>
 
-            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <a
                 href="#donor-search"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-extrabold text-white shadow-lg shadow-emerald-900/15 transition-colors hover:bg-primary-dark"
               >
-                Find donors
+                Start your search
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </a>
               <Link
@@ -121,7 +124,7 @@ export default function LandingPage({ user }: { user: any }) {
               </Link>
             </div>
 
-            <div className="mt-7 flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold text-slate-600">
+            <div className="mt-6 flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold text-slate-600">
               <span className="inline-flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
                 Public search
@@ -137,16 +140,20 @@ export default function LandingPage({ user }: { user: any }) {
             </div>
           </div>
 
-          <div id="donor-search" className="scroll-mt-28">
-            <SearchCriteriaForm
-              value={criteria}
-              onChange={updateCriteria}
-              onSubmit={search}
-            />
+          <div id="donor-search" className="scroll-mt-28 rounded-[1.75rem] border border-white/80 bg-white/55 p-2.5 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.5)] backdrop-blur sm:p-3">
+            <SearchJourneySteps activeStep={1} />
+            <div className="mt-3">
+              <SearchCriteriaForm
+                value={criteria}
+                onChange={updateCriteria}
+                onSubmit={search}
+                submitLabel="Continue to donor matches"
+              />
+            </div>
             <p className="mt-3 flex items-start gap-2 px-1 text-xs leading-5 text-slate-500">
               <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
-              Search works without signing in. Registered donors appear first, and every phone number stays
-              hidden until the protected request workflow opens one.
+              You can compare matches without signing in. A phone number opens only after the protected
+              request step.
             </p>
           </div>
         </div>

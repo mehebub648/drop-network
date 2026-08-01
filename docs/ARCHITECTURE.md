@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.56`
+Current application version: `0.0.57`
 
 ## Overview
 
@@ -55,9 +55,10 @@ Entry points:
   public feed, public article, and authenticated publishing flow.
 - `src/components/community/` renders semantic post cards and Markdown through
   `react-markdown` and GFM without raw HTML or Markdown-provided images.
-- `src/components/search/` holds the steps of that flow: the criteria form with
-  its progressive reveal, the donor result card, and `RequestGate`, which
-  carries the patient details and the inline sign-in.
+- `src/components/search/` holds the steps of that flow: the shared three-stage
+  progress guide, the criteria form with its progressive reveal, the donor
+  result card, and `RequestGate`, which carries the patient details and the
+  inline sign-in.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
 - `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
@@ -89,8 +90,9 @@ Routes:
 
 - `/` is a search-led landing page with the complete blood group, district,
   upazila, collection-facility, and requester-role flow. It persists that
-  guided draft into `/directory`, alongside network context, privacy
-  explanations, request preparation, safety guidance, and FAQs.
+  guided draft into `/directory` and introduces the shared Search area ->
+  Choose donor -> Confirm & call progress model, alongside network context,
+  privacy explanations, request preparation, safety guidance, and FAQs.
 - `/requests` lists bounded pages of public blood requests with server-side
   blood-group/district/urgency filters persisted in the URL and makes the
   collection facility visible on each request card.
@@ -105,8 +107,12 @@ Routes:
 - `/directory` is the combined search and request flow. It asks for blood group,
   district and upazila with nothing pre-selected - a wrong default silently
   searches the wrong place - then reveals the collection facility and "who are
-  you?" questions once those three are answered. Results show every number
-  masked. Asking for one number opens the patient-details gate, which also
+  you?" questions once those three are answered. After a search, the page
+  continues at the Choose donor stage with a compact summary of the carried
+  criteria and an in-place refine panel instead of repeating the initial hero.
+  A shared URL without request context opens that panel automatically before a
+  contact can be requested. Results show every number masked. Asking for one
+  number opens the patient-details gate, which also
   carries the explicit publication consent and the inline sign-in, and
   publishing the request is what unmasks the number. Facility suggestions come
   from the DGHS registry rows whose type is `Blood Bank`, ordered with the

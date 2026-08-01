@@ -32,12 +32,20 @@ export default function SearchCriteriaForm({
   value,
   onChange,
   onSubmit,
-  submitting
+  submitting,
+  title = 'Where is blood needed?',
+  description = 'Start with the blood group and location. We will keep these details with you through the search.',
+  submitLabel = 'Show donor matches',
+  stepLabel = 'Step 1 of 3'
 }: {
   value: Criteria;
   onChange: (next: Criteria) => void;
   onSubmit: () => void;
   submitting?: boolean;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  stepLabel?: string;
 }) {
   const upazilas = useMemo(() => getUpazilasForDistrict(value.district), [value.district]);
   const facilities = useMemo(() => {
@@ -58,7 +66,19 @@ export default function SearchCriteriaForm({
   };
 
   return (
-    <form onSubmit={submit} className="rounded-3xl border border-slate-200 bg-slate-50/70 p-5 sm:p-6">
+    <form onSubmit={submit} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.5)] sm:p-6">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div>
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary">Search details</p>
+          <h2 className="mt-1.5 text-xl font-extrabold tracking-tight text-slate-950">{title}</h2>
+          <p className="mt-1 max-w-xl text-xs font-medium leading-5 text-slate-500">{description}</p>
+        </div>
+        <span className="inline-flex min-h-8 shrink-0 items-center self-start rounded-full bg-rose-50 px-3 text-[11px] font-extrabold text-rose-800">
+          {stepLabel}
+        </span>
+      </div>
+
+      <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Match location</p>
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="block">
           <span className="mb-2 block text-sm font-bold text-slate-700">Blood group</span>
@@ -120,7 +140,13 @@ export default function SearchCriteriaForm({
       </div>
 
       {hasPlace && (
-        <div className="fade-in mt-4 grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
+        <div className="fade-in mt-5 grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Request context</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-slate-500">
+              This stays private while you browse and is used only if you ask to contact a donor.
+            </p>
+          </div>
           <label className="block">
             <span className="mb-2 block text-sm font-bold text-slate-700">Where will the blood be collected?</span>
             <span className="relative block">
@@ -171,7 +197,7 @@ export default function SearchCriteriaForm({
 
       <button type="submit" disabled={!complete || submitting} className="primary-button mt-4 disabled:cursor-not-allowed disabled:opacity-60">
         <Search className="h-5 w-5" aria-hidden="true" />
-        {submitting ? 'Searching...' : 'Find donors'}
+        {submitting ? 'Searching...' : submitLabel}
       </button>
       {!hasPlace && (
         <p className="mt-3 text-xs font-semibold text-slate-500">

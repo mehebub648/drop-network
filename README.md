@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.56`
+Current version: `0.0.57`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -59,7 +59,9 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   collection facility, and requester role carry into `/directory`. Registered,
   opted-in donors are ranked first and explicitly labelled before attributed
   public listings. Every result stays masked until the protected request and
-  one-at-a-time reveal workflow opens a contact.
+  one-at-a-time reveal workflow opens a contact. A shared three-step progress
+  guide and compact directory summary keep the home-to-results handoff visible;
+  requesters can refine the search without leaving the result page.
 - Registered donors can self-report an exact last-donation date, an approximate
   number of days, months, or years ago, or that they have never donated, plus a
   lifetime donation count. Search cards show that bounded summary when present;
@@ -84,10 +86,11 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 - Public requests use server-side filters and bounded pagination with URL-based
   filter state. `/health`, `/ready`, and Prometheus-format `/metrics` support
   production probes and monitoring.
-- The responsive white-and-blood-red interface includes a public search-led
-  landing page, mobile navigation, redesigned authentication and information
-  screens, an installable offline shell, route-specific SEO/social metadata,
-  accessible focus behavior, and consistent production English copy.
+- The responsive white-and-blood-red interface includes a connected
+  search-led landing and donor-directory journey, mobile navigation,
+  redesigned authentication and information screens, an installable offline
+  shell, route-specific SEO/social metadata, accessible focus behavior, and
+  consistent production English copy.
 - Verified hospitals, blood banks, and NGOs can be reviewed by operators,
   listed in the public partner directory, and publish donation campaigns.
 - `/community` publishes member donation stories and Markdown-formatted health

@@ -93,7 +93,7 @@ export default function Footer() {
                 <h2 className="text-sm font-extrabold text-slate-950">{column.title}</h2>
                 <ul className="mt-4 space-y-1">
                   {column.links.map(link => (
-                    <li key={link.to}>
+                    <li key={`${link.to}:${link.label}`}>
                       <Link
                         to={link.to}
                         className="inline-flex min-h-11 items-center text-sm font-medium text-slate-600 transition-colors hover:text-primary"

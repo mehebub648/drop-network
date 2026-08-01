@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Archive, PhoneCall, RefreshCw, ShieldCheck, UserRoundSearch } from 'lucide-react';
+import {
+  Archive,
+  Building2,
+  MapPin,
+  PhoneCall,
+  RefreshCw,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserRound,
+  UserRoundSearch
+} from 'lucide-react';
 import { api, type SearchDonorCard } from '../lib/api';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
 import DonorResultCard from '../components/search/DonorResultCard';
 import RequestGate from '../components/search/RequestGate';
+import SearchJourneySteps from '../components/search/SearchJourneySteps';
 import {
   readSearchDraft,
   searchRequestPayload,
@@ -53,11 +64,15 @@ export default function DonorSearchPage({
   const [busyRef, setBusyRef] = useState('');
   const [pendingCall, setPendingCall] = useState<{ reveal_id: string; donor_ref: string } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [refineOpen, setRefineOpen] = useState(() => !(
+    searchParams.get('blood_group') && searchParams.get('district') && searchParams.get('upazila')
+  ));
 
   const bloodGroup = searchParams.get('blood_group') || '';
   const district = searchParams.get('district') || '';
   const upazila = searchParams.get('upazila') || '';
   const hasQuery = Boolean(bloodGroup && district && upazila);
+  const contextComplete = Boolean(draft.collection_facility.trim() && draft.requester_role);
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
@@ -92,6 +107,10 @@ export default function DonorSearchPage({
     };
   }, [bloodGroup, district, upazila, hasQuery, reloadKey]);
 
+  useEffect(() => {
+    if (!hasQuery || !contextComplete) setRefineOpen(true);
+  }, [hasQuery, contextComplete]);
+
   // A call that was opened but never answered for blocks the next reveal, so
   // surface it here rather than letting the next click fail with a 409.
   useEffect(() => {
@@ -117,6 +136,7 @@ export default function DonorSearchPage({
       district: draft.district,
       upazila: draft.upazila
     });
+    setRefineOpen(false);
   };
 
   /** Publishes the request if needed, unmasks the number, opens the call page. */
@@ -134,6 +154,11 @@ export default function DonorSearchPage({
 
   const selectDonor = async (donor: SearchDonorCard) => {
     setError('');
+    if (!contextComplete) {
+      setRefineOpen(true);
+      setError('Add the collection place and your role before asking to contact a donor.');
+      return;
+    }
     setSelected(donor);
     if (!user || !draft.request_id) {
       setGateOpen(true);
@@ -161,46 +186,147 @@ export default function DonorSearchPage({
   };
 
   const donors = results ? [...results.registered, ...results.directory] : [];
+  const requesterLabel = draft.requester_role === 'PATIENT'
+    ? 'Patient'
+    : draft.requester_role === 'RELATIVE'
+      ? "Patient's relative"
+      : draft.requester_role === 'THIRD_PARTY'
+        ? 'Third-party volunteer'
+        : '';
 
   return (
-    <div className="space-y-8 pb-8 sm:space-y-10">
-      <section className="overflow-hidden rounded-[2rem] border border-emerald-100 bg-white px-5 py-7 shadow-[0_24px_70px_-48px_rgba(4,120,87,0.5)] sm:px-8 sm:py-10 lg:px-10">
-        <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-end">
-          <div>
-            <div className="inline-flex min-h-10 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 text-xs font-extrabold uppercase tracking-[0.14em] text-emerald-800">
-              <UserRoundSearch className="h-4 w-4" aria-hidden="true" />
-              Find blood
-            </div>
-            <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">
-              Search donors in your upazila.
-            </h1>
-            <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-slate-600">
-              There is no separate form to fill in. Search for the blood you need, and the details you
-              give to unlock a phone number become your request.
-            </p>
-            <p className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-600">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-              Numbers stay hidden until you tell us who needs blood
-            </p>
-          </div>
+    <div className="space-y-6 pb-8 sm:space-y-8">
+      <section className="relative overflow-hidden rounded-[2rem] border border-rose-100 bg-[linear-gradient(135deg,#ffffff_0%,#fffafa_54%,#fff1f2_100%)] px-5 py-6 shadow-[0_24px_70px_-50px_rgba(136,19,55,0.55)] sm:px-8 sm:py-8 lg:px-10">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-rose-200/40 blur-3xl" />
+        <div className="relative">
+          <SearchJourneySteps activeStep={hasQuery ? 2 : 1} />
 
-          <SearchCriteriaForm value={criteria} onChange={next => updateDraft({ ...draft, ...next })} onSubmit={runSearch} submitting={loading} />
+          {!hasQuery ? (
+            <div className="mt-6 grid gap-7 lg:grid-cols-[0.78fr_1.22fr] lg:items-center lg:gap-10">
+              <div>
+                <div className="inline-flex min-h-9 items-center gap-2 rounded-full border border-rose-200 bg-white px-4 text-[11px] font-extrabold uppercase tracking-[0.14em] text-rose-800 shadow-sm">
+                  <UserRoundSearch className="h-4 w-4" aria-hidden="true" />
+                  Donor directory
+                </div>
+                <h1 className="mt-5 text-3xl font-extrabold leading-tight tracking-[-0.035em] text-slate-950 sm:text-4xl lg:text-5xl">
+                  Start a private donor search.
+                </h1>
+                <p className="mt-4 max-w-xl text-base font-medium leading-7 text-slate-600">
+                  Search openly, compare masked matches, and share patient details only when you choose
+                  a donor to contact.
+                </p>
+                <p className="mt-5 inline-flex items-start gap-2 text-sm font-semibold leading-6 text-slate-600">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                  No phone number appears in public results
+                </p>
+              </div>
+
+              <SearchCriteriaForm
+                value={criteria}
+                onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
+                onSubmit={runSearch}
+                submitting={loading}
+              />
+            </div>
+          ) : (
+            <div className="mt-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 items-start gap-4 sm:items-center sm:gap-5">
+                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-red-100 bg-white text-2xl font-extrabold text-red-700 shadow-sm sm:h-20 sm:w-20 sm:text-3xl">
+                    {bloodGroup}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary">Your current search</p>
+                    <h1 className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl lg:text-4xl">
+                      Donors near {upazila}
+                    </h1>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
+                        <MapPin className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                        {upazila}, {district}
+                      </span>
+                      {draft.collection_facility && (
+                        <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
+                          <Building2 className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                          {draft.collection_facility}
+                        </span>
+                      )}
+                      {requesterLabel && (
+                        <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
+                          <UserRound className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                          {requesterLabel}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setRefineOpen(open => !open)}
+                  aria-expanded={refineOpen}
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-stretch rounded-xl border border-rose-200 bg-white px-4 text-sm font-extrabold text-rose-800 shadow-sm transition-colors hover:bg-rose-50 lg:self-auto"
+                >
+                  <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                  {refineOpen ? 'Close search details' : 'Refine search'}
+                </button>
+              </div>
+
+              <p className="mt-5 max-w-3xl text-sm font-medium leading-6 text-slate-600">
+                Your home-page search is still here. Choose a match below, or refine these details without
+                leaving the directory.
+              </p>
+
+              {!contextComplete && (
+                <div role="status" className="mt-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm font-semibold leading-6 text-amber-950">
+                    Add the collection place and your role before asking to contact a donor.
+                  </p>
+                  <button type="button" onClick={() => setRefineOpen(true)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-amber-900 px-4 text-xs font-extrabold text-white">
+                    Complete search details
+                  </button>
+                </div>
+              )}
+
+              {refineOpen && (
+                <div className="fade-in mt-6 border-t border-rose-100 pt-6">
+                  <SearchCriteriaForm
+                    value={criteria}
+                    onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
+                    onSubmit={runSearch}
+                    submitting={loading}
+                    title="Refine this donor search"
+                    description="Update the area or request context. Your results refresh when you submit."
+                    submitLabel="Update donor matches"
+                    stepLabel="Editing step 1"
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
       {hasQuery && (
         <section aria-labelledby="search-results-heading">
-          <div className="mb-5">
-            <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-emerald-700">Results</p>
-            <h2 id="search-results-heading" className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
-              {bloodGroup} donors in {upazila}, {district}
-            </h2>
-            {!loading && !error && results && (
-              <p className="mt-2 text-sm font-medium text-slate-600">
-                {results.totals.registered} registered member{results.totals.registered === 1 ? '' : 's'} and{' '}
-                {results.totals.directory} public listing{results.totals.directory === 1 ? '' : 's'}.
-                Registered donors appear first; registration and compatible blood groups are marked on every card.
-              </p>
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-emerald-700">Step 2 · Donor matches</p>
+              <h2 id="search-results-heading" className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
+                Choose who to contact
+              </h2>
+              {!loading && !error && results && (
+                <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-600">
+                  {results.totals.registered} registered member{results.totals.registered === 1 ? '' : 's'} and{' '}
+                  {results.totals.directory} attributed public listing{results.totals.directory === 1 ? '' : 's'} match{' '}
+                  {bloodGroup} in {upazila}, {district}. Registered donors appear first.
+                </p>
+              )}
+            </div>
+            {!loading && results && (
+              <span className="inline-flex min-h-9 items-center self-start rounded-full border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-800 sm:self-auto">
+                {donors.length} match{donors.length === 1 ? '' : 'es'}
+              </span>
             )}
           </div>
 

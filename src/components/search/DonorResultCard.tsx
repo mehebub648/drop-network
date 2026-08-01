@@ -42,7 +42,7 @@ export default function DonorResultCard({
   const donationSummary = donor.donor_kind === 'REGISTERED' ? donor.donation_summary : undefined;
 
   return (
-    <article className="theme-card flex h-full flex-col p-5 sm:p-6">
+    <article className="theme-card flex h-full min-w-0 flex-col p-5 sm:p-6">
       <div className="flex items-start gap-4">
         <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-red-100 bg-red-50 text-lg font-extrabold text-red-700">
           {donor.blood_group}
@@ -112,7 +112,7 @@ export default function DonorResultCard({
           className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Phone className="h-4 w-4" aria-hidden="true" />
-          {busy ? 'Opening...' : 'Get this number'}
+          {busy ? 'Opening...' : 'Request contact'}
         </button>
       </div>
     </article>
