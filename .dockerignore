@@ -2,6 +2,7 @@ node_modules
 dist
 build
 .lancedb
+.media
 .env
 .env.local
 .git

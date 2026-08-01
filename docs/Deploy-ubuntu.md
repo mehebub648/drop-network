@@ -5,7 +5,8 @@ This project runs as one Node.js server:
 1. Express serves the API.
 2. Vite runs in middleware mode during development.
 3. Production serves Docker-built frontend files from `dist/`.
-4. LanceDB data is stored in Docker named volumes.
+4. LanceDB data and processed community story images are stored in host
+   directories bind-mounted into Docker.
 
 ## 1. Prerequisites
 
@@ -45,7 +46,7 @@ public deployment; use a different origin only for a separate environment.
 
 If port `3000` or `3001` is already busy, set `PORT` or `DEV_PORT` in `.env`.
 The datastore starts empty; no demo data is generated. Docker Compose stores
-LanceDB in named volumes by default.
+persistent LanceDB and community media data under `./data/` on the host.
 
 ## 3. Default Docker Run
 
@@ -99,13 +100,15 @@ docker compose --profile development stop app-dev
 
 ## 5. Persistent Data
 
-Runtime data lives in `./data/` on the host, not inside Docker volumes, so you
-can back it up or inspect it with ordinary tools:
+Runtime data lives in `./data/` on the host through bind mounts, not in Docker
+named volumes, so you can back it up or inspect it with ordinary tools:
 
 1. `./data/lancedb` mounted at `/data/lancedb` for the default production-style service.
-2. `./data/lancedb-dev` mounted at `/data/lancedb` for development.
-3. `./data/scraped` holds scraped donor listings (NDJSON).
-4. `drop_node_modules` is the only named volume left, for development dependencies.
+2. `./data/media/community` mounted at `/data/media/community` for the default production-style service.
+3. `./data/lancedb-dev` mounted at `/data/lancedb` for development.
+4. `./data/media-dev/community` mounted at `/data/media/community` for development.
+5. `./data/scraped` holds scraped donor listings (NDJSON).
+6. `drop_node_modules` is the only named volume left, for development dependencies.
 
 `./data/` is git-ignored because it is large and holds personal data. Back it up
 by copying the directory while the containers are stopped:
@@ -114,6 +117,9 @@ by copying the directory while the containers are stopped:
 docker compose --profile development down
 tar czf drop-data-$(date +%F).tar.gz data/
 ```
+
+This archive includes both LanceDB records and processed community story images
+for the production and development services.
 
 To remove containers and the dependency volume:
 
@@ -126,8 +132,10 @@ hand if you intentionally want to reset local state.
 
 ### Importing public donor listings
 
-The imported directory lives in the same LanceDB volume. Populating it is a
-manual, two-step operation, never something the running server does:
+Imported donor records live in the LanceDB directory for the service running the
+import, not in a separate volume. The commands below use `app-dev`, so they write
+to the bind-mounted `./data/lancedb-dev` directory. Populating it is a manual,
+two-step operation, never something the running server does:
 
 ```bash
 docker compose --profile development run --rm app-dev npm run scrape -- --source=all --resume

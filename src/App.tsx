@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import { api } from './lib/api';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -32,6 +32,10 @@ import ClaimProfilePage from './pages/ClaimProfilePage';
 import DonorSearchPage from './pages/DonorSearchPage';
 import CallDonorPage from './pages/CallDonorPage';
 import { getSafeReturnTo } from './lib/navigation';
+
+const CommunityEditorPage = lazy(() => import('./pages/CommunityEditorPage'));
+const CommunityPage = lazy(() => import('./pages/CommunityPage'));
+const CommunityPostPage = lazy(() => import('./pages/CommunityPostPage'));
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -82,6 +86,9 @@ export default function App() {
                 donors is how a request is created. Old links land on search. */}
             <Route path="/request/new" element={<Navigate to="/directory" replace />} />
             <Route path="/requests" element={<RequestsPage />} />
+            <Route path="/community" element={<CommunityRoute><CommunityPage user={user} /></CommunityRoute>} />
+            <Route path="/community/new" element={loading ? <RouteLoading /> : user ? <CommunityRoute><CommunityEditorPage /></CommunityRoute> : <Navigate to="/login?returnTo=%2Fcommunity%2Fnew" replace />} />
+            <Route path="/community/:slug" element={<CommunityRoute><CommunityPostPage user={user} /></CommunityRoute>} />
             <Route path="/directory" element={<DonorSearchPage user={user} onLogin={fetchUser} />} />
             <Route path="/directory/call/:requestId/:donorRef" element={requireUser(<CallDonorPage />)} />
             <Route path="/directory/imported" element={<DirectoryPage />} />
@@ -113,6 +120,25 @@ export default function App() {
         </Layout>
       </ErrorBoundary>
     </BrowserRouter>
+  );
+}
+
+function CommunityRoute({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<CommunityRouteLoading />}>
+      {children}
+    </Suspense>
+  );
+}
+
+function CommunityRouteLoading() {
+  return (
+    <div className="flex min-h-40 items-center justify-center" role="status" aria-live="polite">
+      <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
+        <span className="h-5 w-5 animate-spin rounded-full border-2 border-rose-100 border-t-primary" aria-hidden="true" />
+        Loading community…
+      </div>
+    </div>
   );
 }
 

@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   BadgeCheck,
+  BookOpenText,
   Building2,
   CheckCircle2,
   ClipboardList,
@@ -23,7 +24,7 @@ import {
   X,
   XCircle
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, type AdminCommunityPost, type CommunityPostStatus } from '../lib/api';
 
 type Capability =
   | 'DASHBOARD'
@@ -59,7 +60,7 @@ type AdminRecord = {
   [key: string]: any;
 };
 
-type TabId = 'overview' | 'members' | 'requests' | 'reports' | 'support' | 'organizations' | 'claims' | 'audit' | 'system';
+type TabId = 'overview' | 'members' | 'requests' | 'community' | 'reports' | 'support' | 'organizations' | 'claims' | 'audit' | 'system';
 
 type DialogState = {
   title: string;
@@ -81,6 +82,7 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capa
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'members', label: 'Members', icon: Users, capability: 'VIEW_USERS' },
   { id: 'requests', label: 'Requests', icon: HeartPulse, capability: 'MODERATE_CONTENT' },
+  { id: 'community', label: 'Community', icon: BookOpenText, capability: 'MODERATE_CONTENT' },
   { id: 'reports', label: 'Reports', icon: ShieldAlert, capability: 'MODERATE_CONTENT' },
   { id: 'support', label: 'Support', icon: ClipboardList, capability: 'MANAGE_SUPPORT' },
   { id: 'organizations', label: 'Partners', icon: Building2, capability: 'MANAGE_ORGANIZATIONS' },
@@ -110,11 +112,13 @@ export default function AdminPage({ user }: { user: AdminViewer }) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [members, setMembers] = useState<AdminRecord[]>([]);
   const [requests, setRequests] = useState<AdminRecord[]>([]);
+  const [communityPosts, setCommunityPosts] = useState<AdminCommunityPost[]>([]);
   const [organizations, setOrganizations] = useState<AdminRecord[]>([]);
   const [claims, setClaims] = useState<AdminRecord[]>([]);
   const [auditEvents, setAuditEvents] = useState<AdminRecord[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [requestStatus, setRequestStatus] = useState('');
+  const [communityStatus, setCommunityStatus] = useState<'' | Extract<CommunityPostStatus, 'PUBLISHED' | 'HIDDEN'>>('');
   const [auditSearch, setAuditSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -132,24 +136,57 @@ export default function AdminPage({ user }: { user: AdminViewer }) {
 
   const loadOverview = async () => {
     const next = await api.getAdminOverview();
-    setOverview({
+    const normalized: Overview = {
       ...next,
       counts: next.counts || {},
       reports: next.reports || [],
       tickets: next.tickets || []
+    };
+    setOverview(normalized);
+    return normalized;
+  };
+
+  const loadCommunityPosts = async (reportedPostIds: string[] = []) => {
+    const [published, hidden] = await Promise.all([
+      api.getAdminCommunityPosts({ status: 'PUBLISHED' }),
+      api.getAdminCommunityPosts({ status: 'HIDDEN' })
+    ]);
+    const unique = new Map<string, AdminCommunityPost>();
+    [...published, ...hidden].forEach(post => unique.set(post.id, post));
+    const missingIds = [...new Set(reportedPostIds)].filter(id => id && !unique.has(id));
+    const missingResults = await Promise.allSettled(missingIds.map(id => api.getAdminCommunityPost(id)));
+    missingResults.forEach(result => {
+      if (result.status === 'fulfilled') {
+        unique.set(result.value.id, result.value);
+        return;
+      }
+      const status = (result.reason as Error & { status?: number })?.status;
+      if (status !== 404) throw result.reason;
     });
+    setCommunityPosts(
+      [...unique.values()].sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
+    );
   };
 
   const loadTab = async (tab: TabId) => {
     setLoading(true);
     setError('');
     try {
-      if (tab === 'overview' || tab === 'reports' || tab === 'support' || tab === 'system') {
+      if (tab === 'overview' || tab === 'support' || tab === 'system') {
         await loadOverview();
+      } else if (tab === 'reports') {
+        const next = await loadOverview();
+        const reportedPostIds = (next.reports || [])
+          .filter(report => report.target_type === 'POST')
+          .map(report => String(report.target_id || ''))
+          .filter(Boolean);
+        await loadCommunityPosts(reportedPostIds);
       } else if (tab === 'members') {
         setMembers(await api.getAdminUsers(userSearch));
       } else if (tab === 'requests') {
         setRequests(await api.getAdminRequests());
+      } else if (tab === 'community') {
+        await loadCommunityPosts();
       } else if (tab === 'organizations') {
         setOrganizations(await api.getAdminOrganizations());
       } else if (tab === 'claims') {
@@ -202,6 +239,8 @@ export default function AdminPage({ user }: { user: AdminViewer }) {
   };
 
   const filteredRequests = requests.filter(request => !requestStatus || request.status === requestStatus);
+  const filteredCommunityPosts = communityPosts.filter(post => !communityStatus || post.status === communityStatus);
+  const communityById = new Map(communityPosts.map(post => [post.id, post]));
   const filteredAudit = auditEvents.filter(event => {
     const query = auditSearch.trim().toLowerCase();
     return !query || [event.action, event.target_type, event.target_id, event.actor_id]
@@ -449,34 +488,103 @@ export default function AdminPage({ user }: { user: AdminViewer }) {
                 </section>
               )}
 
+              {activeTab === 'community' && (
+                <section>
+                  <PanelHeader
+                    eyebrow="Public content"
+                    title="Community moderation"
+                    description="Inspect published donation stories and health suggestions, then hide unsafe content or restore reviewed posts with a recorded reason."
+                  />
+                  <div className="admin-filter-bar">
+                    <label className="select-field">
+                      <SlidersHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Filter community post status</span>
+                      <select
+                        value={communityStatus}
+                        onChange={event => setCommunityStatus(event.target.value as '' | 'PUBLISHED' | 'HIDDEN')}
+                      >
+                        <option value="">Published and hidden</option>
+                        <option value="PUBLISHED">Published</option>
+                        <option value="HIDDEN">Hidden</option>
+                      </select>
+                    </label>
+                    <span className="filter-count">{filteredCommunityPosts.length} visible post{filteredCommunityPosts.length === 1 ? '' : 's'}</span>
+                  </div>
+                  {loading ? <LoadingRows /> : filteredCommunityPosts.length === 0 ? (
+                    <EmptyState icon={BookOpenText} title="No community posts in this view" description="Change the status filter or refresh the moderation queue." />
+                  ) : (
+                    <div className="admin-record-list">
+                      {filteredCommunityPosts.map(post => (
+                        <article key={post.id} className="admin-record">
+                          <div className="record-icon"><BookOpenText className="h-5 w-5" /></div>
+                          <div className="record-primary record-primary-grow">
+                            <CommunityPostInspection post={post} />
+                          </div>
+                          <div className="record-actions">
+                            {post.status === 'PUBLISHED' && post.slug && (
+                              <a className="button button-secondary" href={`/community/${post.slug}`} target="_blank" rel="noreferrer">Open public page</a>
+                            )}
+                            <ActionButton
+                              label={post.status === 'HIDDEN' ? 'Restore' : 'Hide'}
+                              danger={post.status !== 'HIDDEN'}
+                              disabled={busy === `community-${post.id}`}
+                              onClick={() => communityAction(post, post.status === 'HIDDEN' ? 'PUBLISHED' : 'HIDDEN')}
+                            />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
               {activeTab === 'reports' && overview && (
                 <QueuePanel
                   title="Safety reports"
                   eyebrow="Trust and safety"
-                  description="Triage reported requests, comments, and accounts. Resolution notes become part of the audit record."
+                  description="Triage reported requests, comments, accounts, and community posts. Resolution notes become part of the audit record."
                   records={overview.reports || []}
                   emptyTitle="No reports in the queue"
-                  renderRecord={report => (
-                    <article key={report.id} className="admin-record">
-                      <div className="record-icon record-icon-amber"><AlertTriangle className="h-5 w-5" /></div>
-                      <div className="record-primary record-primary-grow">
-                        <div>
-                          <div className="record-title-row"><h3>{humanize(report.reason)}</h3><StatusBadge value={report.status} /></div>
-                          <p>{report.target_type} · {report.target_id}</p>
-                          <p className="record-note">{report.details || 'No additional details were supplied.'}</p>
+                  renderRecord={report => {
+                    const reportedPost = report.target_type === 'POST' ? communityById.get(report.target_id) : undefined;
+                    return (
+                      <article key={report.id} className="admin-record">
+                        <div className="record-icon record-icon-amber"><AlertTriangle className="h-5 w-5" /></div>
+                        <div className="record-primary record-primary-grow">
+                          <div>
+                            <div className="record-title-row"><h3>{humanize(report.reason)}</h3><StatusBadge value={report.status} /></div>
+                            <p>{report.target_type} · {report.target_id}</p>
+                            <p className="record-note">{report.details || 'No additional details were supplied.'}</p>
+                            {reportedPost ? (
+                              <CommunityPostInspection post={reportedPost} nested />
+                            ) : report.target_type === 'POST' ? (
+                              <p className="record-note">The reported post is not in the current published or hidden moderation window. Refresh the queue or inspect its audit history before resolving the report.</p>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                      <div className="record-actions">
-                        {report.status === 'OPEN' && <ActionButton label="Start review" onClick={() => void run(report.id, () => api.updateReport(report.id, 'REVIEWING'), 'Report assigned for review.')} disabled={busy === report.id} />}
-                        {!['RESOLVED', 'DISMISSED'].includes(report.status) && (
-                          <>
-                            <ActionButton label="Resolve" onClick={() => reportAction(report, 'RESOLVED')} disabled={busy === report.id} />
-                            <ActionButton label="Dismiss" danger onClick={() => reportAction(report, 'DISMISSED')} disabled={busy === report.id} />
-                          </>
-                        )}
-                      </div>
-                    </article>
-                  )}
+                        <div className="record-actions">
+                          {reportedPost?.status === 'PUBLISHED' && reportedPost.slug && (
+                            <a className="button button-secondary" href={`/community/${reportedPost.slug}`} target="_blank" rel="noreferrer">Inspect post</a>
+                          )}
+                          {reportedPost && ['PUBLISHED', 'HIDDEN'].includes(reportedPost.status) && (
+                            <ActionButton
+                              label={reportedPost.status === 'HIDDEN' ? 'Restore post' : 'Hide post'}
+                              danger={reportedPost.status !== 'HIDDEN'}
+                              disabled={busy === `community-${reportedPost.id}`}
+                              onClick={() => communityAction(reportedPost, reportedPost.status === 'HIDDEN' ? 'PUBLISHED' : 'HIDDEN')}
+                            />
+                          )}
+                          {report.status === 'OPEN' && <ActionButton label="Start review" onClick={() => void run(report.id, () => api.updateReport(report.id, 'REVIEWING'), 'Report assigned for review.')} disabled={busy === report.id} />}
+                          {!['RESOLVED', 'DISMISSED'].includes(report.status) && (
+                            <>
+                              <ActionButton label="Resolve" onClick={() => reportAction(report, 'RESOLVED')} disabled={busy === report.id} />
+                              <ActionButton label="Dismiss" danger onClick={() => reportAction(report, 'DISMISSED')} disabled={busy === report.id} />
+                            </>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  }}
                 />
               )}
 
@@ -665,6 +773,25 @@ export default function AdminPage({ user }: { user: AdminViewer }) {
     });
   }
 
+  function communityAction(post: AdminCommunityPost, status: 'HIDDEN' | 'PUBLISHED') {
+    const hiding = status === 'HIDDEN';
+    openAction({
+      title: hiding ? `Hide “${post.title}”?` : `Restore “${post.title}”?`,
+      description: hiding
+        ? 'The public page will stop resolving and the author will receive the moderation reason.'
+        : 'The existing public address will become available again and the author will receive the review reason.',
+      confirmLabel: hiding ? 'Hide post' : 'Restore post',
+      tone: hiding ? 'danger' : 'default',
+      reasonLabel: hiding ? 'Reason for hiding' : 'Reason for restoring',
+      reasonRequired: true,
+      onConfirm: reason => run(
+        `community-${post.id}`,
+        () => api.moderateAdminCommunityPost(post.id, status, reason),
+        hiding ? 'Community post hidden.' : 'Community post restored.'
+      )
+    });
+  }
+
   function reportAction(report: AdminRecord, status: 'RESOLVED' | 'DISMISSED') {
     openAction({
       title: status === 'RESOLVED' ? 'Resolve this report?' : 'Dismiss this report?',
@@ -702,6 +829,40 @@ export default function AdminPage({ user }: { user: AdminViewer }) {
       onConfirm: reason => run(claim.id, () => api.reviewDirectoryClaim(claim.id, approve, reason), approve ? 'Claim approved.' : 'Claim declined.')
     });
   }
+}
+
+function CommunityPostInspection({ post, nested = false }: { post: AdminCommunityPost; nested?: boolean }) {
+  return (
+    <div className={nested ? 'mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4' : ''}>
+      <div className="record-title-row">
+        <h3>{post.title}</h3>
+        <StatusBadge value={post.status} />
+        <StatusBadge value={post.type} tone="purple" />
+      </div>
+      <p>By {post.author.name} · Updated {formatDateTime(post.updated_at)}</p>
+      <p className="record-note">{post.excerpt}</p>
+      {post.image && (
+        <figure className="mt-3 flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center">
+          <img
+            src={post.image.url}
+            alt={post.image.alt}
+            width={post.image.width}
+            height={post.image.height}
+            loading="lazy"
+            className="h-24 w-full rounded-lg object-cover sm:w-36"
+          />
+          <figcaption className="min-w-0 break-words text-xs leading-5 text-slate-600">Image description: {post.image.alt}</figcaption>
+        </figure>
+      )}
+      <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+        <summary className="cursor-pointer text-sm font-extrabold text-slate-800">Inspect full Markdown content</summary>
+        <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-6 text-slate-700">{post.body_markdown}</pre>
+      </details>
+      {post.status === 'HIDDEN' && post.moderation_reason && (
+        <p className="record-note">Current moderation reason: {post.moderation_reason}</p>
+      )}
+    </div>
+  );
 }
 
 function OverviewPanel({ overview, can, onNavigate }: {

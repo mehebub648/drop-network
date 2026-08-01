@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.55`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.56`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,6 +13,11 @@ delivered.
 
 ### Code quality / polish
 
+- [ ] **Resolve current upstream dependency advisories.** `npm audit --omit=dev`
+  flags the existing React Router RSC action advisory and PostCSS source-map
+  file-read advisories. Drop does not use React Server Components or process
+  user-supplied CSS, but compatible patched releases should replace the affected
+  versions once available and then be verified through the Docker checks.
 - [ ] **Rendered accessibility/browser audit.** Keyboard/focus and reduced
   motion foundations exist, but complete WCAG 2.2 AA review, screen-reader
   testing, target-size/contrast audit, and responsive browser matrix remain.
@@ -24,9 +29,10 @@ delivered.
   `server/db.ts` caps account-backed tables at 10,000 rows. Remove or explicitly
   paginate this limit before registered donor volume can exceed it, otherwise
   startup state and public live search can be incomplete.
-- [ ] **Route-level bundle splitting.** The production frontend bundle is about
-  860 kB minified and triggers Vite's 500 kB chunk warning. Lazy-load larger
-  route modules, especially the administration workspace, before traffic grows.
+- [ ] **Continue route-level bundle splitting.** Community and Markdown routes
+  now load separately, but the remaining production entry chunk is about 624 kB
+  minified and still triggers Vite's 500 kB warning. Lazy-load another large
+  route module, especially the administration workspace, before traffic grows.
 - [ ] **Seven truncated upazila/blood-group combinations.** The Bangladesh
   Scouts register caps every search at 500 rows. The 0.0.44 full run hit that
   cap in exactly seven places: Rajshahi/Bagmara (A+, B+, O+),

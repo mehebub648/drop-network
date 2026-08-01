@@ -6,6 +6,7 @@ import Footer from './Footer';
 const navigation = [
   { label: 'Find donors', to: '/directory', end: true },
   { label: 'Live requests', to: '/requests' },
+  { label: 'Community', to: '/community' },
   { label: 'Partners', to: '/partners' },
   { label: 'About', to: '/about' }
 ];
@@ -76,7 +77,7 @@ export default function Layout({
             </span>
           </Link>
 
-          <nav className="ml-2 hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
+          <nav className="ml-2 hidden items-center gap-1 xl:flex" aria-label="Primary navigation">
             {navigation.map(item => (
               <NavLink key={item.to} to={item.to} end={item.end} className={desktopLink}>
                 {item.label}
@@ -84,7 +85,7 @@ export default function Layout({
             ))}
           </nav>
 
-          <div className="ml-auto hidden items-center gap-2 lg:flex">
+          <div className="ml-auto hidden items-center gap-2 xl:flex">
             {user ? (
               <>
                 <Link
@@ -149,7 +150,7 @@ export default function Layout({
           <button
             ref={menuButtonRef}
             type="button"
-            className="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 lg:hidden"
+            className="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 xl:hidden"
             aria-expanded={mobileOpen}
             aria-controls="mobile-navigation"
             aria-haspopup="true"
@@ -161,7 +162,7 @@ export default function Layout({
         </div>
 
         {mobileOpen && (
-          <div id="mobile-navigation" className="border-t border-slate-100 bg-white px-4 pb-5 pt-3 shadow-lg lg:hidden">
+          <div id="mobile-navigation" className="border-t border-slate-100 bg-white px-4 pb-5 pt-3 shadow-lg xl:hidden">
             <nav className="mx-auto grid max-w-7xl gap-1" aria-label="Mobile navigation">
               {navigation.map(item => (
                 <NavLink key={item.to} to={item.to} end={item.end} className={mobileLink}>

@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.55`
+Current application version: `0.0.56`
 
 ## Overview
 
@@ -11,6 +11,8 @@ Drop Network is a single Node.js application for urgent blood donation matching.
 - A LanceDB data store mounted at `/data/lancedb` inside Docker, bind-mounted
   from `./data/` on the host so the datastore is a directory you can back up,
   copy, or inspect directly.
+- A separate `/data/media/community` bind mount for processed donation-story
+  images; development and production use different host directories.
 - Vite middleware in development and static `dist/` serving in production.
 - Docker targets for development, build, and production runtime.
 
@@ -36,7 +38,9 @@ environments use console delivery while production fails closed.
    user activity.
 6. In development, Express mounts Vite middleware for the React app.
 7. In production, Express serves the built frontend from `dist/`.
-8. The frontend talks to the backend through relative `/api` routes.
+8. Published community article requests receive server-injected canonical,
+   social, and `BlogPosting` metadata before the React app hydrates.
+9. The frontend talks to the backend through relative `/api` routes.
 
 ## Frontend
 
@@ -47,6 +51,10 @@ Entry points:
 - `src/pages/` contains route-level screens, including `DonorSearchPage` (the
   combined donor search and blood request flow), `CallDonorPage`, and
   `AdminPage` for role-aware operations.
+- `CommunityPage`, `CommunityPostPage`, and `CommunityEditorPage` provide the
+  public feed, public article, and authenticated publishing flow.
+- `src/components/community/` renders semantic post cards and Markdown through
+  `react-markdown` and GFM without raw HTML or Markdown-provided images.
 - `src/components/search/` holds the steps of that flow: the criteria form with
   its progressive reveal, the donor result card, and `RequestGate`, which
   carries the patient details and the inline sign-in.
@@ -135,6 +143,10 @@ Routes:
   public listings. Browsing never shows a number; see the reveal rules below.
 - `/directory/imported/:id` shows and claims one imported record by opaque
   public ID. `/directory/:id` remains a compatibility alias.
+- `/community` lists bounded pages of published donation stories and health
+  suggestions. `/community/:slug` is a stable public article URL.
+- `/community/new` lets an authenticated member publish a Markdown donation
+  story with at most one image, or a text-only health suggestion.
 - `/about` explains the service mission, matching model, and limitations.
 - `/contact` submits validated support, privacy, safety, and partnership
   tickets to the protected operations queue.
@@ -211,6 +223,8 @@ Main data types:
 - `DonorResponse` and `AppNotification`
 - `ModerationReport`, `SupportTicket`, and `AuditEvent`
 - `Organization`, including verification state and public campaigns
+- `CommunityPost`, stored as a draft, published, hidden, or deleted document
+  with an immutable public slug after first publication
 
 API routes:
 
@@ -280,9 +294,10 @@ API routes:
 - `GET/DELETE /api/me/sessions` and `POST /api/me/logout-all` expose and revoke
   device sessions without disclosing opaque tokens.
 - `GET /api/me/export` returns the member's account, requests, responses,
-  notifications, and reports. `DELETE /api/me` requires the current password,
-  removes donor/private patient data, cancels active requests, revokes sessions,
-  and anonymizes records retained for coordination and safety auditing.
+  notifications, reports, and authored community posts. `DELETE /api/me`
+  requires the current password, removes donor/private patient data and
+  authored post content/images, cancels active requests, revokes sessions, and
+  anonymizes records retained for coordination and safety auditing.
 - `GET /api/me/requests` returns requests owned by the current user.
 - `POST /api/me/donor-profile` updates donor profile and donation-history data,
   validates exact/approximate/never declarations and lifetime counts, derives a
@@ -303,6 +318,11 @@ API routes:
   users, status/staff updates, session revocation, request/report/ticket/
   organization/claim queues, immutable audit history, and secret-safe system
   information.
+- Public `GET /api/community` and `GET /api/community/:slug` expose only
+  published post projections. Authenticated create, image, publish, owner-list,
+  and delete routes keep drafts private; staff moderation can hide or restore a
+  post. `/media/community/:key` is public only while a published post references
+  it; the author can preview an attached draft image through their own session.
 - Public and protected `/api/organizations` routes support directory listing,
   applications, operator review, role assignment, and campaign publication.
 - `GET /api/stats` returns public network counts for the landing page:
@@ -349,6 +369,9 @@ Tables:
   moderation operations and their audit trail.
 - `common_organizations` stores partner applications, verification state, and
   campaign records.
+- `community_posts` stores posts on demand with real filter columns for ID,
+  slug, author, type, status, publish/update times, and image key; it is never
+  loaded into the boot-time cache.
 - `donors_<district>_<blood_group>` stores searchable donor partitions.
 - `imported_donors` stores claimable donor stubs imported from other
   organisations' public listings. Unlike every other table it is never loaded
@@ -370,7 +393,10 @@ Tables:
   first. Filter columns are `kind`, `request_id`, `actor_id`, and `donor_ref`.
   It is append-only; there is no update path.
 
-Records are stored as JSON strings in a `doc` field. LanceDB vectors use `[lng, lat]` so donor/request records can be searched by location.
+Records are stored as JSON strings in a `doc` field. LanceDB vectors use
+`[lng, lat]` for donor/request location searching; community posts use
+publication epoch days to return the newest public articles without boot-loading
+the table.
 
 Important helpers:
 
@@ -524,6 +550,8 @@ Environment:
   defaults to `https://findadrop.org` for the production Compose service.
 - `LANCEDB_PATH` sets the datastore directory inside the container. Docker
   Compose sets it to `/data/lancedb`.
+- `COMMUNITY_MEDIA_PATH` sets the processed story-image directory. Compose sets
+  it to `/data/media/community`.
 - `ADMIN_PHONE` bootstraps the first verified administrator by normalized
   Bangladesh phone as `SUPERADMIN`; further staff changes require the
   `MANAGE_STAFF` capability.
@@ -538,6 +566,8 @@ Persistent storage:
   service.
 - `./data/lancedb-dev` is bind-mounted at `/data/lancedb` for the development
   service, so experiments never touch production data.
+- `./data/media/community` and `./data/media-dev/community` persist processed
+  story images separately for production and development.
 - `./data/scraped` holds the NDJSON produced by `npm run scrape`.
 - `drop_node_modules` is the one remaining named volume; it holds development
   dependencies and must stay a volume so it does not shadow the host
@@ -546,7 +576,7 @@ Persistent storage:
 `./data/` is git-ignored: it is large and holds personal data.
 
 The production image runs as the unprivileged `node` user and owns
-`/data/lancedb`.
+`/data/lancedb` and `/data/media/community`.
 
 Operational endpoints and jobs:
 
@@ -557,7 +587,8 @@ Operational endpoints and jobs:
 - `.github/workflows/ci.yml` runs Docker-based type checking, tests, bundle
   creation, dependency audit, and secret scanning.
 - `/robots.txt` and `/sitemap.xml` are generated from the deployed request
-  origin so production never publishes a placeholder hostname.
+  origin. The sitemap includes each currently published community slug and its
+  last-modified date; hidden and deleted posts are omitted.
 
 ## Current Constraints
 

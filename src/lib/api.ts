@@ -56,6 +56,68 @@ export type SearchDonorCard = {
   source?: { organization: string; url: string };
 };
 
+export type CommunityPostType = 'DONATION_STORY' | 'HEALTH_SUGGESTION';
+export type CommunityPostStatus = 'DRAFT' | 'PUBLISHED' | 'HIDDEN' | 'DELETED';
+
+export type CommunityPostImage = {
+  url: string;
+  alt: string;
+  width?: number;
+  height?: number;
+};
+
+export type PublicCommunityPostSummary = {
+  id: string;
+  slug: string;
+  type: CommunityPostType;
+  title: string;
+  excerpt: string;
+  image?: CommunityPostImage;
+  author: { name: string };
+  published_at: string;
+  updated_at: string;
+};
+
+export type PublicCommunityPostDetail = PublicCommunityPostSummary & {
+  body_markdown: string;
+};
+
+export type CommunityOwnerPost = {
+  id: string;
+  slug?: string;
+  type: CommunityPostType;
+  status: CommunityPostStatus;
+  title: string;
+  body_markdown: string;
+  excerpt: string;
+  image?: CommunityPostImage;
+  created_at: string;
+  updated_at: string;
+  published_at?: string;
+  moderation_reason?: string;
+};
+
+export type AdminCommunityPost = CommunityOwnerPost & {
+  author: {
+    id: string;
+    name: string;
+    account_status?: string;
+  };
+};
+
+export type CommunityPostListResponse<T> = {
+  posts: T[];
+  page: number;
+  total: number;
+  total_pages: number;
+};
+
+export type CommunityPostInput = {
+  type: CommunityPostType;
+  title: string;
+  body_markdown: string;
+};
+
 export const api = {
   async login(phone: string, password?: string) {
     const res = await fetch(`${API_BASE}/auth/login`, {
@@ -248,7 +310,7 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to mark notification read');
   },
 
-  async report(targetType: 'REQUEST' | 'COMMENT' | 'USER', targetId: string, reason: string, details?: string) {
+  async report(targetType: 'REQUEST' | 'COMMENT' | 'USER' | 'POST', targetId: string, reason: string, details?: string) {
     const res = await fetch(`${API_BASE}/reports`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify({ target_type: targetType, target_id: targetId, reason, details })
     });
@@ -299,6 +361,30 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to moderate request');
   },
 
+  async getAdminCommunityPosts(filters: { status?: CommunityPostStatus; type?: CommunityPostType } = {}): Promise<AdminCommunityPost[]> {
+    const query = new URLSearchParams();
+    if (filters.status) query.set('status', filters.status);
+    if (filters.type) query.set('type', filters.type);
+    const serialized = query.toString();
+    const suffix = serialized ? `?${serialized}` : '';
+    const res = await fetch(`${API_BASE}/admin/community${suffix}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load community moderation posts');
+  },
+
+  async getAdminCommunityPost(id: string): Promise<AdminCommunityPost> {
+    const res = await fetch(`${API_BASE}/admin/community/${encodeURIComponent(id)}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load the community moderation post');
+  },
+
+  async moderateAdminCommunityPost(id: string, status: 'HIDDEN' | 'PUBLISHED', reason: string): Promise<AdminCommunityPost> {
+    const res = await fetch(`${API_BASE}/admin/community/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify({ status, reason })
+    });
+    return readJsonOrThrow(res, 'Failed to moderate community post');
+  },
+
   async updateReport(id: string, status: string, resolutionNote?: string) {
     const res = await fetch(`${API_BASE}/admin/reports/${id}`, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify({ status, resolution_note: resolutionNote }) });
     return readJsonOrThrow(res, 'Failed to update report');
@@ -328,6 +414,71 @@ export const api = {
     if (params.limit) query.set('limit', String(params.limit));
     const res = await fetch(`${API_BASE}/requests?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load requests');
+  },
+
+  // Public community articles are indexable. Draft, image, publish and delete
+  // operations remain tied to the authenticated owner's session.
+  async getCommunityPosts(params: { type?: CommunityPostType; page?: number } = {}): Promise<CommunityPostListResponse<PublicCommunityPostSummary>> {
+    const query = new URLSearchParams();
+    if (params.type) query.set('type', params.type);
+    if (params.page) query.set('page', String(params.page));
+    const serialized = query.toString();
+    const suffix = serialized ? `?${serialized}` : '';
+    const res = await fetch(`${API_BASE}/community${suffix}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load community posts');
+  },
+
+  async getCommunityPost(slug: string): Promise<PublicCommunityPostDetail> {
+    const res = await fetch(`${API_BASE}/community/${encodeURIComponent(slug)}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load that community post');
+  },
+
+  async createCommunityPost(input: CommunityPostInput): Promise<CommunityOwnerPost> {
+    const res = await fetch(`${API_BASE}/community`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(input)
+    });
+    return readJsonOrThrow(res, 'Failed to save the community post draft');
+  },
+
+  async uploadCommunityPostImage(id: string, image: File, alt: string): Promise<CommunityOwnerPost> {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(image.type)) {
+      throw new Error('Choose a JPEG, PNG, or WebP image.');
+    }
+    const res = await fetch(`${API_BASE}/community/${encodeURIComponent(id)}/image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': image.type,
+        'X-Image-Alt': encodeURIComponent(alt.trim()),
+        'x-fingerprint': BROWSER_FINGERPRINT!
+      },
+      body: image
+    });
+    return readJsonOrThrow(res, 'Failed to upload the story image');
+  },
+
+  async publishCommunityPost(id: string): Promise<PublicCommunityPostDetail> {
+    const res = await fetch(`${API_BASE}/community/${encodeURIComponent(id)}/publish`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ consent: true })
+    });
+    return readJsonOrThrow(res, 'Failed to publish the community post');
+  },
+
+  async getMyCommunityPosts(page = 1): Promise<CommunityPostListResponse<CommunityOwnerPost>> {
+    const query = new URLSearchParams({ page: String(Math.max(1, page)) });
+    const res = await fetch(`${API_BASE}/me/community?${query.toString()}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load your community posts');
+  },
+
+  async deleteCommunityPost(id: string) {
+    const res = await fetch(`${API_BASE}/community/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    return readJsonOrThrow(res, 'Failed to delete the community post');
   },
 
   async searchDonors(params: {

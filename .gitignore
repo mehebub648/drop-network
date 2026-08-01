@@ -3,6 +3,7 @@ build/
 dist/
 coverage/
 .lancedb/
+.media/
 .DS_Store
 *.log
 .env*

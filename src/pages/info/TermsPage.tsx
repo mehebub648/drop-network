@@ -3,14 +3,14 @@ import { InfoPage } from './InfoPage';
 
 export default function TermsPage() {
   return (
-    <InfoPage eyebrow="Legal" title="Terms of Use" intro="Effective 22 July 2026. These terms set expectations for using Drop responsibly. By using the service, you agree to provide honest information and use it only for legitimate blood-donation coordination.">
+    <InfoPage eyebrow="Legal" title="Terms of Use" intro="Effective 1 August 2026. These terms set expectations for using Drop responsibly. By using the service, you agree to provide honest information and use it only for legitimate blood-donation coordination.">
       <section>
         <h2>Who may use Drop</h2>
         <p>You must be able to agree to these terms under applicable law. If you are coordinating for a patient, you must have permission to share the details you submit. Keep your password private and tell us if you believe your account is being misused.</p>
       </section>
       <section>
         <h2>Acceptable use</h2>
-        <p>Use Drop only for genuine blood-donation needs and voluntary donor coordination. Do not impersonate another person, publish false emergencies, scrape or harvest contact information, harass members, bypass access controls or rate limits, upload malicious content, or use the service to buy or sell blood.</p>
+        <p>Use Drop only for genuine blood-donation needs, voluntary donor coordination, donation stories, and responsible health education. Do not impersonate another person, publish false emergencies, scrape or harvest contact information, harass members, bypass access controls or rate limits, upload malicious content, publish phone numbers or sensitive medical details, give individualized diagnoses, or use the service to buy or sell blood.</p>
       </section>
       <section>
         <h2>Not a medical or emergency service</h2>
@@ -22,7 +22,7 @@ export default function TermsPage() {
       </section>
       <section>
         <h2>Content and account action</h2>
-        <p>You remain responsible for information you submit. You allow Drop to store and display it as needed to operate the matching service. We may remove content, limit access, or suspend accounts when reasonably necessary to address abuse, safety, legal, or security concerns.</p>
+        <p>You remain responsible for information you submit and must have permission to publish every story, name, and image. You allow Drop to store, process, display, and index published content as needed to operate the service. Health suggestions are general community information, not medical advice. We may hide or remove content, limit access, or suspend accounts when reasonably necessary to address abuse, privacy, safety, legal, or security concerns.</p>
       </section>
       <section>
         <h2>Availability and liability</h2>

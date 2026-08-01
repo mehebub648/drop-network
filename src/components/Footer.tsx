@@ -14,6 +14,7 @@ const columns = [
   {
     title: 'Community',
     links: [
+      { label: 'Stories and suggestions', to: '/community' },
       { label: 'Join as a donor', to: '/register' },
       { label: 'Verified partners', to: '/partners' },
       { label: 'About Drop', to: '/about' },

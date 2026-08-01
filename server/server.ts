@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import { randomInt } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, replaceImportedDonor, addCallReports, queryCallReports } from './db';
 import { evaluateClaim, maskPhone, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, IMPORT_SOURCES, type ImportedDonor } from './importedDonors';
@@ -33,6 +34,33 @@ import {
   type LastDonationDeclaration,
   type PublicDonationSummary
 } from './donation';
+import {
+  COMMUNITY_POST_STATUSES,
+  COMMUNITY_POST_TYPES,
+  countCommunityPosts,
+  getCommunityPostById,
+  getPublishedCommunityPostBySlug,
+  markdownToPlainExcerpt,
+  queryCommunityPosts,
+  queryCommunityPostsByOwner,
+  queryPublishedCommunityPosts,
+  saveCommunityPost,
+  toPublicCommunityPostDetail,
+  toPublicCommunityPostSummary,
+  validateCommunityPostInput,
+  type CommunityPost,
+  type CommunityPostStatus,
+  type CommunityPostType
+} from './communityPosts';
+import {
+  COMMUNITY_IMAGE_MIME_TYPES,
+  MAX_COMMUNITY_IMAGE_BYTES,
+  CommunityMediaError,
+  deleteCommunityImage,
+  readCommunityImage,
+  saveCommunityImage
+} from './communityMedia';
+import { escapeHtml, renderCommunityPostHtml, renderPublicOriginHtml } from './communitySeo';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -49,8 +77,14 @@ const SESSION_COOKIE = 'drop_session';
 const MIN_FINGERPRINT_LENGTH = 16;
 const BCRYPT_ROUNDS = 10;
 const PUBLIC_DONOR_SEARCH_LIMIT = 50;
+const COMMUNITY_PAGE_SIZE = 12;
+const COMMUNITY_EXPORT_PAGE_SIZE = 100;
+const COMMUNITY_IMAGE_QUOTA_PER_MEMBER = 20;
+const COMMUNITY_SITEMAP_CACHE_MS = 5 * 60_000;
 const STARTED_AT = Date.now();
 let isReady = false;
+let communitySitemapCache: { origin: string; xml: string; expiresAt: number } | null = null;
+const activeCommunityImageUploads = new Map<string, number>();
 const REQUEST_STATUSES = ['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'] as const;
 const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
 const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
@@ -133,6 +167,23 @@ const apiLimiter = rateLimit({
 });
 
 app.use('/api', apiLimiter);
+
+const communityImageLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: req => getCurrentAuth(req)?.user.id || 'unauthenticated',
+  message: { error: 'Too many image uploads; try again later' }
+});
+
+function asyncRoute(
+  handler: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<unknown>
+) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    void handler(req, res, next).catch(next);
+  };
+}
 
 // IN-MEMORY DATABASE MOCK
 type DonationRecord = {
@@ -324,7 +375,7 @@ type AppNotification = {
 type ModerationReport = {
   id: string;
   reporter_id: string;
-  target_type: 'REQUEST' | 'COMMENT' | 'USER';
+  target_type: 'REQUEST' | 'COMMENT' | 'USER' | 'POST';
   target_id: string;
   reason: 'SPAM' | 'FRAUD' | 'PAYMENT_REQUEST' | 'HARASSMENT' | 'PRIVACY' | 'OTHER';
   details?: string;
@@ -627,6 +678,209 @@ async function notify(userId: string, type: string, title: string, body: string,
   notifications.push(notification);
   await saveToTable('common_notifications', notification);
   return notification;
+}
+
+function communityImageUrl(key: string) {
+  return `/media/community/${encodeURIComponent(key)}`;
+}
+
+function communityAuthorName(authorId: string) {
+  return users.find(user => user.id === authorId)?.name || 'Drop member';
+}
+
+function publicCommunitySummary(post: CommunityPost) {
+  const projected = toPublicCommunityPostSummary(post, communityAuthorName(post.author_id));
+  const { image, ...summary } = projected;
+  return {
+    ...summary,
+    ...(image ? {
+      image: {
+        url: communityImageUrl(image.key),
+        alt: image.alt,
+        ...(image.width ? { width: image.width } : {}),
+        ...(image.height ? { height: image.height } : {})
+      }
+    } : {})
+  };
+}
+
+function publicCommunityDetail(post: CommunityPost) {
+  const projected = toPublicCommunityPostDetail(post, communityAuthorName(post.author_id));
+  const { image, ...detail } = projected;
+  return {
+    ...detail,
+    ...(image ? {
+      image: {
+        url: communityImageUrl(image.key),
+        alt: image.alt,
+        ...(image.width ? { width: image.width } : {}),
+        ...(image.height ? { height: image.height } : {})
+      }
+    } : {})
+  };
+}
+
+function ownerCommunityPost(post: CommunityPost) {
+  return {
+    id: post.id,
+    slug: post.slug,
+    type: post.type,
+    status: post.status,
+    title: post.title,
+    body_markdown: post.body_markdown,
+    excerpt: post.excerpt,
+    ...(post.image_key ? {
+      image: {
+        url: communityImageUrl(post.image_key),
+        alt: post.image_alt || post.title,
+        ...(post.image_width ? { width: post.image_width } : {}),
+        ...(post.image_height ? { height: post.image_height } : {})
+      }
+    } : {}),
+    created_at: post.created_at,
+    updated_at: post.updated_at,
+    published_at: post.published_at,
+    moderation_reason: post.moderation_reason
+  };
+}
+
+function adminCommunityPost(post: CommunityPost) {
+  const author = users.find(user => user.id === post.author_id);
+  return {
+    ...ownerCommunityPost(post),
+    author: {
+      id: post.author_id,
+      name: author?.name || 'Deleted member',
+      account_status: author?.account_status || 'UNKNOWN'
+    },
+    moderated_by: post.moderated_by,
+    moderated_at: post.moderated_at
+  };
+}
+
+async function queryAllCommunityPostsByOwner(authorId: string, statuses?: CommunityPostStatus[]) {
+  const posts: CommunityPost[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await queryCommunityPostsByOwner(authorId, {
+      ...(statuses ? { statuses } : {}),
+      limit: COMMUNITY_EXPORT_PAGE_SIZE,
+      offset
+    });
+    posts.push(...page);
+    if (page.length < COMMUNITY_EXPORT_PAGE_SIZE) break;
+    offset += page.length;
+  }
+  return posts;
+}
+
+async function queryAllPublishedCommunityPosts(maximum = 50_000) {
+  const posts: CommunityPost[] = [];
+  let offset = 0;
+  while (posts.length < maximum) {
+    const page = await queryPublishedCommunityPosts({
+      limit: Math.min(COMMUNITY_EXPORT_PAGE_SIZE, maximum - posts.length),
+      offset
+    });
+    posts.push(...page);
+    if (page.length < COMMUNITY_EXPORT_PAGE_SIZE) break;
+    offset += page.length;
+  }
+  return posts;
+}
+
+function invalidateCommunitySitemap() {
+  communitySitemapCache = null;
+}
+
+async function markCommunityPostDeleted(post: CommunityPost) {
+  const imageKey = post.image_key;
+  // Remove the private binary before erasing its durable reference. If the
+  // filesystem refuses the delete, the post remains retryable and account
+  // deletion cannot claim success while silently retaining the image.
+  if (imageKey) await deleteCommunityImage(imageKey);
+  return await saveCommunityPost({
+    ...post,
+    status: 'DELETED',
+    title: 'Deleted community post',
+    body_markdown: 'This community post was deleted by its author and is no longer available to the public.',
+    image_key: undefined,
+    image_alt: undefined,
+    image_width: undefined,
+    image_height: undefined,
+    updated_at: new Date().toISOString()
+  });
+}
+
+const communityImageBody = express.raw({
+  type: () => true,
+  limit: MAX_COMMUNITY_IMAGE_BYTES
+});
+
+function receiveCommunityImage(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  communityImageBody(req, res, error => {
+    if (error) {
+      res.status(413).json({ error: 'Image exceeds the 10 MB upload limit' });
+      return;
+    }
+    next();
+  });
+}
+
+function limitCommunityImageConcurrency(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Log in to upload a story image' });
+  const active = activeCommunityImageUploads.get(auth.user.id) || 0;
+  if (active >= 2) return res.status(429).json({ error: 'Wait for an existing image upload to finish' });
+  activeCommunityImageUploads.set(auth.user.id, active + 1);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    const remaining = (activeCommunityImageUploads.get(auth.user.id) || 1) - 1;
+    if (remaining > 0) activeCommunityImageUploads.set(auth.user.id, remaining);
+    else activeCommunityImageUploads.delete(auth.user.id);
+  };
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+}
+
+async function authorizeCommunityImageUpload(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  try {
+    const auth = getCurrentAuth(req);
+    if (!auth) return res.status(401).json({ error: 'Log in to upload a story image' });
+    const post = await getCommunityPostById(req.params.id);
+    if (!post || post.author_id !== auth.user.id) return res.status(404).json({ error: 'Community post not found' });
+    if (post.status !== 'DRAFT') return res.status(409).json({ error: 'Only a draft can receive a new image' });
+    if (post.type !== 'DONATION_STORY') return validationError(res, 'Health suggestions cannot include an image');
+    if (!post.image_key) {
+      const imageCount = await countCommunityPosts({
+        authorId: auth.user.id,
+        statuses: ['DRAFT', 'PUBLISHED', 'HIDDEN'],
+        hasImage: true
+      });
+      if (imageCount >= COMMUNITY_IMAGE_QUOTA_PER_MEMBER) {
+        return res.status(409).json({ error: `Each member can retain up to ${COMMUNITY_IMAGE_QUOTA_PER_MEMBER} story images` });
+      }
+    }
+    res.locals.communityImagePost = post;
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
 
 async function enforceExpiredRequests() {
@@ -1143,14 +1397,226 @@ app.get('/metrics', (_req, res) => {
 
 app.get('/robots.txt', (req, res) => {
   const origin = publicOrigin(req);
-  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nSitemap: ${origin}/sitemap.xml\n`);
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nDisallow: /community/new\nDisallow: /directory/call/\nSitemap: ${origin}/sitemap.xml\n`);
 });
 
-app.get('/sitemap.xml', (req, res) => {
+app.get('/sitemap.xml', asyncRoute(async (req, res) => {
   const origin = publicOrigin(req);
-  const routes = ['', '/requests', '/register', '/directory', '/partners', '/about', '/contact', '/safety', '/privacy', '/terms'];
-  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${origin}${route}</loc></url>`).join('')}</urlset>`);
-});
+  if (communitySitemapCache?.origin === origin && communitySitemapCache.expiresAt > Date.now()) {
+    res.set('Cache-Control', 'public, max-age=300, must-revalidate');
+    return res.type('application/xml').send(communitySitemapCache.xml);
+  }
+  const routes = ['', '/requests', '/register', '/directory', '/community', '/partners', '/about', '/contact', '/safety', '/privacy', '/terms'];
+  let communityUrls = '';
+  try {
+    // A sitemap document may contain at most 50,000 URLs. Reserve room for
+    // Drop's stable routes so the generated document always stays valid.
+    const posts = await queryAllPublishedCommunityPosts(50_000 - routes.length);
+    communityUrls = posts
+      .filter(post => post.slug && post.published_at)
+      .map(post => `<url><loc>${escapeHtml(`${origin}/community/${encodeURIComponent(post.slug!)}`)}</loc><lastmod>${escapeHtml(post.updated_at)}</lastmod></url>`)
+      .join('');
+  } catch (error) {
+    console.error('community sitemap generation failed', error);
+    return res.status(503).type('text/plain').send('Sitemap is temporarily unavailable');
+  }
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escapeHtml(`${origin}${route}`)}</loc></url>`).join('')}${communityUrls}</urlset>`;
+  communitySitemapCache = { origin, xml, expiresAt: Date.now() + COMMUNITY_SITEMAP_CACHE_MS };
+  res.set('Cache-Control', 'public, max-age=300, must-revalidate');
+  res.type('application/xml').send(xml);
+}));
+
+app.get('/api/community', asyncRoute(async (req, res) => {
+  const rawPage = req.query.page;
+  const page = rawPage === undefined ? 1 : parsePositiveInteger(rawPage, 10_000);
+  const rawType = req.query.type;
+  const type = rawType === undefined || rawType === ''
+    ? undefined
+    : isOneOf(rawType, COMMUNITY_POST_TYPES)
+      ? rawType
+      : null;
+  if (!page) return validationError(res, 'Page must be a positive integer');
+  if (type === null) return validationError(res, 'Post type must be a donation story or health suggestion');
+
+  const query = { ...(type ? { type } : {}) };
+  const [posts, total] = await Promise.all([
+    queryPublishedCommunityPosts({ ...query, limit: COMMUNITY_PAGE_SIZE, offset: (page - 1) * COMMUNITY_PAGE_SIZE }),
+    countCommunityPosts({ statuses: ['PUBLISHED'], ...query })
+  ]);
+  res.set('Cache-Control', 'public, max-age=60, must-revalidate');
+  res.json({
+    posts: posts.map(publicCommunitySummary),
+    page,
+    total,
+    total_pages: Math.ceil(total / COMMUNITY_PAGE_SIZE)
+  });
+}));
+
+app.get('/api/community/:slug', asyncRoute(async (req, res) => {
+  const post = await getPublishedCommunityPostBySlug(req.params.slug);
+  if (!post) return res.status(404).json({ error: 'Community post not found' });
+  res.set('Cache-Control', 'public, max-age=60, must-revalidate');
+  res.json(publicCommunityDetail(post));
+}));
+
+app.get('/api/me/community', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const rawPage = req.query.page;
+  const page = rawPage === undefined ? 1 : parsePositiveInteger(rawPage, 10_000);
+  if (!page) return validationError(res, 'Page must be a positive integer');
+  const visibleOwnerStatuses: CommunityPostStatus[] = ['DRAFT', 'PUBLISHED', 'HIDDEN'];
+  const [posts, total] = await Promise.all([
+    queryCommunityPostsByOwner(auth.user.id, {
+      statuses: visibleOwnerStatuses,
+      limit: COMMUNITY_PAGE_SIZE,
+      offset: (page - 1) * COMMUNITY_PAGE_SIZE
+    }),
+    countCommunityPosts({ authorId: auth.user.id, statuses: visibleOwnerStatuses })
+  ]);
+  res.json({
+    posts: posts.map(ownerCommunityPost),
+    page,
+    total,
+    total_pages: Math.ceil(total / COMMUNITY_PAGE_SIZE)
+  });
+}));
+
+app.post('/api/community', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Log in to write a community post' });
+  const validation = validateCommunityPostInput({
+    type: req.body?.type,
+    title: req.body?.title,
+    body_markdown: req.body?.body_markdown
+  });
+  if (validation.ok === false) return validationError(res, validation.errors.join('. '));
+  const now = new Date().toISOString();
+  const post = await saveCommunityPost({
+    id: uuidv4(),
+    author_id: auth.user.id,
+    status: 'DRAFT',
+    ...validation.value,
+    created_at: now,
+    updated_at: now
+  });
+  await audit(auth.user.id, 'COMMUNITY_POST_DRAFTED', 'POST', post.id, { type: post.type });
+  res.status(201).json(ownerCommunityPost(post));
+}));
+
+app.post(
+  '/api/community/:id/image',
+  authorizeCommunityImageUpload,
+  communityImageLimiter,
+  limitCommunityImageConcurrency,
+  receiveCommunityImage,
+  asyncRoute(async (req, res) => {
+  const post = res.locals.communityImagePost as CommunityPost;
+
+  const contentType = (req.get('content-type') || '').split(';', 1)[0].trim().toLowerCase();
+  if (!COMMUNITY_IMAGE_MIME_TYPES.includes(contentType as typeof COMMUNITY_IMAGE_MIME_TYPES[number])) {
+    return validationError(res, 'Only JPEG, PNG, and WebP images are supported');
+  }
+  const encodedAlt = req.get('x-image-alt') || '';
+  let imageAlt = '';
+  try {
+    imageAlt = decodeURIComponent(encodedAlt).trim();
+  } catch {
+    return validationError(res, 'Image description is invalid');
+  }
+  if (!imageAlt || Array.from(imageAlt).length > 180) return validationError(res, 'Describe the image in 180 characters or fewer');
+  if (!Buffer.isBuffer(req.body)) return validationError(res, 'Choose a valid image to upload');
+
+  let stored: Awaited<ReturnType<typeof saveCommunityImage>>;
+  try {
+    stored = await saveCommunityImage(req.body, contentType);
+  } catch (error) {
+    if (error instanceof CommunityMediaError) return validationError(res, error.message);
+    console.error('community image processing failed', error);
+    return res.status(500).json({ error: 'The image could not be stored' });
+  }
+
+  try {
+    const previousImageKey = post.image_key;
+    if (previousImageKey && previousImageKey !== stored.key) {
+      await deleteCommunityImage(previousImageKey);
+    }
+    const updated = await saveCommunityPost({
+      ...post,
+      image_key: stored.key,
+      image_alt: imageAlt,
+      image_width: stored.width,
+      image_height: stored.height,
+      updated_at: new Date().toISOString()
+    });
+    res.json(ownerCommunityPost(updated));
+  } catch (error) {
+    await deleteCommunityImage(stored.key).catch(() => undefined);
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('phone') || message.includes('Image')) return validationError(res, message);
+    console.error('community image record update failed', error);
+    res.status(500).json({ error: 'The image could not be attached to the story' });
+  }
+  })
+);
+
+app.post('/api/community/:id/publish', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Log in to publish a community post' });
+  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before publishing' });
+  if (req.body?.consent !== true) return validationError(res, 'Confirm that you have permission to publish this content');
+  const post = await getCommunityPostById(req.params.id);
+  if (!post || post.author_id !== auth.user.id) return res.status(404).json({ error: 'Community post not found' });
+  if (post.status !== 'DRAFT') return res.status(409).json({ error: 'Only a draft can be published' });
+  const now = new Date().toISOString();
+  const published = await saveCommunityPost({
+    ...post,
+    status: 'PUBLISHED',
+    published_at: now,
+    updated_at: now
+  });
+  invalidateCommunitySitemap();
+  await audit(auth.user.id, 'COMMUNITY_POST_PUBLISHED', 'POST', post.id, { type: post.type, slug: published.slug });
+  res.json(publicCommunityDetail(published));
+}));
+
+app.delete('/api/community/:id', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const post = await getCommunityPostById(req.params.id);
+  if (!post || post.author_id !== auth.user.id || post.status === 'DELETED') {
+    return res.status(404).json({ error: 'Community post not found' });
+  }
+  await markCommunityPostDeleted(post);
+  if (post.status === 'PUBLISHED') invalidateCommunitySitemap();
+  await audit(auth.user.id, 'COMMUNITY_POST_DELETED', 'POST', post.id);
+  res.json({ success: true });
+}));
+
+app.get('/media/community/:key', asyncRoute(async (req, res) => {
+  const posts = await queryCommunityPosts({
+    imageKey: req.params.key,
+    limit: 1
+  });
+  if (posts.length === 0) return res.status(404).end();
+  const post = posts[0];
+  const auth = getCurrentAuth(req);
+  const publiclyCacheable = post.status === 'PUBLISHED';
+  const canReview = Boolean(auth && hasCapability(auth.user, 'MODERATE_CONTENT'));
+  if (!publiclyCacheable && auth?.user.id !== post.author_id && !canReview) return res.status(404).end();
+  let image: Buffer | null;
+  try {
+    image = await readCommunityImage(req.params.key);
+  } catch {
+    return res.status(404).end();
+  }
+  if (!image) return res.status(404).end();
+  res.set({
+    'Cache-Control': publiclyCacheable ? 'public, max-age=60, must-revalidate' : 'private, no-store',
+    'Content-Type': 'image/webp'
+  });
+  res.send(image);
+}));
 
 app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
@@ -1533,21 +1999,37 @@ app.post('/api/me/logout-all', async (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/me/export', (req, res) => {
+app.get('/api/me/export', asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
   const userId = auth.user.id;
+  const communityPosts = await queryAllCommunityPostsByOwner(userId);
+  const exportedCommunityPosts = await Promise.all(communityPosts.map(async post => {
+    const projected = ownerCommunityPost(post);
+    if (!post.image_key) return projected;
+    const image = await readCommunityImage(post.image_key).catch(() => null);
+    return {
+      ...projected,
+      ...(image ? {
+        image_export: {
+          mime_type: 'image/webp',
+          data_base64: image.toString('base64')
+        }
+      } : {})
+    };
+  }));
   res.json({
     exported_at: new Date().toISOString(),
     account: sanitizeUser(auth.user),
     requests: requests.filter(item => item.user_id === userId),
     responses: donorResponses.filter(item => item.donor_id === userId || item.requester_id === userId),
     notifications: notifications.filter(item => item.user_id === userId),
-    reports: moderationReports.filter(item => item.reporter_id === userId)
+    reports: moderationReports.filter(item => item.reporter_id === userId),
+    community_posts: exportedCommunityPosts
   });
-});
+}));
 
-app.delete('/api/me', async (req, res) => {
+app.delete('/api/me', asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
   const password = cleanString(req.body?.password, 128);
@@ -1567,16 +2049,23 @@ app.delete('/api/me', async (req, res) => {
     });
     if (changed) await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
   }
+  const communityPosts = await queryAllCommunityPostsByOwner(auth.user.id, ['DRAFT', 'PUBLISHED', 'HIDDEN']);
+  for (const post of communityPosts) {
+    await markCommunityPostDeleted(post);
+    if (post.status === 'PUBLISHED') invalidateCommunitySitemap();
+  }
   await removeDonorFromAllPartitions(auth.user.id);
   auth.user.name = 'Deleted member'; auth.user.phone = `deleted-${auth.user.id}`; auth.user.password = undefined;
   auth.user.is_verified = false; auth.user.donor_profile = undefined; auth.user.recipient_profile = undefined;
   auth.user.blocked_user_ids = []; auth.user.account_status = 'SUSPENDED'; auth.user.deleted_at = now;
   await saveToTable('common_users', auth.user);
   for (const session of sessions.filter(item => item.user_id === auth.user.id && !item.revoked_at)) { session.revoked_at = now; await saveToTable('common_sessions', session); }
-  await audit(auth.user.id, 'ACCOUNT_ANONYMIZED', 'USER', auth.user.id);
+  await audit(auth.user.id, 'ACCOUNT_ANONYMIZED', 'USER', auth.user.id, {
+    deleted_community_posts: communityPosts.length
+  });
   res.clearCookie(SESSION_COOKIE, { path: '/' });
   res.json({ success: true });
-});
+}));
 
 app.get('/api/me/requests', async (req, res) => {
   const auth = getCurrentAuth(req);
@@ -2417,20 +2906,23 @@ app.patch('/api/me/notifications/:id/read', async (req, res) => {
   res.json(notification);
 });
 
-app.post('/api/reports', async (req, res) => {
+app.post('/api/reports', asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   const target_type = req.body?.target_type;
   const target_id = cleanString(req.body?.target_id, 100);
   const reason = req.body?.reason;
   const details = optionalCleanString(req.body?.details, 1000);
   if (!auth) return res.status(401).json({ error: 'Log in to report abuse' });
-  if (!isOneOf(target_type, ['REQUEST', 'COMMENT', 'USER'] as const) || !target_id) return validationError(res, 'Valid report target is required');
+  if (!isOneOf(target_type, ['REQUEST', 'COMMENT', 'USER', 'POST'] as const) || !target_id) return validationError(res, 'Valid report target is required');
   if (!isOneOf(reason, ['SPAM', 'FRAUD', 'PAYMENT_REQUEST', 'HARASSMENT', 'PRIVACY', 'OTHER'] as const)) return validationError(res, 'Valid report reason is required');
+  const reportedPost = target_type === 'POST' ? await getCommunityPostById(target_id) : null;
   const targetExists = target_type === 'REQUEST'
     ? requests.some(item => item.id === target_id)
     : target_type === 'USER'
       ? users.some(item => item.id === target_id)
-      : requests.some(item => item.comments?.some(comment => comment.id === target_id));
+      : target_type === 'POST'
+        ? reportedPost?.status === 'PUBLISHED'
+        : requests.some(item => item.comments?.some(comment => comment.id === target_id));
   if (!targetExists) return res.status(404).json({ error: 'Report target not found' });
   if (moderationReports.some(report => report.reporter_id === auth.user.id && report.target_type === target_type && report.target_id === target_id && report.status === 'OPEN')) {
     return res.status(409).json({ error: 'You already reported this item' });
@@ -2441,7 +2933,7 @@ app.post('/api/reports', async (req, res) => {
   await saveToTable('common_reports', report);
   await audit(auth.user.id, 'REPORT_CREATED', target_type, target_id, { reason });
   res.status(201).json(report);
-});
+}));
 
 app.post('/api/me/blocks/:userId', async (req, res) => {
   const auth = getCurrentAuth(req);
@@ -2489,6 +2981,18 @@ app.get('/api/admin/overview', async (req, res) => {
     }
   }
 
+  let publishedCommunityPosts: number | null = null;
+  let hiddenCommunityPosts: number | null = null;
+  try {
+    [publishedCommunityPosts, hiddenCommunityPosts] = await Promise.all([
+      countCommunityPosts({ statuses: ['PUBLISHED'] }),
+      countCommunityPosts({ statuses: ['HIDDEN'] })
+    ]);
+  } catch {
+    publishedCommunityPosts = null;
+    hiddenCommunityPosts = null;
+  }
+
   res.json({
     viewer: {
       staff_role: auth.user.staff_role,
@@ -2513,7 +3017,9 @@ app.get('/api/admin/overview', async (req, res) => {
       pending_directory_claims: pendingDirectoryClaims,
       confirmed_donations: donorResponses.filter(response => response.status === 'DONATED' && response.donor_confirmed_at && response.requester_confirmed_at).length,
       pending_organizations: organizations.filter(item => item.status === 'PENDING').length,
-      verified_organizations: organizations.filter(item => item.status === 'VERIFIED').length
+      verified_organizations: organizations.filter(item => item.status === 'VERIFIED').length,
+      published_community_posts: publishedCommunityPosts,
+      hidden_community_posts: hiddenCommunityPosts
     },
     reports: hasCapability(auth.user, 'MODERATE_CONTENT')
       ? [...moderationReports].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100)
@@ -2697,6 +3203,74 @@ app.patch('/api/admin/requests/:id', async (req, res) => {
   await notify(request.user_id, 'REQUEST_MODERATION', `Request ${status.toLowerCase()}`, note || 'An operator reviewed your request.', `/request/${request.id}`);
   res.json(request);
 });
+
+app.get('/api/admin/community', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
+  const rawStatus = req.query.status;
+  const status = rawStatus === undefined || rawStatus === ''
+    ? undefined
+    : isOneOf(rawStatus, COMMUNITY_POST_STATUSES)
+      ? rawStatus
+      : null;
+  const rawType = req.query.type;
+  const type = rawType === undefined || rawType === ''
+    ? undefined
+    : isOneOf(rawType, COMMUNITY_POST_TYPES)
+      ? rawType
+      : null;
+  if (status === null || type === null) return validationError(res, 'Valid community filters are required');
+  const posts = await queryCommunityPosts({
+    ...(status ? { statuses: [status] } : {}),
+    ...(type ? { type } : {}),
+    limit: 100
+  });
+  res.json(posts.map(adminCommunityPost));
+}));
+
+app.get('/api/admin/community/:id', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
+  const post = await getCommunityPostById(req.params.id);
+  if (!post || post.status === 'DELETED') return res.status(404).json({ error: 'Community post not found' });
+  res.json(adminCommunityPost(post));
+}));
+
+app.patch('/api/admin/community/:id', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
+  const post = await getCommunityPostById(req.params.id);
+  const status = req.body?.status;
+  const reason = cleanString(req.body?.reason, 1_000);
+  if (!post || post.status === 'DELETED') return res.status(404).json({ error: 'Community post not found' });
+  if (!isOneOf(status, ['HIDDEN', 'PUBLISHED'] as const)) return validationError(res, 'Choose hide or restore');
+  if (!reason) return validationError(res, 'A moderation reason is required');
+  if (status === 'HIDDEN' && post.status !== 'PUBLISHED') {
+    return res.status(409).json({ error: 'Only a published post can be hidden' });
+  }
+  if (status === 'PUBLISHED' && post.status !== 'HIDDEN') {
+    return res.status(409).json({ error: 'Only a hidden post can be restored' });
+  }
+  const now = new Date().toISOString();
+  const updated = await saveCommunityPost({
+    ...post,
+    status,
+    moderated_by: auth.user.id,
+    moderated_at: now,
+    moderation_reason: reason,
+    updated_at: now
+  });
+  invalidateCommunitySitemap();
+  await audit(auth.user.id, `COMMUNITY_POST_${status}`, 'POST', post.id, { reason });
+  await notify(
+    post.author_id,
+    'COMMUNITY_MODERATION',
+    status === 'HIDDEN' ? 'Community post hidden' : 'Community post restored',
+    reason,
+    post.slug ? `/community/${post.slug}` : '/community'
+  );
+  res.json(adminCommunityPost(updated));
+}));
 
 app.get('/api/admin/reports', (req, res) => {
   const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
@@ -3249,6 +3823,11 @@ app.patch('/api/requests/:id/status', async (req, res) => {
   }
 });
 
+// Keep unknown server namespaces from falling through to the production SPA
+// shell, where callers would otherwise receive a misleading 200 HTML response.
+app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found' }));
+app.use('/media', (_req, res) => res.status(404).end());
+
 async function startServer() {
   await initDbData();
   await enforceExpiredRequests();
@@ -3279,9 +3858,42 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    const indexTemplate = await readFile(path.join(distPath, 'index.html'), 'utf8');
+    app.use(express.static(distPath, { index: false }));
+    app.get('/community/:slug', async (req, res, next) => {
+      if (req.params.slug === 'new') {
+        res.set('X-Robots-Tag', 'noindex, nofollow');
+        return res.type('html').send(renderPublicOriginHtml(indexTemplate, publicOrigin(req)));
+      }
+      try {
+        const post = await getPublishedCommunityPostBySlug(req.params.slug);
+        if (!post || !post.slug || !post.published_at) {
+          return res.status(404).type('html').send('Community post not found');
+        }
+        const publicPost = publicCommunityDetail(post);
+        const html = renderCommunityPostHtml(indexTemplate, {
+          slug: post.slug,
+          type: post.type,
+          title: post.title,
+          excerpt: post.excerpt,
+          body_text: markdownToPlainExcerpt(post.body_markdown, 12_000),
+          author_name: publicPost.author.name,
+          published_at: post.published_at,
+          updated_at: post.updated_at,
+          ...(post.image_key ? {
+            image_url: communityImageUrl(post.image_key),
+            image_alt: post.image_alt || post.title
+          } : {})
+        }, publicOrigin(req));
+        res.set('Cache-Control', 'public, max-age=60, must-revalidate');
+        return res.type('html').send(html);
+      } catch (error) {
+        next(error);
+      }
+    });
+    app.get('*', (req, res, next) => {
+      if (path.extname(req.path)) return next();
+      res.type('html').send(renderPublicOriginHtml(indexTemplate, publicOrigin(req)));
     });
   }
 

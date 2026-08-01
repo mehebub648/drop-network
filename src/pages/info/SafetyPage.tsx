@@ -26,6 +26,10 @@ export default function SafetyPage() {
         <p>Drop uses a configurable 120-day whole-blood interval as a conservative educational reminder until local clinical review approves deployment policy. It is not medical clearance. Donation rules can depend on age, weight, hemoglobin, medicines, pregnancy, recent illness or surgery, infection risk, travel, and local clinical policy. Answer screening questions honestly and accept the clinician’s decision.</p>
       </section>
       <section>
+        <h2>Read community health posts carefully</h2>
+        <p>Community health suggestions are member-written general information, not diagnosis, treatment, or a substitute for advice from a qualified clinician. Do not delay urgent care because of a post. Report content that asks for payment, exposes private details, or makes unsafe medical claims.</p>
+      </section>
+      <section>
         <h2>After donating</h2>
         <p>Rest as instructed, drink fluids, avoid strenuous activity for the recommended period, and seek clinical help if you feel unwell. Update your donation history so the app’s next-eligibility reminder is based on the latest known donation.</p>
       </section>

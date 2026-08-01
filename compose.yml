@@ -8,6 +8,7 @@ services:
       NODE_ENV: production
       APP_URL: ${APP_URL:-https://findadrop.org}
       LANCEDB_PATH: /data/lancedb
+      COMMUNITY_MEDIA_PATH: /data/media/community
       SMS_PROVIDER: ${SMS_PROVIDER:-}
       SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}
       SMS_HTTP_TOKEN: ${SMS_HTTP_TOKEN:-}
@@ -21,6 +22,7 @@ services:
       # Bind mount rather than a named volume so the datastore is a directory
       # you can back up, copy, or inspect directly on the host.
       - ./data/lancedb:/data/lancedb
+      - ./data/media/community:/data/media/community
     restart: unless-stopped
 
   app-dev:
@@ -35,6 +37,7 @@ services:
       NODE_ENV: development
       APP_URL: ${APP_URL:-http://localhost:3001}
       LANCEDB_PATH: /data/lancedb
+      COMMUNITY_MEDIA_PATH: /data/media/community
       SMS_PROVIDER: ${SMS_PROVIDER:-console}
       SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}
       SMS_HTTP_TOKEN: ${SMS_HTTP_TOKEN:-}
@@ -52,6 +55,7 @@ services:
       # Development keeps its own directory so experiments never touch the
       # production datastore.
       - ./data/lancedb-dev:/data/lancedb
+      - ./data/media-dev/community:/data/media/community
     stdin_open: true
     tty: true
 

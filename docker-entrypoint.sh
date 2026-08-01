@@ -6,7 +6,10 @@ set -e
 # "node" user can read/write LanceDB files. Only meaningful when started as
 # root; drop to "node" afterwards.
 if [ "$(id -u)" = "0" ]; then
-  chown -R node:node "${LANCEDB_PATH:-/data/lancedb}"
+  datastore_path="${LANCEDB_PATH:-/data/lancedb}"
+  community_media_path="${COMMUNITY_MEDIA_PATH:-/data/media/community}"
+  mkdir -p "$datastore_path" "$community_media_path"
+  chown -R node:node "$datastore_path" "$community_media_path"
   exec setpriv --reuid=node --regid=node --init-groups "$@"
 fi
 

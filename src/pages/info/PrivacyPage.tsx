@@ -6,7 +6,7 @@ export default function PrivacyPage() {
     <InfoPage eyebrow="Legal" title="Privacy Policy" intro="Effective 1 August 2026. This policy explains what Drop currently collects, why it is used, where it is stored, and when another member can see it.">
       <section>
         <h2>Information we collect</h2>
-        <p>When you create or use an account, Drop can store your name, phone number, password hash, blood group, district and approximate district coordinates, availability, verification status, your exact or approximate last-donation declaration, lifetime donation count, and private donation-history entries. Blood requests can include patient and requester names, blood group, district, needed-by date, contact people, comments, status, and creation time.</p>
+        <p>When you create or use an account, Drop can store your name, phone number, password hash, blood group, district and approximate district coordinates, availability, verification status, your exact or approximate last-donation declaration, lifetime donation count, and private donation-history entries. Blood requests can include patient and requester names, blood group, district, needed-by date, contact people, comments, status, and creation time. Community posts store the title, Markdown body, post type, author account, publication state and times, and one processed image for a donation story when you choose to upload it.</p>
       </section>
       <section>
         <h2>How we use it</h2>
@@ -18,6 +18,7 @@ export default function PrivacyPage() {
         <p className="mt-3">Imported listings from other public sources stay in a separate archive. Browsing that archive never shows a phone number: they are masked for everyone, including signed-in members, because publication elsewhere is not consent to be listed here.</p>
         <p className="mt-3">There is one exception, and it is deliberately narrow. A member with a verified phone who has published a blood request can open one imported number at a time, and only for donors in that request's own district and upazila. Every reveal is recorded, and the next one is refused until the outcome of the previous call is reported. A revealed number is for that one call and must not be reshared or stored.</p>
         <p className="mt-3">Public request lists do not include private contact details. Request contacts are limited to the request owner and donors who accept an invitation for that request. Information you add to comments may be visible publicly, so do not post phone numbers or sensitive medical details there.</p>
+        <p className="mt-3">Published community posts are public, indexed pages that show your display name, post text, publication time, and story image when supplied. Drafts are private to you and authorized operators; hidden and deleted posts stop being publicly available. Uploaded images are resized, converted to WebP, and stripped of embedded metadata before storage.</p>
       </section>
       <section>
         <h2>Storage and security</h2>
@@ -33,7 +34,7 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Your choices</h2>
-        <p>You can update donor information, download a server-side account export, and delete your account from profile settings. Deletion revokes sessions, removes donor and private patient/contact information, cancels active requests, and anonymizes coordination and safety records that must be retained. You can also send an access, correction, or deletion question through the <Link to="/contact">contact page</Link>.</p>
+        <p>You can update donor information, download a server-side account export including your community posts, delete individual posts, and delete your account from profile settings. Account deletion revokes sessions, removes donor and private patient/contact information, removes authored community content and images, cancels active requests, and anonymizes coordination and safety records that must be retained. You can also send an access, correction, or deletion question through the <Link to="/contact">contact page</Link>.</p>
       </section>
       <section>
         <h2>Questions and changes</h2>

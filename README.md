@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.55`
+Current version: `0.0.56`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -48,6 +48,9 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   from `./data/lancedb` (production) or `./data/lancedb-dev` (development) on
   the host. The datastore is a plain directory you can back up or copy; it is
   git-ignored because it holds personal data.
+- `COMMUNITY_MEDIA_PATH` is `/data/media/community` in both Compose services,
+  bind-mounted from separate production and development host directories.
+  Story uploads are normalized to metadata-free, bounded WebP files there.
 - Registration requires a verified Bangladesh mobile. Outside production, an
   unconfigured OTP channel prints the code to protected server logs; production
   requires the complete provider-neutral HTTP SMS gateway settings documented
@@ -87,6 +90,11 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   accessible focus behavior, and consistent production English copy.
 - Verified hospitals, blood banks, and NGOs can be reviewed by operators,
   listed in the public partner directory, and publish donation campaigns.
+- `/community` publishes member donation stories and Markdown-formatted health
+  suggestions. A story may carry one processed image; health suggestions are
+  text-only. Every published post has a stable URL, safe Markdown rendering,
+  article metadata, and sitemap entry, while drafts and hidden posts are not
+  indexed.
 
 The datastore starts empty in every environment; no demo data is generated.
 

@@ -1,11 +1,25 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
-const PUBLIC_SITE_URL = 'https://findadrop.org';
+export const PUBLIC_SITE_URL = (() => {
+  if (typeof document !== 'undefined') {
+    const configured = document.querySelector('meta[name="drop-public-origin"]')?.getAttribute('content');
+    if (configured) {
+      try {
+        return new URL(configured).origin;
+      } catch {
+        // Fall through to the browser origin when the shell metadata is invalid.
+      }
+    }
+  }
+  return typeof window !== 'undefined' ? window.location.origin : 'https://findadrop.org';
+})();
 
 const metadata: Record<string, [string, string]> = {
   '/': ['Drop Network — Find blood donors in Bangladesh', 'Search opted-in blood donors by blood group and district, then coordinate safely through Drop.'],
   '/requests': ['Live blood requests — Drop Network', 'Browse active verified blood requests across Bangladesh.'],
+  '/community': ['Donation stories and health suggestions — Drop Network', 'Read first-hand blood donation stories and practical community health suggestions from members across Bangladesh.'],
+  '/community/new': ['Write a community post — Drop Network', 'Create a donation story or health suggestion for the Drop community.'],
   '/login': ['Member sign in — Drop Network', 'Sign in to manage your Drop account and view opted-in donor contacts.'],
   '/register': ['Become a donor — Drop Network', 'Join the Bangladesh community blood donor network with a verified phone.'],
   '/forgot-password': ['Reset your password — Drop Network', 'Verify your phone and securely reset your Drop account password.'],
@@ -24,13 +38,18 @@ const metadata: Record<string, [string, string]> = {
 export default function RouteMetadata() {
   const { pathname } = useLocation();
   useEffect(() => {
-    const key = pathname.startsWith('/request/')
-      ? '/requests'
-      : pathname.startsWith('/directory/imported') || (pathname.startsWith('/directory/') && pathname !== '/directory')
-        ? '/directory/imported'
-        : pathname.startsWith('/profile')
-          ? '/profile'
-          : pathname;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    const key = pathname === '/community/new'
+      ? '/community/new'
+      : pathname.startsWith('/community/')
+        ? '/community'
+        : pathname.startsWith('/request/')
+          ? '/requests'
+          : pathname.startsWith('/directory/imported') || (pathname.startsWith('/directory/') && pathname !== '/directory')
+            ? '/directory/imported'
+            : pathname.startsWith('/profile')
+              ? '/profile'
+              : pathname;
     const [title, description] = metadata[key] || ['Drop Network', 'Bangladesh community blood donor matching network.'];
     document.title = title;
     let tag = document.querySelector('meta[name="description"]');
@@ -42,11 +61,18 @@ export default function RouteMetadata() {
       meta.setAttribute('content', content);
     };
     const canonicalUrl = `${PUBLIC_SITE_URL}${pathname}`;
+    ['og:image', 'og:image:alt', 'article:published_time', 'article:modified_time', 'article:section'].forEach(property => {
+      document.querySelector(`meta[property="${property}"]`)?.remove();
+    });
+    ['twitter:card', 'twitter:title', 'twitter:description', 'twitter:image'].forEach(name => {
+      document.querySelector(`meta[name="${name}"]`)?.remove();
+    });
+    setMeta('og:type', 'website');
     setMeta('og:title', title); setMeta('og:description', description); setMeta('og:url', canonicalUrl);
     let robots = document.querySelector('meta[name="robots"]');
     if (!robots) { robots = document.createElement('meta'); robots.setAttribute('name', 'robots'); document.head.appendChild(robots); }
     // A call page carries a revealed contact number, so it must never be indexed.
-    const privatePage = pathname.startsWith('/profile') || pathname.startsWith('/admin') || pathname.startsWith('/directory/call/');
+    const privatePage = pathname === '/community/new' || pathname.startsWith('/profile') || pathname.startsWith('/admin') || pathname.startsWith('/directory/call/');
     robots.setAttribute('content', privatePage ? 'noindex, nofollow' : 'index, follow');
     let canonical = document.querySelector('link[rel="canonical"]');
     if (!canonical) { canonical = document.createElement('link'); canonical.setAttribute('rel', 'canonical'); document.head.appendChild(canonical); }
