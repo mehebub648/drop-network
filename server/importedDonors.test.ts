@@ -10,6 +10,7 @@ import {
   toImportedDonor,
   toImportedDonorRow,
   toPublicImportedDonor,
+  toRevealedImportedDonor,
   withImportedDonorIdentity,
   type ImportedDonor
 } from './importedDonors';
@@ -66,6 +67,20 @@ test('storage rows keep separate internal and public identities', () => {
   assert.equal(row.id, donor.id);
   assert.equal(row.public_id, donor.public_id);
   assert.equal(JSON.parse(row.doc).public_id, donor.public_id);
+  // Upazila is a filterable column, not only a `doc` field, so a district and
+  // upazila search can push the predicate down.
+  assert.equal(row.upazila, scraped.upazila);
+});
+
+test('the reveal projection adds the raw phone and keeps the masked one', () => {
+  const donor = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
+  const revealed = toRevealedImportedDonor(donor);
+  assert.equal(revealed.phone, scraped.phone);
+  assert.equal(revealed.phone_masked, '+88019••••••96');
+  // Everything the public projection guarantees still holds, because the
+  // reveal is built on top of it rather than replacing it.
+  assert.equal(revealed.id, donor.public_id);
+  assert.equal(JSON.stringify(revealed).includes(donor.id), false);
 });
 
 test('legacy storage ids remain internal when public identity is hydrated', () => {

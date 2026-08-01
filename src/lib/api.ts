@@ -27,9 +27,31 @@ export { BROWSER_FINGERPRINT };
 
 async function readJsonOrThrow(res: Response, fallbackMessage: string) {
   const result = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(result.error || fallbackMessage);
+  if (!res.ok) {
+    const error = new Error(result.error || fallbackMessage) as Error & { status?: number; data?: any };
+    error.status = res.status;
+    error.data = result;
+    throw error;
+  }
   return result;
 }
+
+export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN';
+
+export type SearchDonorCard = {
+  donor_ref: string;
+  donor_kind: 'REGISTERED' | 'IMPORTED';
+  name: string;
+  blood_group: string;
+  is_exact_group: boolean;
+  district: string;
+  upazila: string;
+  phone_masked: string;
+  has_phone: boolean;
+  is_verified?: boolean;
+  availability_status?: string;
+  source?: { organization: string; url: string };
+};
 
 export const api = {
   async login(phone: string, password?: string) {
@@ -49,18 +71,29 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to logout');
   },
 
-  async requestOtp(phone: string, purpose: 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE') {
+  async requestOtp(phone: string, purpose: OtpPurpose) {
     const res = await fetch(`${API_BASE}/auth/otp/request`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone, purpose })
     });
     return readJsonOrThrow(res, 'Failed to send verification code');
   },
 
-  async verifyOtp(phone: string, purpose: 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE', code: string) {
+  async verifyOtp(phone: string, purpose: OtpPurpose, code: string) {
     const res = await fetch(`${API_BASE}/auth/otp/verify`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone, purpose, code })
     });
     return readJsonOrThrow(res, 'Failed to verify code');
+  },
+
+  // Signs in with a verified SIGN_IN code instead of a password, for the blood
+  // request flow where someone may not remember a password they set long ago.
+  async otpLogin(phone: string, verificationToken: string) {
+    const res = await fetch(`${API_BASE}/auth/otp/login`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ phone, verification_token: verificationToken, fingerprint: BROWSER_FINGERPRINT })
+    });
+    return readJsonOrThrow(res, 'Failed to sign in');
   },
 
   async getPublicConfig() {
@@ -68,11 +101,23 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load configuration');
   },
 
-  async register(phone: string, name: string, password: string, verificationToken: string, blood_group?: string, location?: { lat: number; lng: number; area_name: string }) {
+  async register(
+    phone: string,
+    name: string,
+    password: string,
+    verificationToken: string,
+    blood_group?: string,
+    location?: { lat: number; lng: number; area_name: string },
+    donorDetails: { upazila?: string; age?: number; weight_kg?: number; last_donation_date?: string } = {}
+  ) {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ phone, name, password, verification_token: verificationToken, blood_group, location, fingerprint: BROWSER_FINGERPRINT })
+      body: JSON.stringify({
+        phone, name, password, verification_token: verificationToken, blood_group, location,
+        ...donorDetails,
+        fingerprint: BROWSER_FINGERPRINT
+      })
     });
     return readJsonOrThrow(res, 'Failed to register');
   },
@@ -290,8 +335,59 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to search available donors');
   },
 
-  // Imported archive. Contact numbers stay masked for every caller; claiming
-  // verifies ownership but does not turn third-party publication into consent.
+  // --- Blood request search flow -----------------------------------------
+  //
+  // Searching is how a request is posted. Numbers come back masked for
+  // everyone; unmasking one is a separate, recorded action that needs a
+  // published request behind it.
+
+  async searchDonorsByUpazila(params: { blood_group: string; district: string; upazila: string }) {
+    const query = new URLSearchParams(params);
+    const res = await fetch(`${API_BASE}/search/donors?${query}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to search donors');
+  },
+
+  async createSearchRequest(body: Record<string, unknown>) {
+    const res = await fetch(`${API_BASE}/search/requests`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ ...body, consent: true })
+    });
+    return readJsonOrThrow(res, 'Failed to publish your request');
+  },
+
+  async revealDonorPhone(requestId: string, donorRef: string) {
+    const res = await fetch(`${API_BASE}/requests/${requestId}/reveals`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ donor_ref: donorRef })
+    });
+    return readJsonOrThrow(res, 'Failed to load the contact number');
+  },
+
+  async getPendingReveal(requestId: string) {
+    const res = await fetch(`${API_BASE}/requests/${requestId}/reveals/pending`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to check your last call');
+  },
+
+  async reportCall(requestId: string, body: { reveal_id: string; outcome: string; reason?: string; detail?: string; note?: string }) {
+    const res = await fetch(`${API_BASE}/requests/${requestId}/call-reports`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to record how the call went');
+  },
+
+  async getDonorRequests() {
+    const res = await fetch(`${API_BASE}/me/donor-requests`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load nearby requests');
+  },
+
+  async reportDonorOutcome(requestId: string, body: { outcome: string; note?: string; donated_on?: string; pause_availability?: boolean }) {
+    const res = await fetch(`${API_BASE}/requests/${requestId}/donor-reports`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to send your response');
+  },
+
+  // Imported archive listings. Numbers stay masked while browsing; the one
+  // place a listing's number is served in full is the reveal above, which
+  // requires a published request in that person's own upazila and is recorded.
   async getDirectory(params: { blood_group?: string; district?: string; source?: string; q?: string; page?: number } = {}) {
     const query = new URLSearchParams();
     if (params.blood_group) query.set('blood_group', params.blood_group);

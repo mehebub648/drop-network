@@ -1,37 +1,18 @@
 // Blood-domain helpers shared across pages: compatibility, urgency, and
-// donor eligibility. Mirrors the compatibility map used by the server's
-// donor matching (server/server.ts).
+// donor eligibility.
+//
+// The compatibility tables themselves are owned by `server/blood.ts` and
+// re-exported here, so the API and the frontend cannot disagree about who can
+// give blood to whom. See src/lib/upazilas.ts for the same arrangement.
 
-export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
-export type BloodGroup = (typeof BLOOD_GROUPS)[number];
-
-// For each recipient group, the donor groups whose blood they can receive.
-export const COMPATIBLE_DONORS: Record<BloodGroup, BloodGroup[]> = {
-  'A+': ['A+', 'A-', 'O+', 'O-'],
-  'A-': ['A-', 'O-'],
-  'B+': ['B+', 'B-', 'O+', 'O-'],
-  'B-': ['B-', 'O-'],
-  'AB+': ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
-  'AB-': ['A-', 'B-', 'AB-', 'O-'],
-  'O+': ['O+', 'O-'],
-  'O-': ['O-']
-};
-
-// For each donor group, the recipient groups they can give to.
-export const CAN_DONATE_TO: Record<BloodGroup, BloodGroup[]> = {
-  'A+': ['A+', 'AB+'],
-  'A-': ['A+', 'A-', 'AB+', 'AB-'],
-  'B+': ['B+', 'AB+'],
-  'B-': ['B+', 'B-', 'AB+', 'AB-'],
-  'AB+': ['AB+'],
-  'AB-': ['AB+', 'AB-'],
-  'O+': ['A+', 'B+', 'AB+', 'O+'],
-  'O-': ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
-};
-
-export function compatibleDonorsFor(group: string): BloodGroup[] {
-  return COMPATIBLE_DONORS[group as BloodGroup] || [];
-}
+export {
+  BLOOD_GROUPS,
+  COMPATIBLE_DONORS,
+  CAN_DONATE_TO,
+  compatibleDonorsFor,
+  canDonateTo,
+  type BloodGroup
+} from '../../server/blood';
 
 export type Urgency = 'CRITICAL' | 'URGENT' | 'SCHEDULED';
 

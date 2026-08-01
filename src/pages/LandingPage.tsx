@@ -20,6 +20,9 @@ import { BLOOD_GROUPS, DONATION_INTERVAL_DAYS } from '../lib/blood';
 import { BD_LOCATION_NAMES } from '../lib/locations';
 
 type NetworkStats = {
+  /** Registered donor profiles plus unclaimed directory listings; null if the directory is unreadable. */
+  donors: number | null;
+  directory_donors: number | null;
   registered_donors: number;
   available_donors: number;
   active_requests: number;
@@ -63,9 +66,6 @@ export default function LandingPage({ user }: { user: any }) {
     navigate(`/directory?${query.toString()}`);
   };
 
-  const requestHref = user
-    ? '/request/new'
-    : `/login?returnTo=${encodeURIComponent('/request/new')}`;
 
   return (
     <div className="space-y-16 pb-8 sm:space-y-20 lg:space-y-24">
@@ -83,8 +83,8 @@ export default function LandingPage({ user }: { user: any }) {
               Find an available blood donor, without a login wall.
             </h1>
             <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
-              Search participating donors across Bangladesh by blood group and district. Public results protect
-              phone numbers; an account is only needed when you are ready to view contact details and coordinate.
+              Search donors across Bangladesh by blood group, district and upazila. There is no separate
+              request form: the details you give to unlock a phone number are your request.
             </p>
 
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
@@ -96,10 +96,10 @@ export default function LandingPage({ user }: { user: any }) {
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </a>
               <Link
-                to={requestHref}
+                to="/requests"
                 className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-6 text-sm font-extrabold text-slate-800 transition-colors hover:border-emerald-200 hover:bg-emerald-50"
               >
-                Post a blood request
+                See open requests
               </Link>
             </div>
 
@@ -187,7 +187,7 @@ export default function LandingPage({ user }: { user: any }) {
 
       <section aria-label="Drop Network activity" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { value: stats?.registered_donors, label: 'Registered donors', icon: Users },
+          { value: stats?.donors, label: 'Donors', icon: Users },
           { value: stats?.available_donors, label: 'Available now', icon: CheckCircle2 },
           { value: stats?.active_requests, label: 'Active requests', icon: Activity },
           { value: stats?.fulfilled_requests, label: 'Fulfilled requests', icon: HeartHandshake }
@@ -237,9 +237,10 @@ export default function LandingPage({ user }: { user: any }) {
           </div>
           <h2 className="mt-5 text-2xl font-extrabold text-slate-950 sm:text-3xl">Contact privacy is part of the workflow.</h2>
           <p className="mt-4 max-w-2xl leading-7 text-slate-600">
-            Public donor search shows only the information needed to assess a possible match. Imported listings
-            from other organizations remain masked even after login because those people have not opted in to
-            Drop. Claiming an imported profile never makes that donor available automatically.
+            Search shows only what you need to judge a possible match, with every number masked. A number opens
+            one at a time, for a published request in that donor's own upazila, and only after you say how the
+            last call went. Every reveal is recorded, and claiming an imported profile never makes that donor
+            available automatically.
           </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Link
@@ -263,14 +264,15 @@ export default function LandingPage({ user }: { user: any }) {
           </span>
           <h2 className="mt-5 text-2xl font-extrabold text-slate-950">Need blood urgently?</h2>
           <p className="mt-4 leading-7 text-slate-600">
-            Confirm the requirement with the treating facility, then publish a complete request with the blood
-            component, units, patient reference, location, and needed-by time.
+            Confirm the blood group and collection place with the treating facility, then search that
+            upazila. Telling us who needs the blood is what opens donors' numbers and publishes your
+            request in one step.
           </p>
           <Link
-            to={requestHref}
+            to="/directory"
             className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-700 px-5 text-sm font-extrabold text-white transition-colors hover:bg-red-800"
           >
-            Post a verified request
+            Search donors now
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>
@@ -293,7 +295,7 @@ export default function LandingPage({ user }: { user: any }) {
             },
             {
               q: 'Can I search without creating an account?',
-              a: 'Yes. Blood group and district search is public. A phone number is never included in the public result and imported listings remain masked for everyone.'
+              a: 'Yes. Searching by blood group, district and upazila is public, and every phone number in the results is masked. A number only opens once you tell us who needs the blood, which is also what publishes your request.'
             },
             {
               q: 'Does a listed donor guarantee a successful donation?',

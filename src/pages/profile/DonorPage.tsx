@@ -3,6 +3,7 @@ import { CheckCircle2, Clock, HeartPulse, Save } from 'lucide-react';
 import { api } from '../../lib/api';
 import { BLOOD_GROUPS, DONATION_INTERVAL_DAYS, getEligibility } from '../../lib/blood';
 import { BD_LOCATION_NAMES, getLocationByName } from '../../lib/locations';
+import { getUpazilasForDistrict } from '../../lib/upazilas';
 import { cn } from '../../lib/utils';
 import { donorProfilePayload } from './profileUtils';
 import type { AvailabilityStatus, ProfilePageProps } from './types';
@@ -17,6 +18,9 @@ const statusLabels: Record<AvailabilityStatus, string> = {
 export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   const [bloodGroup, setBloodGroup] = useState(user.donor_profile?.blood_group || 'O+');
   const [district, setDistrict] = useState(user.donor_profile?.location.area_name || 'Dhaka');
+  const [upazila, setUpazila] = useState(user.donor_profile?.upazila || '');
+  const [age, setAge] = useState(user.donor_profile?.age ? String(user.donor_profile.age) : '');
+  const [weight, setWeight] = useState(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
   const [status, setStatus] = useState<AvailabilityStatus>(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -24,8 +28,13 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   useEffect(() => {
     setBloodGroup(user.donor_profile?.blood_group || 'O+');
     setDistrict(user.donor_profile?.location.area_name || 'Dhaka');
+    setUpazila(user.donor_profile?.upazila || '');
+    setAge(user.donor_profile?.age ? String(user.donor_profile.age) : '');
+    setWeight(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
     setStatus(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
   }, [user]);
+
+  const upazilas = useMemo(() => getUpazilasForDistrict(district), [district]);
 
   const latestDonation = useMemo(() => [
     user.donor_profile?.last_donation_date,
@@ -40,7 +49,14 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     setSaving(true);
     setMessage(null);
     try {
-      await api.updateDonorProfile(donorProfilePayload(user, { blood_group: bloodGroup, location, availability_status: status }));
+      await api.updateDonorProfile(donorProfilePayload(user, {
+        blood_group: bloodGroup,
+        location,
+        upazila: upazila || undefined,
+        age: age ? Number(age) : undefined,
+        weight_kg: weight ? Number(weight) : undefined,
+        availability_status: status
+      }));
       await onUpdate();
       setMessage({ type: 'success', text: 'Donor profile updated.' });
     } catch (error: any) {
@@ -79,10 +95,40 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </div>
           <div>
             <label htmlFor="donor-district" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">District</label>
-            <select id="donor-district" value={district} onChange={event => setDistrict(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium">
+            <select
+              id="donor-district"
+              value={district}
+              onChange={event => {
+                setDistrict(event.target.value);
+                // Upazila names belong to one district, so a move clears it.
+                setUpazila('');
+              }}
+              className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium"
+            >
               {BD_LOCATION_NAMES.map(name => <option key={name}>{name}</option>)}
             </select>
           </div>
+          <div className="sm:col-span-2">
+            <label htmlFor="donor-upazila" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Upazila / thana</label>
+            <select id="donor-upazila" value={upazila} onChange={event => setUpazila(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium">
+              <option value="">Not set</option>
+              {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <p className="mt-2 text-xs text-slate-500">
+              Requesters search by upazila. Without one you will not appear in their results.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="donor-age" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Age (optional)</label>
+            <input id="donor-age" type="number" inputMode="numeric" min={16} max={70} value={age} onChange={event => setAge(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium" />
+          </div>
+          <div>
+            <label htmlFor="donor-weight" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Weight in kg (optional)</label>
+            <input id="donor-weight" type="number" inputMode="numeric" min={30} max={200} value={weight} onChange={event => setWeight(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium" />
+          </div>
+          <p className="sm:col-span-2 -mt-2 text-xs text-slate-500">
+            Age and weight are shown to nobody and never block a request. The collection facility screens you on the day.
+          </p>
           <div className="sm:col-span-2">
             <label htmlFor="donor-status" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Availability</label>
             <select id="donor-status" value={status} onChange={event => setStatus(event.target.value as AvailabilityStatus)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium">

@@ -8,7 +8,6 @@ import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import RegisterPage from './pages/RegisterPage';
 import RequestDetailsPage from './pages/RequestDetailsPage';
-import NewRequestPage from './pages/NewRequestPage';
 import RequestsPage from './pages/RequestsPage';
 import AboutPage from './pages/info/AboutPage';
 import ContactPage from './pages/info/ContactPage';
@@ -17,6 +16,7 @@ import SafetyPage from './pages/info/SafetyPage';
 import TermsPage from './pages/info/TermsPage';
 import AccountPage from './pages/profile/AccountPage';
 import DonorPage from './pages/profile/DonorPage';
+import DonorRequestsPage from './pages/profile/DonorRequestsPage';
 import HistoryPage from './pages/profile/HistoryPage';
 import InvitationsPage from './pages/profile/InvitationsPage';
 import ProfileLayout from './pages/profile/ProfileLayout';
@@ -30,6 +30,7 @@ import PartnersPage from './pages/PartnersPage';
 import DirectoryPage from './pages/DirectoryPage';
 import ClaimProfilePage from './pages/ClaimProfilePage';
 import DonorSearchPage from './pages/DonorSearchPage';
+import CallDonorPage from './pages/CallDonorPage';
 import { getSafeReturnTo } from './lib/navigation';
 
 export default function App() {
@@ -77,9 +78,12 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LandingPage user={user} />} />
             <Route path="/request/:id" element={<RequestDetailsPage user={user} />} />
-            <Route path="/request/new" element={requireUser(<NewRequestPage user={user} />)} />
+            {/* Posting a request is no longer a separate form: searching for
+                donors is how a request is created. Old links land on search. */}
+            <Route path="/request/new" element={<Navigate to="/directory" replace />} />
             <Route path="/requests" element={<RequestsPage />} />
-            <Route path="/directory" element={<DonorSearchPage user={user} authLoading={loading} />} />
+            <Route path="/directory" element={<DonorSearchPage user={user} onLogin={fetchUser} />} />
+            <Route path="/directory/call/:requestId/:donorRef" element={requireUser(<CallDonorPage />)} />
             <Route path="/directory/imported" element={<DirectoryPage />} />
             <Route path="/directory/imported/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
             <Route path="/directory/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
@@ -90,6 +94,7 @@ export default function App() {
               <Route index element={<Navigate to="donor" replace />} />
               <Route path="account" element={<AccountPage user={user} onUpdate={fetchUser} />} />
               <Route path="donor" element={<DonorPage user={user} onUpdate={fetchUser} />} />
+              <Route path="donor-requests" element={<DonorRequestsPage user={user} onUpdate={fetchUser} />} />
               <Route path="requests" element={<ProfileRequestsPage />} />
               <Route path="invitations" element={<InvitationsPage user={user} />} />
               <Route path="history" element={<HistoryPage user={user} onUpdate={fetchUser} />} />

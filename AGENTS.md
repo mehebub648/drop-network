@@ -29,6 +29,7 @@
 - Run another package script: `docker compose --profile development run --rm app-dev npm run <script>`
 - Scrape public donor listings: `docker compose --profile development run --rm app-dev npm run scrape -- --source=all`
 - Import scraped listings: `docker compose --profile development run --rm app-dev npm run import-donors -- --in=data/scraped`
+- Regenerate the upazila table from the scraped register: `docker compose --profile development run --rm app-dev npm run generate-upazilas`
 - Open a dev container shell: `docker compose --profile development exec app-dev sh`
 - Stop services: `docker compose --profile development down`
 

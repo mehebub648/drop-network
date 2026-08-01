@@ -36,6 +36,10 @@ function parseArgs(argv: string[]) {
  * incorrect": a row with no usable name is dropped, and an unrecognised blood
  * group or district is blanked rather than guessed, which turns it into a
  * field the claimant has to fill in.
+ *
+ * A phone number is mandatory rather than optional. A listing nobody can call
+ * is not a usable donor, and the number is also the dedupe key, so a row
+ * without one cannot be recognised as the same person across sources.
  */
 export function sanitizeRecord(raw: unknown): ScrapedRecordInput | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -46,7 +50,9 @@ export function sanitizeRecord(raw: unknown): ScrapedRecordInput | null {
   const sourceRef = String(record.source_ref ?? '').trim();
   if (!name || name.length < 2 || !sourceId || !sourceRef) return null;
 
-  const phone = /^\+8801[3-9]\d{8}$/.test(String(record.phone ?? '')) ? String(record.phone) : '';
+  const phone = String(record.phone ?? '').trim();
+  if (!/^\+8801[3-9]\d{8}$/.test(phone)) return null;
+
   const bloodGroup = BLOOD_GROUPS.has(String(record.blood_group ?? '')) ? String(record.blood_group) : '';
   const districtName = String(record.district ?? '').trim();
   const district = districtName && getLocationByName(districtName) ? districtName : '';
@@ -120,13 +126,12 @@ async function main() {
   }
 
   const donors = [...byKey.values()];
-  const contactable = donors.filter(donor => donor.phone).length;
   const placed = donors.filter(donor => donor.district && donor.blood_group).length;
 
   console.log(
     `\n${stats.read} lines -> ${donors.length} unique donors ` +
     `(${stats.rejected} rejected, ${stats.duplicates} duplicates merged)\n` +
-    `  ${contactable} with a phone number\n` +
+    `  every imported donor has a phone number; rows without one are rejected\n` +
     `  ${placed} with both a district and a blood group`
   );
 

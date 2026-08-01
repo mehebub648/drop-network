@@ -91,7 +91,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | 
       <div className="mt-7 border-t border-slate-100 pt-6 text-center text-sm text-slate-600">
         New to Drop? <Link to={returnTo === '/profile' ? '/register' : `/register?returnTo=${encodeURIComponent(returnTo)}`} className="font-bold text-emerald-700 hover:text-emerald-900 hover:underline">Create a verified account</Link>
       </div>
-      <p className="mt-4 text-center text-xs leading-5 text-slate-500">Only opted-in Drop donor contacts unlock after sign-in. Imported third-party listings always stay masked.</p>
+      <p className="mt-4 text-center text-xs leading-5 text-slate-500">Donor numbers are masked while you search. They open one at a time, through a published blood request, and every reveal is recorded.</p>
     </AuthShell>
   );
 }

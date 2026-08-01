@@ -3,7 +3,7 @@ import { after, test } from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { toImportedDonor } from './importedDonors';
+import { toImportedDonor, toImportedDonorRow } from './importedDonors';
 
 const originalDatabasePath = process.env.LANCEDB_PATH;
 const databasePath = await fs.mkdtemp(path.join(os.tmpdir(), 'drop-imported-id-test-'));
@@ -55,6 +55,9 @@ test('legacy imported rows gain an opaque public id without changing their stora
   const table = await database.ensureImportedDonorTable();
   const schema = await table.schema();
   assert.equal(schema.fields.some(field => field.name === 'public_id'), true);
+  // The legacy row was written before either filterable column existed, so
+  // this also covers the upazila backfill promoting the value out of `doc`.
+  assert.equal(schema.fields.some(field => field.name === 'upazila'), true);
 
   const hydrated = await database.getImportedDonor(donor.public_id);
   assert.ok(hydrated);
@@ -69,6 +72,81 @@ test('legacy imported rows gain an opaque public id without changing their stora
   assert.equal(rows[0].public_id, donor.public_id);
   assert.equal(rows[0].id, legacyStorageId);
 
+  const forRequest = await database.queryImportedDonorsForRequest({
+    district: 'Dhaka',
+    upazilas: ['Adabor'],
+    bloodGroups: ['A+', 'O-']
+  });
+  assert.equal(forRequest.length, 0, 'a claim under review must not be offered as a callable listing');
+  assert.equal((await database.queryImportedDonorsForRequest({
+    district: 'Dhaka',
+    upazilas: ['Gulshan'],
+    bloodGroups: ['A+']
+  })).length, 0);
+
   await database.deleteImportedDonorsByPublicIds([donor.public_id]);
   assert.equal(await database.countImportedDonors(), 0);
+});
+
+test('unclaimed listings are reachable by any stored spelling of their upazila', async () => {
+  const donor = toImportedDonor({
+    source_id: 'bd-scouts',
+    source_organization: 'Bangladesh Scouts',
+    source_url: 'https://service.scouts.gov.bd/blood-donation/1',
+    scraped_at: '2026-07-29T00:00:00.000Z',
+    source_ref: 'BB2001',
+    name: 'Scout Nadia',
+    phone: '+8801711000022',
+    blood_group: 'O-',
+    district: 'Dhaka',
+    // The register spells this thana two ways; the search must find the row
+    // whichever spelling it was stored under.
+    upazila: 'Chalk Bazar'
+  }, '2026-07-29T00:00:00.000Z');
+
+  await database.addImportedDonors([toImportedDonorRow(donor)]);
+
+  const found = await database.queryImportedDonorsForRequest({
+    district: 'Dhaka',
+    upazilas: ['Chackbazar Model', 'Chalk Bazar'],
+    bloodGroups: ['O-', 'O+']
+  });
+  assert.equal(found.length, 1);
+  assert.equal(found[0].name, 'Scout Nadia');
+
+  const wrongGroup = await database.queryImportedDonorsForRequest({
+    district: 'Dhaka',
+    upazilas: ['Chackbazar Model', 'Chalk Bazar'],
+    bloodGroups: ['A+']
+  });
+  assert.equal(wrongGroup.length, 0);
+
+  await database.deleteImportedDonorsByPublicIds([donor.public_id]);
+});
+
+test('filters escape quoted values instead of breaking the predicate', () => {
+  assert.equal(
+    database.buildImportedFilter({ upazilas: ["Cox's Bazar Sadar"] }),
+    `upazila IN ('Cox''s Bazar Sadar')`
+  );
+  assert.equal(
+    database.buildImportedFilter({ district: 'Dhaka', bloodGroups: ['A+', 'O-'] }),
+    `blood_group IN ('A+', 'O-') AND district = 'Dhaka'`
+  );
+  assert.equal(database.buildImportedFilter({}), '');
+});
+
+test('call reports are queryable per request without loading the table', async () => {
+  await database.addCallReports([
+    { id: 'cr-1', kind: 'REVEAL', request_id: 'req-1', actor_id: 'user-1', donor_ref: 'imp:abc' },
+    { id: 'cr-2', kind: 'CALL_OUTCOME', request_id: 'req-1', actor_id: 'user-1', donor_ref: 'imp:abc' },
+    { id: 'cr-3', kind: 'REVEAL', request_id: 'req-2', actor_id: 'user-2', donor_ref: 'reg:xyz' }
+  ]);
+
+  const forRequest = await database.queryCallReports<{ id: string }>({ requestId: 'req-1' });
+  assert.deepEqual(forRequest.map(report => report.id).sort(), ['cr-1', 'cr-2']);
+
+  const reveals = await database.queryCallReports<{ id: string }>({ kind: 'REVEAL' });
+  assert.deepEqual(reveals.map(report => report.id).sort(), ['cr-1', 'cr-3']);
+  assert.equal(await database.countCallReports({ requestId: 'req-2' }), 1);
 });

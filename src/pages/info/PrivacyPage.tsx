@@ -15,7 +15,8 @@ export default function PrivacyPage() {
       <section>
         <h2>Who can see phone numbers</h2>
         <p>Public donor searches can show an opted-in member’s name, blood group, approximate location or distance, verification signal, and current availability, but never their phone number. A signed-in member can see the phone number only while that registered donor has explicitly marked themselves available.</p>
-        <p className="mt-3">Imported listings from other public sources stay in a separate archive. Their phone numbers remain masked for everyone, including signed-in members, because publication elsewhere is not consent to reveal contact details on Drop.</p>
+        <p className="mt-3">Imported listings from other public sources stay in a separate archive. Browsing that archive never shows a phone number: they are masked for everyone, including signed-in members, because publication elsewhere is not consent to be listed here.</p>
+        <p className="mt-3">There is one exception, and it is deliberately narrow. A member with a verified phone who has published a blood request can open one imported number at a time, and only for donors in that request's own district and upazila. Every reveal is recorded, and the next one is refused until the outcome of the previous call is reported. A revealed number is for that one call and must not be reshared or stored.</p>
         <p className="mt-3">Public request lists do not include private contact details. Request contacts are limited to the request owner and donors who accept an invitation for that request. Information you add to comments may be visible publicly, so do not post phone numbers or sensitive medical details there.</p>
       </section>
       <section>

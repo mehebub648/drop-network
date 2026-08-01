@@ -15,6 +15,11 @@ export type DonorProfileData = {
   blood_group: string;
   last_donation_date?: string;
   location: { lat: number; lng: number; area_name: string };
+  /** Upazila within `location.area_name`; required to appear in donor search. */
+  upazila?: string;
+  /** Self-declared only. Eligibility is decided by the collection facility. */
+  age?: number;
+  weight_kg?: number;
   availability_status: AvailabilityStatus;
   availability_confirmed_at?: string;
   deferral_status?: 'NONE' | 'TEMPORARY' | 'PERMANENT';

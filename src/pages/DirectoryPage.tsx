@@ -144,7 +144,8 @@ export default function DirectoryPage() {
         <div className="mt-7 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-950 sm:px-5">
           <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
           <p className="text-sm font-semibold leading-6">
-            Phone numbers in this archive stay masked for everyone, including logged-in members. Claiming a
+            Phone numbers stay masked while you browse this archive, for everyone. They open only through a
+            published blood request in the same upazila, one call at a time. Claiming a
             listing verifies ownership; it does not make the person available or reveal their contact details
             publicly.
           </p>

@@ -9,9 +9,21 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import { randomInt } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, queryImportedDonors, countImportedDonors, getImportedDonor, replaceImportedDonor } from './db';
-import { evaluateClaim, toImportedDonorRow, toPublicImportedDonor, IMPORT_SOURCES, type ImportedDonor } from './importedDonors';
+import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, replaceImportedDonor, addCallReports, queryCallReports } from './db';
+import { evaluateClaim, maskPhone, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, IMPORT_SOURCES, type ImportedDonor } from './importedDonors';
+import { getLocationByName } from './locations';
 import { getSmsProvider, isSmsConfigured } from './sms';
+import { getUpazilaByName, getUpazilaVariants } from './upazilas';
+import { BLOOD_GROUPS, COMPATIBLE_DONORS, type BloodGroup } from './blood';
+import { parseCallOutcome, parseDonorReport, parseDonorRef, type CallReport } from './callReports';
+import {
+  AVAILABILITY_TTL_DAYS,
+  DONATION_INTERVAL_DAYS,
+  donorCanSeeRequest,
+  donorEligibility,
+  matchesUpazilaSearch,
+  rankDonorResults
+} from './donorSearch';
 import { canAssignStaffRole, canEditMember, canManageMember, capabilitiesFor, hasCapability, isStaffRole, legacyStaffRole, type AdminCapability, type StaffRole } from './adminPolicy';
 
 const app = express();
@@ -22,8 +34,6 @@ const DEFAULT_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_VERIFICATION_TTL_MS = 30 * 60 * 1000;
-const DONATION_INTERVAL_DAYS = Math.max(1, Number(process.env.DONATION_INTERVAL_DAYS || 120));
-const AVAILABILITY_TTL_DAYS = Math.max(1, Number(process.env.AVAILABILITY_TTL_DAYS || 14));
 const MATCH_RADIUS_KM = Math.max(10, Number(process.env.MATCH_RADIUS_KM || 250));
 const SESSION_COOKIE = 'drop_session';
 // Anonymous fingerprints shorter than this are rejected so trivial values
@@ -33,26 +43,16 @@ const BCRYPT_ROUNDS = 10;
 const PUBLIC_DONOR_SEARCH_LIMIT = 50;
 const STARTED_AT = Date.now();
 let isReady = false;
-const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
-type BloodGroup = (typeof BLOOD_GROUPS)[number];
-// For each recipient group, the donor groups whose blood they can receive.
-// Kept in sync with src/lib/blood.ts.
-const COMPATIBLE_DONORS: Record<BloodGroup, BloodGroup[]> = {
-  'A+': ['A+', 'A-', 'O+', 'O-'],
-  'A-': ['A-', 'O-'],
-  'B+': ['B+', 'B-', 'O+', 'O-'],
-  'B-': ['B-', 'O-'],
-  'AB+': ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
-  'AB-': ['A-', 'B-', 'AB-', 'O-'],
-  'O+': ['O+', 'O-'],
-  'O-': ['O-']
-};
 const REQUEST_STATUSES = ['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'] as const;
 const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
 const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
 const BLOOD_COMPONENTS = ['WHOLE_BLOOD', 'RED_CELLS', 'PLATELETS', 'PLASMA'] as const;
 const REQUESTER_RELATIONSHIPS = ['SELF', 'FAMILY', 'FRIEND', 'HOSPITAL_STAFF', 'VOLUNTEER', 'OTHER'] as const;
 const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
+// SIGN_IN serves the blood request flow, where the requester gives a phone
+// number without first saying whether they have an account. It is the only
+// purpose that works for both an existing and a new account.
+const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'SIGN_IN'] as const;
 const allowedCorsOrigins = new Set(
   (process.env.CORS_ORIGIN || process.env.APP_URL || '')
     .split(',')
@@ -142,6 +142,19 @@ type DonorProfile = {
   blood_group: string;
   last_donation_date?: string;
   location: { lat: number, lng: number, area_name: string };
+  /**
+   * Upazila/thana within `location.area_name`. Optional because profiles
+   * created before district+upazila search existed do not have one; those
+   * donors simply do not appear in an upazila search until they set it.
+   */
+  upazila?: string;
+  /**
+   * Self-declared, and deliberately not an input to `donorEligibility`.
+   * Treating them as a screen would imply a medical assessment this project
+   * does not perform - the collection facility decides who may donate.
+   */
+  age?: number;
+  weight_kg?: number;
   availability_status: 'AVAILABLE' | 'SICK' | 'TRAVELING' | 'NOT_AVAILABLE';
   availability_confirmed_at?: string;
   deferral_status?: 'NONE' | 'TEMPORARY' | 'PERMANENT';
@@ -204,11 +217,37 @@ type Comment = {
   moderated_by?: string;
 };
 
+const REQUESTER_ROLES = ['PATIENT', 'RELATIVE', 'THIRD_PARTY'] as const;
+const PATIENT_TITLES = ['MR', 'MST'] as const;
+const CONTACT_OWNERS = ['PATIENT', 'RELATIVE'] as const;
+// Coarse timing, because a requester in a corridor cannot give a timestamp but
+// can say how soon. Mapped to a `needed_by` so urgency stays meaningful.
+const NEEDED_WINDOWS = ['WITHIN_HOURS', 'TODAY', 'WITHIN_2_3_DAYS', 'PLANNED'] as const;
+const NEEDED_WINDOW_HOURS: Record<(typeof NEEDED_WINDOWS)[number], number> = {
+  WITHIN_HOURS: 6,
+  TODAY: 24,
+  WITHIN_2_3_DAYS: 72,
+  PLANNED: 168
+};
+
 type BloodRequest = {
   id: string;
   user_id: string;
   blood_group: string;
   location: { lat: number, lng: number, area_name: string };
+  /** Upazila searched for. Absent on requests published before search v1. */
+  upazila?: string;
+  patient_title?: (typeof PATIENT_TITLES)[number];
+  patient_sex?: 'MALE' | 'FEMALE';
+  patient_age?: number;
+  requester_role?: (typeof REQUESTER_ROLES)[number];
+  /** Free text, e.g. "brother". Private, like the rest of the patient block. */
+  requester_relation?: string;
+  contact_owner?: (typeof CONTACT_OWNERS)[number];
+  needed_window?: (typeof NEEDED_WINDOWS)[number];
+  collection_facility_code?: string;
+  /** Marks rows created by the search flow rather than the legacy form. */
+  flow_version?: 'SEARCH_V1';
   created_at: string;
   expires_at: string;
   status: (typeof REQUEST_STATUSES)[number];
@@ -234,7 +273,7 @@ type BloodRequest = {
 type OtpChallenge = {
   id: string;
   phone: string;
-  purpose: 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE';
+  purpose: 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN';
   code_hash: string;
   created_at: string;
   expires_at: string;
@@ -370,6 +409,30 @@ function parseDate(value: unknown) {
 function parsePositiveInteger(value: unknown, maximum = 20) {
   const number = Number(value);
   return Number.isInteger(number) && number >= 1 && number <= maximum ? number : null;
+}
+
+/** `undefined` for an omitted value, `null` for one that is present but invalid. */
+function parseOptionalEnum<T extends readonly string[]>(value: unknown, values: T) {
+  if (value === undefined || value === null || value === '') return undefined;
+  return isOneOf(value, values) ? value : null;
+}
+
+/** `undefined` for an omitted value, `null` for one that is present but invalid. */
+function parseOptionalInteger(value: unknown, minimum: number, maximum: number) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= minimum && number <= maximum ? number : null;
+}
+
+/**
+ * Resolves an upazila against the district it is claimed to be in, returning
+ * the canonical stored spelling. Districts own their upazila names, so this
+ * also rejects a valid name paired with the wrong district.
+ */
+function parseUpazila(district: string, value: unknown) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') return null;
+  return getUpazilaByName(district, value)?.value ?? null;
 }
 
 function parseLocation(value: unknown) {
@@ -525,23 +588,6 @@ type DonorMatch = {
   availability_confirmed_at?: string;
 };
 
-function donorEligibility(profile: DonorProfile) {
-  if (profile.deferral_status === 'PERMANENT') return { eligible: false, reason: 'Permanently deferred' };
-  if (profile.deferral_status === 'TEMPORARY') {
-    const until = profile.deferred_until ? new Date(profile.deferred_until).getTime() : Number.POSITIVE_INFINITY;
-    if (until > Date.now()) return { eligible: false, reason: 'Temporarily deferred' };
-  }
-  if (profile.last_donation_date) {
-    const next = new Date(profile.last_donation_date).getTime() + DONATION_INTERVAL_DAYS * 86_400_000;
-    if (next > Date.now()) return { eligible: false, reason: 'Donation interval not complete' };
-  }
-  const confirmed = profile.availability_confirmed_at ? new Date(profile.availability_confirmed_at).getTime() : 0;
-  if (confirmed + AVAILABILITY_TTL_DAYS * 86_400_000 < Date.now()) {
-    return { eligible: false, reason: 'Availability confirmation expired' };
-  }
-  return { eligible: true, reason: null };
-}
-
 // Searches the District x Group partitions of every blood group that is
 // medically compatible with the recipient's group (e.g. an A+ patient also
 // matches A-, O+, and O- donors). Phone numbers are included only when
@@ -584,6 +630,144 @@ async function findDonorMatches(
     })
     .filter(match => match.distance_km <= MATCH_RADIUS_KM)
     .sort((a, b) => a.distance_km - b.distance_km);
+}
+
+// --- District and upazila donor search -----------------------------------
+//
+// The search a requester actually runs. It answers with masked numbers only:
+// unmasking is a separate, recorded action that requires a published request,
+// so browsing can never harvest contact details.
+
+const SEARCH_RESULT_LIMIT = 24;
+
+type DonorCard = {
+  /** `reg:<user_id>` or `imp:<public_id>` - the token used to ask for a reveal. */
+  donor_ref: string;
+  donor_kind: 'REGISTERED' | 'IMPORTED';
+  name: string;
+  blood_group: string;
+  /** False when the donor is compatible with the patient but not the same group. */
+  is_exact_group: boolean;
+  district: string;
+  upazila: string;
+  phone_masked: string;
+  has_phone: boolean;
+  is_verified?: boolean;
+  availability_status?: string;
+  /** Attribution for an imported listing; absent for registered members. */
+  source?: { organization: string; url: string };
+};
+
+export function registeredDonorRef(userId: string) {
+  return `reg:${userId}`;
+}
+
+export function importedDonorRef(publicId: string) {
+  return `imp:${publicId}`;
+}
+
+function registeredDonorCard(user: User, exactGroup: string): DonorCard {
+  const profile = user.donor_profile!;
+  return {
+    donor_ref: registeredDonorRef(user.id),
+    donor_kind: 'REGISTERED',
+    name: user.name,
+    blood_group: profile.blood_group,
+    is_exact_group: profile.blood_group === exactGroup,
+    district: profile.location.area_name,
+    upazila: profile.upazila || '',
+    phone_masked: maskPhone(user.phone),
+    has_phone: Boolean(user.phone),
+    is_verified: Boolean(user.is_verified),
+    availability_status: profile.availability_status
+  };
+}
+
+function importedDonorCard(donor: ImportedDonor, exactGroup: string): DonorCard {
+  const view = toPublicImportedDonor(donor);
+  return {
+    donor_ref: importedDonorRef(view.id),
+    donor_kind: 'IMPORTED',
+    name: view.name,
+    blood_group: view.blood_group,
+    is_exact_group: view.blood_group === exactGroup,
+    district: view.district,
+    upazila: view.upazila,
+    phone_masked: view.phone_masked,
+    has_phone: view.has_phone,
+    // No availability status: nobody has asked these people whether they are
+    // free, and inventing one would misrepresent a scraped listing.
+    source: { organization: view.source.organization, url: view.source.url }
+  };
+}
+
+/**
+ * Registered members first, then public directory listings to fill the page.
+ *
+ * The two groups stay separate in the response because they mean different
+ * things: a member opted in to be contacted here, while a directory listing was
+ * published elsewhere by someone else. The interface has to say which is which.
+ */
+async function findRequestDonors(params: {
+  bloodGroup: BloodGroup;
+  district: string;
+  upazila: string;
+  excludeUserId?: string;
+  limit?: number;
+}) {
+  const compatibleGroups = COMPATIBLE_DONORS[params.bloodGroup] || [params.bloodGroup];
+  const upazilas = getUpazilaVariants(params.district, params.upazila);
+  const limit = params.limit ?? SEARCH_RESULT_LIMIT;
+  const requester = params.excludeUserId ? users.find(user => user.id === params.excludeUserId) : undefined;
+
+  const registered = rankDonorResults(
+    users
+      .filter(user => user.id !== params.excludeUserId)
+      .filter(user => user.account_status !== 'SUSPENDED' && !user.deleted_at && user.is_verified)
+      .filter(user => !params.excludeUserId || !user.blocked_user_ids?.includes(params.excludeUserId))
+      .filter(user => !requester?.blocked_user_ids?.includes(user.id))
+      .filter(user => matchesUpazilaSearch(user.donor_profile, {
+        compatibleGroups,
+        district: params.district,
+        upazilas
+      }))
+      .map(user => registeredDonorCard(user, params.bloodGroup)),
+    params.bloodGroup
+  );
+
+  let directory: DonorCard[] = [];
+  if (registered.length < limit) {
+    try {
+      const listings = await queryImportedDonorsForRequest({
+        district: params.district,
+        upazilas,
+        bloodGroups: compatibleGroups,
+        limit: limit - registered.length
+      });
+      directory = rankDonorResults(
+        listings.map(listing => importedDonorCard(listing, params.bloodGroup)),
+        params.bloodGroup
+      );
+    } catch {
+      // The directory is a supplement. If it is unavailable the registered
+      // results are still worth showing.
+      directory = [];
+    }
+  }
+
+  return { registered, directory, compatibleGroups, upazilas };
+}
+
+/** Shared by the search route and the reveal route's membership check. */
+function parseUpazilaSearch(query: Record<string, unknown>) {
+  const bloodGroup = query.blood_group;
+  const districtName = cleanString(query.district, 80);
+  const location = districtName ? getLocationByName(districtName) : null;
+  if (!isOneOf(bloodGroup, BLOOD_GROUPS)) return { error: 'Valid blood group is required' } as const;
+  if (!location) return { error: 'Valid Bangladesh district is required' } as const;
+  const upazila = parseUpazila(location.area_name, query.upazila);
+  if (!upazila) return { error: 'Choose an upazila that belongs to the selected district' } as const;
+  return { value: { bloodGroup, location, upazila } } as const;
 }
 
 // Haversine distance calculation in kilometers.
@@ -685,6 +869,31 @@ async function issueSession(userId: string, req: express.Request) {
   return session.token;
 }
 
+/**
+ * Moves anything an anonymous browser created onto the account that has just
+ * proven it owns the phone number. Shared by every sign-in path so they cannot
+ * drift apart.
+ */
+async function adoptFingerprintOwnership(fingerprint: string, user: User) {
+  for (const request of requests) {
+    let changed = false;
+    if (request.user_id === fingerprint) {
+      request.user_id = user.id;
+      changed = true;
+    }
+    for (const comment of request.comments || []) {
+      if (comment.user_id === fingerprint) {
+        comment.user_id = user.id;
+        comment.user_name = user.name;
+        changed = true;
+      }
+    }
+    if (changed) {
+      await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+    }
+  }
+}
+
 async function revokeSession(req: express.Request) {
   const auth = getCurrentAuth(req);
   if (!auth) return;
@@ -702,9 +911,29 @@ function isRequestOwner(request: BloodRequest, req: express.Request) {
   return Boolean(actorId && request.user_id === actorId);
 }
 
+/**
+ * The only shape a blood request may take on a public surface.
+ *
+ * Private fields are removed by naming them here, so **every new field on
+ * `BloodRequest` is public by default**. Anything describing the patient or the
+ * requester's relationship to them has to be added to this destructure, or it
+ * publishes on the open `/api/requests` feed.
+ */
 function publicRequestPayload(request: BloodRequest) {
   const requester = users.find(u => u.id === request.user_id);
-  const { contacts, comments, patient_name, patient_reference, timeline, ...safeRequest } = request;
+  const {
+    contacts,
+    comments,
+    patient_name,
+    patient_reference,
+    patient_title,
+    patient_sex,
+    patient_age,
+    requester_relation,
+    contact_owner,
+    timeline,
+    ...safeRequest
+  } = request;
   return {
     ...safeRequest,
     requester_name: request.requester_name || requester?.name || 'Anonymous',
@@ -774,6 +1003,40 @@ app.get('/api/donors/search', async (req, res) => {
   });
 });
 
+/**
+ * The district and upazila donor search behind the blood request flow.
+ *
+ * Open to everyone and masked for everyone, including signed-in members: a
+ * number is only unmasked through `POST /api/requests/:id/reveals`, which
+ * requires a published request and is recorded.
+ */
+app.get('/api/search/donors', async (req, res) => {
+  const parsed = parseUpazilaSearch(req.query as Record<string, unknown>);
+  if ('error' in parsed) return validationError(res, parsed.error);
+
+  const auth = getCurrentAuth(req);
+  const { bloodGroup, location, upazila } = parsed.value;
+  const { registered, directory, compatibleGroups } = await findRequestDonors({
+    bloodGroup,
+    district: location.area_name,
+    upazila,
+    excludeUserId: auth?.user.id
+  });
+
+  res.json({
+    query: {
+      blood_group: bloodGroup,
+      district: location.area_name,
+      upazila,
+      compatible_groups: compatibleGroups
+    },
+    registered,
+    directory,
+    totals: { registered: registered.length, directory: directory.length },
+    contact_access: 'masked'
+  });
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok', uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000) }));
 app.get('/ready', (_req, res) => res.status(isReady ? 200 : 503).json({ status: isReady ? 'ready' : 'starting' }));
 app.get('/metrics', (_req, res) => {
@@ -799,7 +1062,7 @@ app.get('/sitemap.xml', (req, res) => {
 app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const purpose = req.body?.purpose;
-  if (!phone || !isOneOf(purpose, ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE'] as const)) {
+  if (!phone || !isOneOf(purpose, OTP_PURPOSES)) {
     return validationError(res, 'Valid Bangladesh phone and purpose are required');
   }
   const provider = getSmsProvider();
@@ -811,6 +1074,10 @@ app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
     // Do not disclose account existence.
     return res.json({ success: true });
   }
+  // SIGN_IN takes neither branch on purpose. It has to work whether or not the
+  // number has an account, and the answer is only disclosed once the caller has
+  // entered the code sent to that number - so they learn about their own phone
+  // and nobody else's.
 
   const recent = otpChallenges.find(challenge =>
     challenge.phone === phone && challenge.purpose === purpose &&
@@ -863,7 +1130,7 @@ app.post('/api/auth/otp/verify', authLimiter, async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const purpose = req.body?.purpose;
   const code = cleanString(req.body?.code, 6);
-  if (!phone || !code || !/^\d{6}$/.test(code) || !isOneOf(purpose, ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE'] as const)) {
+  if (!phone || !code || !/^\d{6}$/.test(code) || !isOneOf(purpose, OTP_PURPOSES)) {
     return validationError(res, 'Valid phone, purpose, and six-digit code are required');
   }
   const challenge = [...otpChallenges].reverse().find(item =>
@@ -879,7 +1146,48 @@ app.post('/api/auth/otp/verify', authLimiter, async (req, res) => {
   challenge.verification_token = uuidv4();
   challenge.verification_expires_at = new Date(Date.now() + OTP_VERIFICATION_TTL_MS).toISOString();
   await saveToTable('common_otps', challenge);
+
+  // Only now, having proven control of the number, is the caller told whether
+  // it already has an account - so the blood request flow can branch between
+  // signing in and registering without ever becoming an enumeration oracle.
+  if (purpose === 'SIGN_IN') {
+    const existing = users.find(user => user.phone === phone && !user.deleted_at);
+    return res.json({
+      verification_token: challenge.verification_token,
+      account_exists: Boolean(existing),
+      name: existing?.name,
+      has_password: Boolean(existing?.password)
+    });
+  }
+
   res.json({ verification_token: challenge.verification_token });
+});
+
+/**
+ * Signs in with a verified `SIGN_IN` challenge instead of a password. The
+ * password path below is unchanged and still offered; this exists so someone
+ * arranging blood for a relative is not stopped by a password they set months
+ * ago and cannot recall.
+ */
+app.post('/api/auth/otp/login', authLimiter, async (req, res) => {
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const bodyFingerprint = normalizeFingerprint(req.body?.fingerprint);
+  const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
+  if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
+
+  const challenge = verifiedChallenge(phone, 'SIGN_IN', req.body?.verification_token);
+  if (!challenge) return res.status(403).json({ error: 'Verify this phone before signing in' });
+
+  const user = users.find(item => item.phone === phone && !item.deleted_at);
+  if (!user) return res.status(404).json({ error: 'No account exists for this number' });
+  if (user.account_status === 'SUSPENDED') return res.status(403).json({ error: 'This account is suspended' });
+
+  await consumeChallenge(challenge);
+  if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
+
+  const token = await issueSession(user.id, req);
+  res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
+  res.json({ user: sanitizeUser(user) });
 });
 
 app.post('/api/auth/login', authLimiter, async (req, res) => {
@@ -912,28 +1220,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     await saveToTable('common_users', user);
   }
 
-  // Reassign ownership from fingerprint to verified user
-  if (fingerprint) {
-    for (let r of requests) {
-      let rChanged = false;
-      if (r.user_id === fingerprint) {
-        r.user_id = user!.id;
-        rChanged = true;
-      }
-      if (r.comments) {
-        r.comments.forEach(c => {
-          if (c.user_id === fingerprint) {
-            c.user_id = user!.id;
-            c.user_name = user!.name;
-            rChanged = true;
-          }
-        });
-      }
-      if (rChanged) {
-        await saveToTable('common_requests', r, [r.location.lng, r.location.lat]);
-      }
-    }
-  }
+  if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
 
   const token = await issueSession(user.id, req);
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
@@ -948,7 +1235,17 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
   const blood_group = req.body?.blood_group;
   const location = req.body?.location === undefined ? undefined : parseLocation(req.body.location);
-  const challenge = phone ? verifiedChallenge(phone, 'REGISTER', req.body?.verification_token) : null;
+  // A SIGN_IN challenge is accepted too, so the blood request flow can send one
+  // code and then branch into signing in or registering depending on what the
+  // verification revealed.
+  const challenge = phone
+    ? verifiedChallenge(phone, 'REGISTER', req.body?.verification_token)
+      || verifiedChallenge(phone, 'SIGN_IN', req.body?.verification_token)
+    : null;
+  const upazila = location ? parseUpazila(location.area_name, req.body?.upazila) : undefined;
+  const age = parseOptionalInteger(req.body?.age, 16, 70);
+  const weight_kg = parseOptionalInteger(req.body?.weight_kg, 30, 200);
+  const last_donation_date = parseDate(req.body?.last_donation_date);
 
   if (!phone || !name || !password) return validationError(res, 'Phone, name, and password are required');
   if (!challenge) return res.status(403).json({ error: 'Verify this phone before registering' });
@@ -956,7 +1253,14 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   if (blood_group !== undefined && !isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (req.body?.location !== undefined && !location) return validationError(res, 'Valid location is required');
   if ((blood_group && !location) || (!blood_group && location)) return validationError(res, 'Blood group and location must be provided together');
-  
+  if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
+  if (age === null) return validationError(res, 'Age must be between 16 and 70');
+  if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
+  if (last_donation_date === null) return validationError(res, 'Valid last donation date is required');
+  if (last_donation_date && new Date(last_donation_date).getTime() > Date.now()) {
+    return validationError(res, 'Last donation date cannot be in the future');
+  }
+
   if (users.find(u => u.phone === phone)) {
     return res.status(400).json({ error: 'Phone already registered' });
   }
@@ -975,9 +1279,16 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   };
 
   if (blood_group && location) {
+    // A new profile always starts unavailable. Giving a blood group while
+    // arranging blood for someone else is not the same as volunteering to be
+    // called, so the donor opts in separately from /profile/donor.
     user.donor_profile = {
       blood_group,
       location,
+      ...(upazila ? { upazila } : {}),
+      ...(age ? { age } : {}),
+      ...(weight_kg ? { weight_kg } : {}),
+      ...(last_donation_date ? { last_donation_date } : {}),
       availability_status: 'NOT_AVAILABLE',
       deferral_status: 'NONE',
       availability_history: [{ status: 'NOT_AVAILABLE', changed_at: new Date().toISOString() }]
@@ -990,28 +1301,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     await syncDonorToPartition(user);
   }
   
-  // Reassign ownership from fingerprint to verified user
-  if (fingerprint) {
-    for (let r of requests) {
-      let rChanged = false;
-      if (r.user_id === fingerprint) {
-        r.user_id = user!.id;
-        rChanged = true;
-      }
-      if (r.comments) {
-        r.comments.forEach(c => {
-          if (c.user_id === fingerprint) {
-            c.user_id = user!.id;
-            c.user_name = user!.name;
-            rChanged = true;
-          }
-        });
-      }
-      if (rChanged) {
-        await saveToTable('common_requests', r, [r.location.lng, r.location.lat]);
-      }
-    }
-  }
+  if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
 
   const token = await issueSession(user.id, req);
   await consumeChallenge(challenge);
@@ -1217,10 +1507,16 @@ app.post('/api/me/donor-profile', async (req, res) => {
   const donation_history = parseDonationHistory(req.body?.donation_history);
   const deferral_status = req.body?.deferral_status || 'NONE';
   const deferred_until = parseDate(req.body?.deferred_until);
+  const upazila = location ? parseUpazila(location.area_name, req.body?.upazila) : undefined;
+  const age = parseOptionalInteger(req.body?.age, 16, 70);
+  const weight_kg = parseOptionalInteger(req.body?.weight_kg, 30, 200);
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (!isOneOf(availability_status, AVAILABILITY_STATUSES)) return validationError(res, 'Valid availability status is required');
   if (!location) return validationError(res, 'Valid location is required');
+  if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
+  if (age === null) return validationError(res, 'Age must be between 16 and 70');
+  if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
   if (last_donation_date === null) return validationError(res, 'Valid last donation date is required');
   if (last_donation_date && new Date(last_donation_date).getTime() > Date.now()) return validationError(res, 'Last donation date cannot be in the future');
   if (donation_history === null) return validationError(res, 'Valid donation history is required');
@@ -1230,6 +1526,11 @@ app.post('/api/me/donor-profile', async (req, res) => {
   const userIndex = users.findIndex(u => u.id === auth.user.id);
   if (userIndex !== -1) {
     const existingProfile = users[userIndex].donor_profile;
+    // An upazila only means anything inside its own district, so moving
+    // district drops a stale one rather than carrying it across.
+    const keptUpazila = existingProfile?.location.area_name === location.area_name
+      ? existingProfile?.upazila
+      : undefined;
     const availabilityHistory = [...(existingProfile?.availability_history || [])];
     if (!existingProfile || existingProfile.availability_status !== availability_status) {
       availabilityHistory.push({ status: availability_status, changed_at: new Date().toISOString() });
@@ -1239,6 +1540,9 @@ app.post('/api/me/donor-profile', async (req, res) => {
       blood_group,
       availability_status,
       location,
+      upazila: upazila ?? keptUpazila,
+      age: age ?? existingProfile?.age,
+      weight_kg: weight_kg ?? existingProfile?.weight_kg,
       ...(last_donation_date ? { last_donation_date } : { last_donation_date: undefined }),
       deferral_status,
       deferred_until,
@@ -1291,6 +1595,507 @@ function parseCompleteRequest(body: Record<string, unknown>) {
     }
   } as const;
 }
+
+const REQUESTER_ROLE_RELATIONSHIPS: Record<(typeof REQUESTER_ROLES)[number], (typeof REQUESTER_RELATIONSHIPS)[number]> = {
+  PATIENT: 'SELF',
+  RELATIVE: 'FAMILY',
+  THIRD_PARTY: 'VOLUNTEER'
+};
+
+/**
+ * Parses the shorter form the search flow collects.
+ *
+ * `parseCompleteRequest` above is deliberately left alone: it still guards
+ * `POST /api/requests`, whose output feeds the detail editor and the admin
+ * surfaces, and loosening it would degrade those records to serve a different
+ * flow. What the search flow does not ask for is derived here, with a reason:
+ *
+ *   blood_component  WHOLE_BLOOD - volunteers calling donors are not making a
+ *                    component decision, and this flow never asks a clinician.
+ *   units_required   1 - one donor per call; progress accounting needs a number.
+ *   needed_by        from the optional timing question, or absent for "now".
+ *   hospital_address,
+ *   patient_reference  not collected; both are optional on the record.
+ *
+ * The requester's own phone is taken from their verified account rather than
+ * from the request body, so the number attached to a request is always one
+ * somebody proved they control.
+ */
+function parseSearchRequest(body: Record<string, unknown>, requesterPhone: string) {
+  const blood_group = body.blood_group;
+  const districtName = cleanString(body.district, 80);
+  const location = districtName ? getLocationByName(districtName) : null;
+  const requester_role = body.requester_role;
+  const patient_title = body.patient_title;
+  const patient_name = cleanString(body.patient_name, 120);
+  const patient_age = parseOptionalInteger(body.patient_age, 0, 120);
+  const collection_facility = cleanString(body.collection_facility, 160);
+  const collection_facility_code = optionalCleanString(body.collection_facility_code, 40);
+  const requester_name = optionalCleanString(body.requester_name, 120);
+  const requester_relation = optionalCleanString(body.requester_relation, 60);
+  const contact_owner = parseOptionalEnum(body.contact_owner, CONTACT_OWNERS);
+  const contact_name = optionalCleanString(body.contact_name, 80);
+  const contact_phone = body.contact_phone === undefined || body.contact_phone === ''
+    ? undefined
+    : normalizeBangladeshPhone(body.contact_phone);
+  const needed_window = parseOptionalEnum(body.needed_window, NEEDED_WINDOWS);
+
+  if (!isOneOf(blood_group, BLOOD_GROUPS)) return { error: 'Valid blood group is required' } as const;
+  if (!location) return { error: 'Valid Bangladesh district is required' } as const;
+  const upazila = parseUpazila(location.area_name, body.upazila);
+  if (!upazila) return { error: 'Choose an upazila that belongs to the selected district' } as const;
+  if (!collection_facility) return { error: 'Where the blood will be collected is required' } as const;
+  if (!isOneOf(requester_role, REQUESTER_ROLES)) return { error: 'Say whether you are the patient, a relative, or a volunteer' } as const;
+  if (!isOneOf(patient_title, PATIENT_TITLES)) return { error: 'Patient title is required' } as const;
+  if (!patient_name) return { error: "The patient's name is required" } as const;
+  if (!patient_age) return { error: "The patient's age must be between 1 and 120" } as const;
+  if (needed_window === null) return { error: 'Choose a valid time frame' } as const;
+  if (contact_owner === null) return { error: "Say whose number this is: the patient's or a relative's" } as const;
+  if (body.consent !== true) return { error: 'Explicit publication consent is required' } as const;
+
+  const contacts: ContactDetail[] = [];
+  let resolvedRequesterName = requester_name;
+
+  if (requester_role === 'PATIENT') {
+    resolvedRequesterName = patient_name;
+    contacts.push({ name: patient_name, phone: requesterPhone, type: 'PATIENT' });
+  } else if (requester_role === 'RELATIVE') {
+    if (!requester_name) return { error: 'Your name is required' } as const;
+    if (!requester_relation) return { error: 'Your relationship to the patient is required' } as const;
+    contacts.push({ name: requester_name, phone: requesterPhone, type: 'RELATIVE' });
+  } else {
+    if (!requester_name) return { error: 'Your name is required' } as const;
+    if (!contact_owner) return { error: "Say whose number this is: the patient's or a relative's" } as const;
+    if (!contact_phone) return { error: 'A valid Bangladesh contact number is required' } as const;
+    if (contact_owner === 'RELATIVE' && (!contact_name || !requester_relation)) {
+      return { error: "The relative's name and relationship to the patient are required" } as const;
+    }
+    // The volunteer's own number first, then the number that belongs to the
+    // patient's side. A donor calling back should reach either.
+    contacts.push({ name: requester_name, phone: requesterPhone, type: 'OTHER' });
+    contacts.push({
+      name: contact_owner === 'PATIENT' ? patient_name : contact_name!,
+      phone: contact_phone,
+      type: contact_owner
+    });
+  }
+
+  return {
+    value: {
+      blood_group,
+      location,
+      upazila,
+      blood_component: 'WHOLE_BLOOD' as const,
+      units_required: 1,
+      hospital_name: collection_facility,
+      collection_facility_code,
+      patient_title,
+      patient_sex: patient_title === 'MR' ? ('MALE' as const) : ('FEMALE' as const),
+      patient_name,
+      patient_age,
+      requester_role,
+      requester_name: resolvedRequesterName!,
+      requester_relationship: REQUESTER_ROLE_RELATIONSHIPS[requester_role],
+      requester_relation,
+      contact_owner: requester_role === 'THIRD_PARTY' ? contact_owner : undefined,
+      needed_window,
+      needed_by: needed_window
+        ? new Date(Date.now() + NEEDED_WINDOW_HOURS[needed_window] * 3_600_000).toISOString()
+        : undefined,
+      contacts
+    }
+  } as const;
+}
+
+/**
+ * Creates and publishes in one step, because the search flow has a single
+ * submit: the requester has already reviewed every field on the way here, and a
+ * separate draft stage would strand a half-finished request.
+ */
+app.post('/api/search/requests', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Log in to publish a request' });
+  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before creating a request' });
+
+  const parsed = parseSearchRequest(req.body || {}, auth.user.phone);
+  if ('error' in parsed) return validationError(res, parsed.error);
+
+  // Re-searching after a dead-end call is not a mistake to error at, so a
+  // repeat for the same patient need returns the request already in flight
+  // instead of the 409 the older, reference-keyed flow raises.
+  const recent = requests.find(request =>
+    request.user_id === auth.user.id &&
+    ['DRAFT', 'ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status) &&
+    request.blood_group === parsed.value.blood_group &&
+    request.upazila === parsed.value.upazila &&
+    Date.now() - new Date(request.created_at).getTime() < 6 * 3_600_000
+  );
+  if (recent) return res.json({ request: recent, reused: true });
+
+  const now = new Date().toISOString();
+  const request: BloodRequest = {
+    id: uuidv4(),
+    user_id: auth.user.id,
+    ...parsed.value,
+    flow_version: 'SEARCH_V1',
+    created_at: now,
+    expires_at: new Date(Math.max(
+      Date.now() + DEFAULT_REQUEST_TTL_MS,
+      parsed.value.needed_by ? new Date(parsed.value.needed_by).getTime() + 6 * 3_600_000 : 0
+    )).toISOString(),
+    status: 'ACTIVE',
+    consent_at: now,
+    published_at: now,
+    units_pledged: 0,
+    units_confirmed: 0,
+    comments: [],
+    timeline: [{ id: uuidv4(), type: 'SEARCH_REQUEST_PUBLISHED', actor_id: auth.user.id, created_at: now }]
+  };
+  requests.push(request);
+  await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+  res.status(201).json({ request, reused: false });
+});
+
+// A reveal is a targeted lookup, not browsing, so it gets its own budget. The
+// shared /api limiter would let a long calling session throttle the same
+// person's ordinary use of the site.
+const revealLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many contact reveals, please try again later' }
+});
+
+/** How wide the membership re-check looks; a superset of one result page. */
+const REVEAL_MATCH_LIMIT = 200;
+/** A reveal is only "unreported" once the caller has had time to dial. */
+const REVEAL_REPORT_GRACE_MS = 60_000;
+
+async function requestCallReports(requestId: string, actorId?: string) {
+  return await queryCallReports<CallReport>({ requestId, actorId, limit: 1_000 });
+}
+
+function unansweredReveals(reports: CallReport[]) {
+  const answered = new Set(
+    reports.filter(report => report.kind === 'CALL_OUTCOME').map(report => report.reveal_id)
+  );
+  return reports
+    .filter(report => report.kind === 'REVEAL' && !answered.has(report.id))
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+}
+
+/**
+ * The reveal a requester owes an answer for. The grace period keeps the prompt
+ * from appearing while they are still on the call page having just opened it.
+ */
+function pendingReveal(reports: CallReport[], now = Date.now()) {
+  return unansweredReveals(reports)
+    .find(report => now - new Date(report.created_at).getTime() > REVEAL_REPORT_GRACE_MS) || null;
+}
+
+/**
+ * Unmasks one donor's number for the owner of a published request.
+ *
+ * The check that matters is that `donor_ref` is still in the request's own
+ * freshly recomputed results. Without it a single published request would be a
+ * bulk lookup oracle for the whole imported directory.
+ */
+app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Log in to see contact details' });
+  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before contacting donors' });
+
+  const request = requests.find(item => item.id === req.params.id);
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can see these contacts' });
+  if (!['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)) {
+    return res.status(409).json({ error: 'This request is no longer active' });
+  }
+  if (!request.upazila) {
+    return res.status(409).json({ error: 'This request predates upazila search; publish a new one to use it' });
+  }
+
+  const donorRef = cleanString(req.body?.donor_ref, 120);
+  const reference = donorRef ? parseDonorRef(donorRef) : null;
+  if (!donorRef || !reference) return validationError(res, 'A donor reference is required');
+
+  // One open call at a time. Leaving the call page without answering does not
+  // skip the question, it defers it - and this is what makes that true.
+  const reports = await requestCallReports(request.id, auth.user.id);
+  const pending = pendingReveal(reports);
+  if (pending && pending.donor_ref !== donorRef) {
+    return res.status(409).json({
+      error: 'Report how your last call went before asking for another number',
+      pending_reveal_id: pending.id,
+      pending_donor_ref: pending.donor_ref
+    });
+  }
+
+  // Reopening the same donor - going back to finish a call - must reuse the
+  // open reveal. Writing a second one would leave the first unanswered, and the
+  // requester would then be blocked by a reveal they can no longer report on.
+  const openForDonor = unansweredReveals(reports).find(report => report.donor_ref === donorRef);
+
+  const { registered, directory } = await findRequestDonors({
+    bloodGroup: request.blood_group as BloodGroup,
+    district: request.location.area_name,
+    upazila: request.upazila,
+    excludeUserId: auth.user.id,
+    limit: REVEAL_MATCH_LIMIT
+  });
+  const card = [...registered, ...directory].find(item => item.donor_ref === donorRef);
+  if (!card) return res.status(409).json({ error: 'That donor is no longer among this request\'s matches' });
+
+  let phone = '';
+  if (reference.kind === 'REGISTERED') {
+    const donor = users.find(user => user.id === reference.id);
+    if (!donor?.phone) return res.status(409).json({ error: 'That donor is no longer reachable' });
+    phone = donor.phone;
+    // A registered donor gets a real invitation, so the contact appears in
+    // their own responses instead of arriving as an unexplained phone call.
+    await inviteDonorToRequest(request, donor.id);
+  } else {
+    const listing = await getImportedDonor(reference.id);
+    if (!listing || listing.claim_status !== 'UNCLAIMED') {
+      return res.status(409).json({ error: 'That listing is no longer available' });
+    }
+    phone = toRevealedImportedDonor(listing).phone;
+    if (!phone) return res.status(409).json({ error: 'That listing has no published number' });
+  }
+
+  const reveal: CallReport = openForDonor || {
+    id: uuidv4(),
+    kind: 'REVEAL',
+    request_id: request.id,
+    actor_id: auth.user.id,
+    donor_ref: donorRef,
+    donor_kind: card.donor_kind,
+    created_at: new Date().toISOString()
+  };
+  if (!openForDonor) await addCallReports([reveal]);
+
+  // One audit row per request, not per reveal. `common_audit_events` is loaded
+  // into memory at boot with a 10,000-row ceiling, and a row per reveal would
+  // silently truncate the moderation trail. The complete per-reveal history
+  // lives in common_call_reports, which is queried on demand.
+  if (!reports.some(report => report.kind === 'REVEAL')) {
+    await audit(auth.user.id, 'REQUEST_CONTACTS_REVEALED', 'REQUEST', request.id, {
+      blood_group: request.blood_group,
+      district: request.location.area_name,
+      upazila: request.upazila
+    });
+  }
+
+  res.json({
+    reveal_id: reveal.id,
+    donor_ref: donorRef,
+    donor_kind: card.donor_kind,
+    name: card.name,
+    blood_group: card.blood_group,
+    district: card.district,
+    upazila: card.upazila,
+    source: card.source,
+    phone
+  });
+});
+
+/** The reveal the requester still owes an answer for, if any. */
+app.get('/api/requests/:id/reveals/pending', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const request = requests.find(item => item.id === req.params.id);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can see these contacts' });
+
+  const pending = pendingReveal(await requestCallReports(request.id, auth.user.id));
+  res.json({
+    pending: pending
+      ? { reveal_id: pending.id, donor_ref: pending.donor_ref, created_at: pending.created_at }
+      : null
+  });
+});
+
+/**
+ * The answer to "what happened when you called".
+ *
+ * Nothing here changes the donor's own record. "Recently donated" and "is ill"
+ * are unverified third-party claims, and acting on them would let any requester
+ * mark any donor unavailable. They are recorded for staff to aggregate instead.
+ */
+app.post('/api/requests/:id/call-reports', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const request = requests.find(item => item.id === req.params.id);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can report a call' });
+
+  const parsed = parseCallOutcome(req.body || {});
+  if ('error' in parsed) return validationError(res, parsed.error);
+
+  const revealId = cleanString(req.body?.reveal_id, 80);
+  if (!revealId) return validationError(res, 'A reveal reference is required');
+
+  const reports = await requestCallReports(request.id, auth.user.id);
+  const reveal = reports.find(report => report.kind === 'REVEAL' && report.id === revealId);
+  if (!reveal) return res.status(404).json({ error: 'That call was not started from this request' });
+  if (reports.some(report => report.kind === 'CALL_OUTCOME' && report.reveal_id === revealId)) {
+    return res.status(409).json({ error: 'This call has already been reported' });
+  }
+
+  const report: CallReport = {
+    id: uuidv4(),
+    kind: 'CALL_OUTCOME',
+    request_id: request.id,
+    actor_id: auth.user.id,
+    donor_ref: reveal.donor_ref,
+    donor_kind: reveal.donor_kind,
+    reveal_id: revealId,
+    outcome: parsed.value.outcome,
+    reason: 'reason' in parsed.value ? parsed.value.reason : undefined,
+    detail: 'detail' in parsed.value ? parsed.value.detail : undefined,
+    note: parsed.value.note,
+    created_at: new Date().toISOString()
+  };
+  await addCallReports([report]);
+
+  // A registered donor already has a response record for this request, so a
+  // declined call is reflected there too rather than leaving them "invited"
+  // forever. Imported listings have no record to update.
+  const reference = parseDonorRef(reveal.donor_ref);
+  if (reference?.kind === 'REGISTERED') {
+    const response = donorResponses.find(item =>
+      item.request_id === request.id && item.donor_id === reference.id && item.status === 'INVITED'
+    );
+    if (response && ['WRONG_NUMBER', 'DECLINED'].includes(parsed.value.outcome)) {
+      response.status = 'DECLINED';
+      response.updated_at = new Date().toISOString();
+      await saveToTable('common_responses', response);
+    }
+  }
+
+  res.status(201).json({ report_id: report.id });
+});
+
+/** Requests a signed-in donor could answer, with the requester's number masked. */
+app.get('/api/me/donor-requests', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!auth.user.donor_profile) return res.status(403).json({ error: 'Add a donor profile to see nearby requests' });
+  await enforceExpiredRequests();
+
+  const profile = auth.user.donor_profile;
+  const items = requests
+    .filter(request => ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status))
+    .filter(request => request.user_id !== auth.user.id)
+    .filter(request => donorCanSeeRequest(profile, request))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 50)
+    .map(request => {
+      const requester = users.find(user => user.id === request.user_id);
+      const response = donorResponses.find(item =>
+        item.request_id === request.id && item.donor_id === auth.user.id
+      );
+      return {
+        ...publicRequestPayload(request),
+        // Masked until the donor says they can help, mirroring how the donor's
+        // own number is treated on the requester's side.
+        requester_phone_masked: maskPhone(requester?.phone || ''),
+        my_response_status: response?.status || null,
+        contacts: response && ['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status)
+          ? request.contacts || []
+          : undefined
+      };
+    });
+
+  res.json({ items, donor: { blood_group: profile.blood_group, district: profile.location.area_name, upazila: profile.upazila || null } });
+});
+
+/**
+ * A donor's answer to a request they were shown. Their own report may change
+ * their own record - unlike a requester's report about them.
+ */
+app.post('/api/requests/:id/donor-reports', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const request = requests.find(item => item.id === req.params.id);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!auth.user.donor_profile) return res.status(403).json({ error: 'Add a donor profile before responding' });
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.user_id === auth.user.id) return res.status(403).json({ error: 'This is your own request' });
+  if (!donorCanSeeRequest(auth.user.donor_profile, request)) {
+    return res.status(403).json({ error: 'This request is not in your area or blood group' });
+  }
+
+  const parsed = parseDonorReport(req.body || {});
+  if ('error' in parsed) return validationError(res, parsed.error);
+  const { outcome, note } = parsed.value;
+
+  const response = await inviteDonorToRequest(request, auth.user.id);
+  const now = new Date().toISOString();
+  response.status = outcome === 'CAN_DONATE' ? 'ACCEPTED' : outcome === 'NEED_MORE_INFO' ? 'QUESTION' : 'DECLINED';
+  response.message = note || response.message;
+  response.updated_at = now;
+  await saveToTable('common_responses', response);
+  await recomputeRequestProgress(request);
+
+  await addCallReports([{
+    id: uuidv4(),
+    kind: 'DONOR_REPORT',
+    request_id: request.id,
+    actor_id: auth.user.id,
+    donor_ref: registeredDonorRef(auth.user.id),
+    donor_kind: 'REGISTERED',
+    outcome,
+    note,
+    created_at: now
+  } satisfies CallReport]);
+
+  // Self-declared, so acting on it is legitimate here in a way it never is on
+  // the requester's side.
+  if (outcome === 'NOT_ELIGIBLE_RECENT_DONATION' && req.body?.donated_on) {
+    const donatedOn = parseDate(req.body.donated_on);
+    if (donatedOn === null || (donatedOn && new Date(donatedOn).getTime() > Date.now())) {
+      return validationError(res, 'Valid last donation date is required');
+    }
+    if (donatedOn) {
+      auth.user.donor_profile.last_donation_date = donatedOn.slice(0, 10);
+      await saveToTable('common_users', auth.user);
+      await removeDonorFromAllPartitions(auth.user.id);
+    }
+  }
+  if (outcome === 'NOT_ELIGIBLE_HEALTH' && req.body?.pause_availability === true) {
+    auth.user.donor_profile.availability_status = 'SICK';
+    auth.user.donor_profile.availability_history = [
+      ...(auth.user.donor_profile.availability_history || []),
+      { status: 'SICK' as const, changed_at: now }
+    ].slice(-50);
+    await saveToTable('common_users', auth.user);
+    await removeDonorFromAllPartitions(auth.user.id);
+  }
+
+  if (outcome === 'SUSPECTED_MISUSE') {
+    const report: ModerationReport = {
+      id: uuidv4(), reporter_id: auth.user.id, target_type: 'REQUEST', target_id: request.id,
+      reason: 'FRAUD', details: note, status: 'OPEN',
+      created_at: now, updated_at: now
+    };
+    moderationReports.push(report);
+    await saveToTable('common_reports', report);
+  }
+
+  await notify(
+    request.user_id,
+    'DONOR_RESPONSE',
+    outcome === 'CAN_DONATE' ? 'A donor can help' : 'A donor responded',
+    `${auth.user.name} responded to your ${request.blood_group} request.`,
+    `/request/${request.id}`
+  );
+
+  res.json({
+    response: responsePayload(response, auth.user.id),
+    contacts: response.status === 'ACCEPTED' ? request.contacts || [] : undefined
+  });
+});
 
 // A draft is private and can only be created by a verified account. Publishing
 // is a separate, explicit action so the requester can review the data first.
@@ -1376,6 +2181,30 @@ async function recomputeRequestProgress(request: BloodRequest) {
   await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
 }
 
+/**
+ * Records an invitation and notifies the donor. Returns the existing response
+ * when one is already open, so revealing the same number twice does not create
+ * a second invitation or a second notification.
+ */
+async function inviteDonorToRequest(request: BloodRequest, donorId: string) {
+  const existing = donorResponses.find(response =>
+    response.request_id === request.id &&
+    response.donor_id === donorId &&
+    !['DECLINED', 'CANCELLED', 'NO_SHOW'].includes(response.status)
+  );
+  if (existing) return existing;
+
+  const now = new Date().toISOString();
+  const response: DonorResponse = {
+    id: uuidv4(), request_id: request.id, donor_id: donorId, requester_id: request.user_id,
+    status: 'INVITED', units: 1, created_at: now, updated_at: now
+  };
+  donorResponses.push(response);
+  await saveToTable('common_responses', response);
+  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group} ${request.blood_component?.replaceAll('_', ' ').toLowerCase()} is needed at ${request.hospital_name}.`, `/profile/invitations`);
+  return response;
+}
+
 app.post('/api/requests/:id/invitations', async (req, res) => {
   const auth = getCurrentAuth(req);
   const request = requests.find(item => item.id === req.params.id);
@@ -1390,14 +2219,7 @@ app.post('/api/requests/:id/invitations', async (req, res) => {
   }
   const matches = await findDonorMatches(request.location, request.blood_group, request.user_id, false);
   if (!matches.some(match => match.user_id === donorId)) return res.status(409).json({ error: 'Donor is no longer an eligible match' });
-  const now = new Date().toISOString();
-  const response: DonorResponse = {
-    id: uuidv4(), request_id: request.id, donor_id: donorId, requester_id: request.user_id,
-    status: 'INVITED', units: 1, created_at: now, updated_at: now
-  };
-  donorResponses.push(response);
-  await saveToTable('common_responses', response);
-  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group} ${request.blood_component?.replaceAll('_', ' ').toLowerCase()} is needed at ${request.hospital_name}.`, `/profile/invitations`);
+  const response = await inviteDonorToRequest(request, donorId);
   res.status(201).json(responsePayload(response, auth.user.id));
 });
 
@@ -1806,6 +2628,32 @@ app.patch('/api/admin/tickets/:id', async (req, res) => {
   res.json(ticket);
 });
 
+/**
+ * The full reveal and call-outcome trail. It lives here rather than in the
+ * audit log because it is far too high-volume for a table that is loaded into
+ * memory at boot; `common_call_reports` is queried on demand instead.
+ */
+app.get('/api/admin/call-reports', async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
+  const requestId = optionalCleanString(req.query.request_id, 80);
+  const donorRef = optionalCleanString(req.query.donor_ref, 120);
+  const kind = optionalCleanString(req.query.kind, 20);
+  try {
+    const reports = await queryCallReports<CallReport>({
+      requestId: requestId || undefined,
+      donorRef: donorRef || undefined,
+      kind: kind || undefined,
+      limit: 500
+    });
+    res.json({
+      items: reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    });
+  } catch {
+    res.status(503).json({ error: 'Call reports are temporarily unavailable' });
+  }
+});
+
 app.get('/api/admin/audit', (req, res) => {
   const auth = requireStaffCapability(req, res, 'VIEW_AUDIT');
   if (!auth) return;
@@ -2079,10 +2927,25 @@ app.patch('/api/admin/directory/claims/:id', async (req, res) => {
 });
 
 // Public network stats for the landing page.
+//
+// `donors` is the headline: everyone findable here, which is the registered
+// members with a donor profile plus the unclaimed imported listings. Claimed
+// listings are excluded because their owner is already counted as registered.
+// A directory read failure leaves the headline null rather than reporting the
+// registered count alone, which would understate the network by six figures.
 app.get('/api/stats', async (req, res) => {
   await enforceExpiredRequests();
+  const registeredDonors = users.filter(u => u.donor_profile).length;
+  let directoryDonors: number | null = null;
+  try {
+    directoryDonors = await countImportedDonors({ claimStatus: 'UNCLAIMED' });
+  } catch {
+    directoryDonors = null;
+  }
   res.json({
-    registered_donors: users.filter(u => u.donor_profile).length,
+    donors: directoryDonors === null ? null : registeredDonors + directoryDonors,
+    directory_donors: directoryDonors,
+    registered_donors: registeredDonors,
     available_donors: users.filter(u => u.donor_profile?.availability_status === 'AVAILABLE').length,
     active_requests: requests.filter(r => r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED').length,
     fulfilled_requests: requests.filter(r => r.status === 'FULFILLED').length
@@ -2273,6 +3136,17 @@ async function startServer() {
   await initDbData();
   await enforceExpiredRequests();
   await enforceStaleAvailability();
+  // Prepare the imported directory before reporting ready. It is otherwise
+  // prepared lazily on first access, and after a schema change that means the
+  // first donor search blocks behind a full-table migration while /ready has
+  // already said the instance is good to serve. Failing here is survivable -
+  // the directory only supplements registered donors - so readiness is not
+  // held hostage to it.
+  try {
+    await ensureImportedDonorTable();
+  } catch (error) {
+    console.error('imported_donors: preparation failed, directory results will be unavailable', error);
+  }
   isReady = true;
   const maintenanceTimer = setInterval(() => {
     void enforceExpiredRequests();

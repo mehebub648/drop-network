@@ -24,7 +24,7 @@ export default function AboutPage() {
       <section>
         <h2>Built for accountability</h2>
         <p>Accounts, verified mobile ownership, availability status, donation history, and request timelines help members understand who they are dealing with. Verification confirms control of a phone number; it is not identity or clinical verification.</p>
-        <p className="mt-3">Imported public listings are kept in a separate archive. Their contacts remain masked even after login because those people have not opted in to Drop.</p>
+        <p className="mt-3">Imported public listings are kept in a separate archive and stay masked while you browse, because those people have not opted in to Drop. They open only through a published blood request in their own upazila, one call at a time, and every reveal is recorded.</p>
         <p className="mt-3">Read our <Link to="/safety">safety guidance</Link> before meeting a donor or requester.</p>
       </section>
       <section>

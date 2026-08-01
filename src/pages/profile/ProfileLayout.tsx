@@ -1,4 +1,4 @@
-import { BellRing, Clock3, FileClock, HeartPulse, KeyRound, Settings, UserRound } from 'lucide-react';
+import { BellRing, Clock3, FileClock, HeartPulse, KeyRound, Settings, Siren, UserRound } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import VerifiedBadge from '../../components/VerifiedBadge';
 import { cn } from '../../lib/utils';
@@ -7,6 +7,7 @@ import type { ProfileUser } from './types';
 const items = [
   { to: '/profile/account', label: 'Account', icon: UserRound },
   { to: '/profile/donor', label: 'Donor profile', icon: HeartPulse },
+  { to: '/profile/donor-requests', label: 'Requests near you', icon: Siren },
   { to: '/profile/requests', label: 'My requests', icon: Clock3 },
   { to: '/profile/invitations', label: 'Invitations', icon: BellRing },
   { to: '/profile/history', label: 'Donation history', icon: FileClock },

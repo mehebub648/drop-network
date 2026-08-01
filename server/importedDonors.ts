@@ -4,8 +4,14 @@
 // These people never signed up here, so an imported record is deliberately a
 // *stub*, not an account:
 //   - it is stored in its own table and never joins the donor match partitions;
-//   - its phone number is only ever served masked;
+//   - it is served masked everywhere except one route (see below);
 //   - it becomes a real donor profile only when someone claims it.
+//
+// The single exception is `toRevealedImportedDonor`, used by the phone-reveal
+// route: a verified account that has published a blood request for this
+// person's own district and upazila may read the number in order to call them
+// once. Every reveal is recorded. Browsing the directory never reveals
+// anything, and a revealed number is not a licence to redistribute it.
 //
 // A claim is auto-approved only when the claimant's own verified phone number
 // matches the number the source published. Everything else - records with no
@@ -228,6 +234,34 @@ export function toPublicImportedDonor(donor: ImportedDonor): PublicImportedDonor
   };
 }
 
+export type RevealedImportedDonor = PublicImportedDonor & { phone: string };
+
+/**
+ * The one projection that carries a raw imported phone number.
+ *
+ * Call it only from the phone-reveal route, which is where the checks that
+ * justify it live: a verified session, an owned and published request, and a
+ * donor that the request's own search actually returned. It is built on top of
+ * the public projection rather than replacing it so the two cannot drift and
+ * `phone_masked` stays available for display.
+ */
+export function toRevealedImportedDonor(donor: ImportedDonor): RevealedImportedDonor {
+  return { ...toPublicImportedDonor(donor), phone: donor.phone };
+}
+
+/**
+ * Which set of filterable columns a stored row was written with.
+ *
+ * Bump this whenever a column is added, so the backfill can tell a row it has
+ * already rewritten from one it has not. Testing the column value instead would
+ * loop forever on rows whose value is legitimately empty - a source that
+ * publishes no upazila, for instance.
+ *
+ *   1  id, public_id, blood_group, district, phone, claim_status, source_id
+ *   2  adds upazila
+ */
+export const IMPORTED_ROW_VERSION = '2';
+
 /**
  * Projection stored in LanceDB: filterable columns plus the whole record as
  * JSON. Geography is the vector, matching the live donor partitions; records
@@ -238,9 +272,11 @@ export function toImportedDonorRow(donor: ImportedDonor) {
   return {
     vector: storedDonor.location ? [storedDonor.location.lng, storedDonor.location.lat] : [0, 0],
     id: storedDonor.id,
+    row_version: IMPORTED_ROW_VERSION,
     public_id: storedDonor.public_id,
     blood_group: storedDonor.blood_group,
     district: storedDonor.district,
+    upazila: storedDonor.upazila,
     phone: storedDonor.phone,
     claim_status: storedDonor.claim_status,
     source_id: storedDonor.source.id,

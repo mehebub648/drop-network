@@ -6,7 +6,6 @@ const PUBLIC_SITE_URL = 'https://findadrop.org';
 const metadata: Record<string, [string, string]> = {
   '/': ['Drop Network — Find blood donors in Bangladesh', 'Search opted-in blood donors by blood group and district, then coordinate safely through Drop.'],
   '/requests': ['Live blood requests — Drop Network', 'Browse active verified blood requests across Bangladesh.'],
-  '/request/new': ['Create a blood request — Drop Network', 'Review and publish a complete verified blood request.'],
   '/login': ['Member sign in — Drop Network', 'Sign in to manage your Drop account and view opted-in donor contacts.'],
   '/register': ['Become a donor — Drop Network', 'Join the Bangladesh community blood donor network with a verified phone.'],
   '/forgot-password': ['Reset your password — Drop Network', 'Verify your phone and securely reset your Drop account password.'],
@@ -16,7 +15,7 @@ const metadata: Record<string, [string, string]> = {
   '/partners': ['Verified blood donation partners — Drop Network', 'Browse reviewed hospitals, blood banks, NGOs, and public donation campaigns.'],
   '/privacy': ['Privacy Policy — Drop Network', 'How Drop protects donor, requester, account, and contact information.'],
   '/terms': ['Terms of Use — Drop Network', 'Rules and safety expectations for using Drop responsibly.'],
-  '/directory': ['Find available blood donors — Drop Network', 'Search opted-in, available blood donors without an account. Phone numbers remain hidden until login.'],
+  '/directory': ['Find blood donors near you — Drop Network', 'Search donors by blood group, district and upazila. Numbers stay masked until you say who needs blood.'],
   '/directory/imported': ['Imported donor archive — Drop Network', 'Browse donor entries published by other Bangladesh organisations. Contact details remain masked for everyone.'],
   '/profile': ['My Drop account', 'Manage your donor profile, requests, invitations, history, security, and privacy settings.'],
   '/admin': ['Drop operations workspace', 'Role-aware administration for Drop Network operations.']
@@ -46,7 +45,8 @@ export default function RouteMetadata() {
     setMeta('og:title', title); setMeta('og:description', description); setMeta('og:url', canonicalUrl);
     let robots = document.querySelector('meta[name="robots"]');
     if (!robots) { robots = document.createElement('meta'); robots.setAttribute('name', 'robots'); document.head.appendChild(robots); }
-    const privatePage = pathname.startsWith('/profile') || pathname.startsWith('/admin') || pathname === '/request/new';
+    // A call page carries a revealed contact number, so it must never be indexed.
+    const privatePage = pathname.startsWith('/profile') || pathname.startsWith('/admin') || pathname.startsWith('/directory/call/');
     robots.setAttribute('content', privatePage ? 'noindex, nofollow' : 'index, follow');
     let canonical = document.querySelector('link[rel="canonical"]');
     if (!canonical) { canonical = document.createElement('link'); canonical.setAttribute('rel', 'canonical'); document.head.appendChild(canonical); }

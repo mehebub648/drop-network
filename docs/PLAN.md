@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.50`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.53`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -33,6 +33,10 @@ delivered.
   Rajshahi/Godagari (B+), Rajshahi/Tanore (B+), and Kurigram/Ulipur (A+, B+).
   Roughly 1-3k donors sit behind those caps. Needs a narrower public filter
   than upazila+group, which the form does not currently expose.
+- [ ] **Registered donors created before 0.0.52 have no upazila** and so never
+  appear in upazila search. `/profile/donor` now asks for one, but nothing
+  prompts existing donors to fill it in. Notify them once, rather than letting
+  them quietly drop out of results.
 - [ ] **Quantum donors are mostly unreachable.** Their API reports 58k+ regular
   donors but ignores every paging parameter, so only the ends of each rank list
   can be read (587 records captured). Revisit if they expose paging.
@@ -43,6 +47,28 @@ delivered.
 - [ ] **Directory paging is offset-by-overfetch.** `queryImportedDonors()` in
   `server/db.ts` fetches `offset + limit` rows and slices, because LanceDB has
   no OFFSET. Fine for shallow paging; revisit if deep paging is needed.
+- [ ] **Listed people cannot ask to be removed.** Imported listings can now be
+  called through the reveal flow, but the only route off the list is *claiming*
+  the profile - which means opting in to get out. Add a plain "remove my
+  listing" path that needs no account, and suppress the row from search without
+  deleting the audit trail.
+- [ ] **Repeatedly reported wrong numbers stay searchable.** Call outcomes are
+  recorded in `common_call_reports` but nothing acts on them. Suppress an
+  imported listing after N independent `WRONG_NUMBER` reports from different
+  requesters, so the same dead number is not handed out repeatedly.
+- [ ] **`common_audit_events` is boot-loaded through `getAllFromTable()`** and
+  so inherits the 10,000-row ceiling. The reveal flow works around it by writing
+  one audit row per request rather than per reveal, but the security log itself
+  should move to on-demand querying like `imported_donors` and
+  `common_call_reports`.
+- [ ] **`GET /api/donors/search` is now legacy.** The upazila search at
+  `/api/search/donors` replaced it for users; the radius version survives only
+  because `findDonorMatches()` still backs request publication and invitations.
+  Retire the route once those two call sites are migrated.
+- [ ] **`getCurrentAuth()` linear-scans `sessions` on every request.** The
+  search and call flow is the most request-dense in the app (a reveal plus a
+  report per donor). Not a problem at current scale; index sessions by token
+  before it is.
 - [ ] **In-memory rate limits / runtime cache reset on restart** and are
   per-process; move to a shared store (Redis or the datastore) once a real
   multi-instance deployment exists. Covers the auth/API limiters added in
@@ -77,6 +103,12 @@ These cannot be finished by editing code alone.
 - [ ] **Production hosting & TLS** - provision the deploy target and a
   TLS-terminating reverse proxy for `findadrop.org`. The canonical `APP_URL` is
   configured, but the production session cookie requires a real HTTPS host.
+- [ ] **21 donor accounts stranded in the previous datastore.** `data/lancedb`
+  (the live store, started 2026-07-17) holds 1 user; `data/lancedb-legacy-prod`
+  still holds 21 users, all with donor profiles, plus 11 `donors_*` partitions.
+  Nothing mounts, migrates, or documents that directory. Migrating needs a
+  decision first: those people registered under the earlier deployment, so
+  re-listing them without notice is a consent question, not just a copy.
 - [ ] **CAPTCHA / advanced fraud scoring** - reports, blocking, phone
   verification, moderation roles, and an audit trail now exist, but production
   needs a shared risk provider and operational review procedures.

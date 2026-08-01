@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.50`
+Current version: `0.0.53`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -100,6 +100,10 @@ docker compose --profile development run --rm app-dev npm run import-donors -- -
 `npm run import-donors` normalizes and loads it. Add `--dry-run` to see the
 counts without writing, `--source=<id>` to run one listing, and `--limit=<n>` to
 cap a run.
+
+A valid Bangladesh mobile number is mandatory for an imported listing. Records
+without one are rejected by the importer, and any stored before that rule are
+deleted the first time the directory table is opened.
 
 Imported people never registered here, so `/directory/imported` always serves
 their phone numbers masked, including to signed-in members. Detail and claim

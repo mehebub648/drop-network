@@ -88,11 +88,11 @@ export default function Layout({
             {user ? (
               <>
                 <Link
-                  to="/request/new"
+                  to="/directory"
                   className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white shadow-sm shadow-rose-900/20 transition-colors hover:bg-primary-dark"
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
-                  Post a request
+                  Find blood
                 </Link>
                 <NavLink
                   to="/profile"
@@ -174,11 +174,11 @@ export default function Layout({
               {user ? (
                 <>
                   <Link
-                    to="/request/new"
+                    to="/directory"
                     className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white"
                   >
                     <Plus className="h-4 w-4" aria-hidden="true" />
-                    Post a request
+                    Find blood
                   </Link>
                   <Link
                     to="/profile"

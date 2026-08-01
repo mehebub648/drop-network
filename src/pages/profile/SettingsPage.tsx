@@ -56,7 +56,7 @@ export default function SettingsPage({ user }: { user: ProfileUser }) {
 
           <section className="pt-5 border-t border-slate-100">
             <h3 className="font-extrabold flex items-center gap-2"><LockKeyhole className="w-5 h-5 text-primary" /> Privacy</h3>
-            <p className="text-sm text-slate-500 mt-2">Your phone stays off public search results. Signed-in members can see it only while your registered donor profile is opted in and available. Imported listings remain masked for everyone, and request contacts are limited to the owner and accepted donors. See the Privacy Policy for the full current behavior.</p>
+            <p className="text-sm text-slate-500 mt-2">Your phone is masked in search results. It opens only while your donor profile is opted in and available, one requester at a time, to someone who has published a blood request in your upazila - and every reveal is recorded. Request contacts stay limited to the owner and accepted donors. See the Privacy Policy for the full current behavior.</p>
           </section>
         </div>
 
