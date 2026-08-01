@@ -34,10 +34,10 @@ export default function DonorResultCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-lg font-extrabold text-slate-950">{donor.name}</h3>
-            {donor.is_verified && (
+            {donor.donor_kind === 'REGISTERED' && (
               <span className="inline-flex min-h-7 items-center gap-1 rounded-full bg-emerald-50 px-2.5 text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">
                 <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                Verified
+                Registered donor
               </span>
             )}
             {!donor.is_exact_group && (

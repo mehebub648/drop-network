@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -6,18 +6,22 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
-  Droplet,
   HeartHandshake,
   LockKeyhole,
-  MapPin,
   Search,
   ShieldCheck,
   Sparkles,
   Users
 } from 'lucide-react';
 import { api } from '../lib/api';
-import { BLOOD_GROUPS, DONATION_INTERVAL_DAYS } from '../lib/blood';
-import { BD_LOCATION_NAMES } from '../lib/locations';
+import { DONATION_INTERVAL_DAYS } from '../lib/blood';
+import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
+import {
+  readSearchDraft,
+  writeSearchDraft,
+  type RequesterRole,
+  type SearchDraft
+} from '../lib/searchDraft';
 
 type NetworkStats = {
   /** Registered donor profiles plus unclaimed directory listings; null if the directory is unreadable. */
@@ -48,8 +52,7 @@ const steps = [
 ];
 
 export default function LandingPage({ user }: { user: any }) {
-  const [bloodGroup, setBloodGroup] = useState('O+');
-  const [district, setDistrict] = useState('Dhaka');
+  const [draft, setDraft] = useState<SearchDraft>(() => readSearchDraft());
   const [stats, setStats] = useState<NetworkStats | null>(null);
   const navigate = useNavigate();
 
@@ -57,11 +60,26 @@ export default function LandingPage({ user }: { user: any }) {
     api.getStats().then(setStats).catch(() => setStats(null));
   }, []);
 
-  const search = (event: FormEvent) => {
-    event.preventDefault();
+  const criteria: Criteria = {
+    blood_group: draft.blood_group,
+    district: draft.district,
+    upazila: draft.upazila,
+    collection_facility: draft.collection_facility,
+    requester_role: draft.requester_role as RequesterRole | ''
+  };
+
+  const updateCriteria = (next: Criteria) => {
+    const updated = { ...draft, ...next, request_id: undefined };
+    setDraft(updated);
+    writeSearchDraft(updated);
+  };
+
+  const search = () => {
+    writeSearchDraft(draft);
     const query = new URLSearchParams({
-      blood_group: bloodGroup,
-      district
+      blood_group: draft.blood_group,
+      district: draft.district,
+      upazila: draft.upazila
     });
     navigate(`/directory?${query.toString()}`);
   };
@@ -119,69 +137,18 @@ export default function LandingPage({ user }: { user: any }) {
             </div>
           </div>
 
-          <form
-            id="donor-search"
-            onSubmit={search}
-            className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-[0_22px_55px_-34px_rgba(15,23,42,0.5)] sm:p-7"
-          >
-            <div className="flex items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-700">
-                <Droplet className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="font-extrabold text-slate-950">Search live donor availability</p>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
-                  These are registered members who chose to be searchable.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold text-slate-700">Blood group</span>
-                <span className="relative block">
-                  <Droplet className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-red-600" aria-hidden="true" />
-                  <select
-                    value={bloodGroup}
-                    onChange={event => setBloodGroup(event.target.value)}
-                    className="input appearance-none pl-11 pr-10"
-                  >
-                    {BLOOD_GROUPS.map(group => (
-                      <option key={group} value={group}>{group}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-                </span>
-              </label>
-
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold text-slate-700">District</span>
-                <span className="relative block">
-                  <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700" aria-hidden="true" />
-                  <select
-                    value={district}
-                    onChange={event => setDistrict(event.target.value)}
-                    className="input appearance-none pl-11 pr-10"
-                  >
-                    {BD_LOCATION_NAMES.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-                </span>
-              </label>
-            </div>
-
-            <button type="submit" className="primary-button mt-5">
-              <Search className="h-5 w-5" aria-hidden="true" />
-              Search donors
-            </button>
-            <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500">
+          <div id="donor-search" className="scroll-mt-28">
+            <SearchCriteriaForm
+              value={criteria}
+              onChange={updateCriteria}
+              onSubmit={search}
+            />
+            <p className="mt-3 flex items-start gap-2 px-1 text-xs leading-5 text-slate-500">
               <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
-              Search works without signing in. Phone numbers stay hidden until an authenticated member views
-              an opted-in donor.
+              Search works without signing in. Registered donors appear first, and every phone number stays
+              hidden until the protected request workflow opens one.
             </p>
-          </form>
+          </div>
         </div>
       </section>
 

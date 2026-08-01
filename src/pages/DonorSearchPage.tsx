@@ -199,7 +199,7 @@ export default function DonorSearchPage({
               <p className="mt-2 text-sm font-medium text-slate-600">
                 {results.totals.registered} registered member{results.totals.registered === 1 ? '' : 's'} and{' '}
                 {results.totals.directory} public listing{results.totals.directory === 1 ? '' : 's'}.
-                Compatible blood groups are included and marked.
+                Registered donors appear first; registration and compatible blood groups are marked on every card.
               </p>
             )}
           </div>

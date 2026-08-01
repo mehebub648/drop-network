@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.53`
+Current application version: `0.0.54`
 
 ## Overview
 
@@ -76,8 +76,10 @@ Entry points:
 
 Routes:
 
-- `/` is a search-led landing page with public donor filters, network context,
-  privacy explanations, request preparation, safety guidance, and FAQs.
+- `/` is a search-led landing page with the complete blood group, district,
+  upazila, collection-facility, and requester-role flow. It persists that
+  guided draft into `/directory`, alongside network context, privacy
+  explanations, request preparation, safety guidance, and FAQs.
 - `/requests` lists bounded pages of public blood requests with server-side
   blood-group/district/urgency filters persisted in the URL and makes the
   collection facility visible on each request card.
@@ -235,7 +237,9 @@ API routes:
   totals, contact_access: 'masked' }`: registered members who opted in, then
   public directory listings to fill the page. Compatible blood groups are
   included, with the patient's exact group ranked first and registered members
-  ranked above listings.
+  ranked above listings. Result cards explicitly identify registered donors;
+  imported cards retain their source attribution and state that they are not
+  registered with Drop.
 - `POST /api/search/requests` creates and publishes in one step, because the
   flow has a single submit. It requires explicit consent, resolves the district
   server-side rather than trusting client coordinates, and takes the requester's

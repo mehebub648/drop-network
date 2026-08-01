@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.53`
+Current version: `0.0.54`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -52,10 +52,11 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   unconfigured OTP channel prints the code to protected server logs; production
   requires the complete provider-neutral HTTP SMS gateway settings documented
   in `.env.example` and never falls back to console delivery.
-- `/directory` lets anyone search registered donors by blood group and district.
-  Results include only verified, eligible members who explicitly marked
-  themselves available. Guests never receive phone numbers; signed-in active
-  members can view those opted-in donor contacts.
+- The complete donor search starts on `/`: blood group, district, upazila,
+  collection facility, and requester role carry into `/directory`. Registered,
+  opted-in donors are ranked first and explicitly labelled before attributed
+  public listings. Every result stays masked until the protected request and
+  one-at-a-time reveal workflow opens a contact.
 - Creating a public request requires a verified account, the exact blood
   collection facility and address, patient-reference details, a future required
   time, a verified contact, and explicit review/consent before publication.
