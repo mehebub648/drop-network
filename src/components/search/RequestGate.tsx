@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { HeartPulse, ShieldCheck, X } from 'lucide-react';
+import DonationExperienceFields from '../DonationExperienceFields';
 import { api } from '../../lib/api';
 import { BLOOD_GROUPS } from '../../lib/blood';
+import {
+  donationExperienceDraft,
+  donationExperiencePayload,
+  validateDonationExperience,
+  type DonationExperienceDraft
+} from '../../lib/donation';
 import { getLocationByName } from '../../lib/locations';
 import { getUpazilasForDistrict } from '../../lib/upazilas';
 import type { NeededWindow, SearchDraft } from '../../lib/searchDraft';
@@ -49,7 +56,7 @@ export default function RequestGate({
   const [accountName, setAccountName] = useState('');
   const [donorGroup, setDonorGroup] = useState('');
   const [donorUpazila, setDonorUpazila] = useState('');
-  const [lastDonation, setLastDonation] = useState('');
+  const [donationExperience, setDonationExperience] = useState<DonationExperienceDraft>(() => donationExperienceDraft());
   const [donorAge, setDonorAge] = useState('');
   const [donorWeight, setDonorWeight] = useState('');
   const [consent, setConsent] = useState(false);
@@ -126,8 +133,11 @@ export default function RequestGate({
 
   const completeSignup = (event: FormEvent) => {
     event.preventDefault();
+    const donationError = donorGroup ? validateDonationExperience(donationExperience) : null;
+    if (donationError) return setError(donationError);
     void run(async () => {
       const location = donorGroup ? getLocationByName(draft.district) : null;
+      const donationDetails = donorGroup ? donationExperiencePayload(donationExperience) : {};
       await api.register(
         phone,
         name,
@@ -137,9 +147,9 @@ export default function RequestGate({
         location || undefined,
         {
           upazila: donorGroup && donorUpazila ? donorUpazila : undefined,
-          age: donorAge ? Number(donorAge) : undefined,
-          weight_kg: donorWeight ? Number(donorWeight) : undefined,
-          last_donation_date: lastDonation || undefined
+          age: donorGroup && donorAge ? Number(donorAge) : undefined,
+          weight_kg: donorGroup && donorWeight ? Number(donorWeight) : undefined,
+          ...donationDetails
         }
       );
       await onReady();
@@ -331,25 +341,32 @@ export default function RequestGate({
                   {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
                 </select>
               </label>
-              <label className="dialog-field">
-                <span>Your upazila (optional)</span>
-                <select value={donorUpazila} onChange={event => setDonorUpazila(event.target.value)} className="input" disabled={!donorGroup}>
-                  <option value="">Not set</option>
-                  {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </label>
-              <label className="dialog-field">
-                <span>Last donation date (optional)</span>
-                <input type="date" max={new Date().toISOString().slice(0, 10)} value={lastDonation} onChange={event => setLastDonation(event.target.value)} className="input" />
-              </label>
-              <label className="dialog-field">
-                <span>Your age (optional)</span>
-                <input type="number" inputMode="numeric" min={16} max={70} value={donorAge} onChange={event => setDonorAge(event.target.value)} className="input" />
-              </label>
-              <label className="dialog-field sm:col-span-2">
-                <span>Your weight in kg (optional)</span>
-                <input type="number" inputMode="numeric" min={30} max={200} value={donorWeight} onChange={event => setDonorWeight(event.target.value)} className="input" />
-              </label>
+              {donorGroup && (
+                <>
+                  <label className="dialog-field">
+                    <span>Your upazila (optional)</span>
+                    <select value={donorUpazila} onChange={event => setDonorUpazila(event.target.value)} className="input">
+                      <option value="">Not set</option>
+                      {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="dialog-field">
+                    <span>Your age (optional)</span>
+                    <input type="number" inputMode="numeric" min={16} max={70} value={donorAge} onChange={event => setDonorAge(event.target.value)} className="input" />
+                  </label>
+                  <label className="dialog-field sm:col-span-2">
+                    <span>Your weight in kg (optional)</span>
+                    <input type="number" inputMode="numeric" min={30} max={200} value={donorWeight} onChange={event => setDonorWeight(event.target.value)} className="input" />
+                  </label>
+                  <DonationExperienceFields
+                    idPrefix="request-signup"
+                    value={donationExperience}
+                    onChange={setDonationExperience}
+                    optional
+                    className="mt-4 sm:col-span-2"
+                  />
+                </>
+              )}
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-500">
               Giving your blood group does not put you on the donor list. You stay unlisted until you

@@ -25,6 +25,14 @@ import {
   rankDonorResults
 } from './donorSearch';
 import { canAssignStaffRole, canEditMember, canManageMember, capabilitiesFor, hasCapability, isStaffRole, legacyStaffRole, type AdminCapability, type StaffRole } from './adminPolicy';
+import {
+  canonicalLastDonationDate,
+  createPublicDonationSummary,
+  parseDonationCount,
+  parseLastDonationDeclaration,
+  type LastDonationDeclaration,
+  type PublicDonationSummary
+} from './donation';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -140,7 +148,11 @@ type AvailabilityHistoryEntry = {
 
 type DonorProfile = {
   blood_group: string;
+  /** Structured self-report; legacy profiles may have only last_donation_date. */
+  last_donation?: LastDonationDeclaration;
   last_donation_date?: string;
+  /** Self-reported lifetime count. Never inferred from detailed history alone. */
+  donation_count?: number;
   location: { lat: number, lng: number, area_name: string };
   /**
    * Upazila/thana within `location.area_name`. Optional because profiles
@@ -477,6 +489,79 @@ function parseDonationHistory(value: unknown) {
   return records;
 }
 
+function latestDonationHistoryDate(records: DonationRecord[]) {
+  return records.map(record => record.date).sort().pop();
+}
+
+/**
+ * Reconciles the structured self-report, legacy eligibility date, lifetime
+ * count, and private exact-date history into one internally consistent update.
+ */
+function resolveDonationDetails(
+  body: Record<string, unknown>,
+  existingProfile: DonorProfile | undefined,
+  donationHistory: DonationRecord[],
+  now = new Date()
+): { value: Pick<DonorProfile, 'last_donation' | 'last_donation_date' | 'donation_count'> } | { error: string } {
+  const parsedDeclaration = parseLastDonationDeclaration(body.last_donation, now);
+  if (parsedDeclaration === null) return { error: 'Choose an exact date, an approximate time, or never donated' };
+
+  const legacyInput = parseDate(body.last_donation_date);
+  if (legacyInput === null || (legacyInput && new Date(legacyInput).getTime() > now.getTime())) {
+    return { error: 'Last donation date must be valid and not in the future' };
+  }
+
+  let declaration = parsedDeclaration !== undefined
+    ? parsedDeclaration
+    : existingProfile?.last_donation;
+  const legacyDate = legacyInput?.slice(0, 10) || existingProfile?.last_donation_date?.slice(0, 10);
+  if (!declaration && legacyDate) {
+    declaration = { kind: 'EXACT', date: legacyDate, reported_at: now.toISOString() };
+  }
+
+  const parsedCount = parseDonationCount(body.donation_count, declaration, donationHistory.length);
+  if (parsedCount === null) {
+    return { error: 'Donation count must match the donation timing and cannot be below saved history' };
+  }
+  let donationCount = parsedCount !== undefined ? parsedCount : existingProfile?.donation_count;
+
+  if (declaration?.kind === 'NEVER') {
+    if (donationHistory.length > 0) {
+      return { error: 'Remove saved donation records before choosing never donated' };
+    }
+    donationCount = donationCount ?? 0;
+  }
+
+  if (parsedDeclaration && parsedDeclaration.kind !== 'NEVER' && donationCount === undefined) {
+    return { error: 'Enter how many times you have donated' };
+  }
+  if (donationCount !== undefined && parseDonationCount(donationCount, declaration, donationHistory.length) === null) {
+    return { error: 'Donation count must match the donation timing and cannot be below saved history' };
+  }
+  if (donationCount !== undefined && !declaration && !legacyDate && donationHistory.length === 0) {
+    return { error: 'Choose when you last donated before entering a donation count' };
+  }
+
+  const historyDate = latestDonationHistoryDate(donationHistory);
+  const declaredDate = canonicalLastDonationDate(declaration);
+  if (historyDate) {
+    if (declaration?.kind === 'NEVER') {
+      return { error: 'Never donated cannot be combined with saved donation records' };
+    }
+    if (!declaredDate || historyDate > declaredDate) {
+      declaration = { kind: 'EXACT', date: historyDate, reported_at: now.toISOString() };
+    }
+  }
+
+  return {
+    value: {
+      last_donation: declaration,
+      last_donation_date: canonicalLastDonationDate(declaration),
+      donation_count: donationCount
+    }
+  };
+}
+
 function validationError(res: express.Response, message: string) {
   return res.status(400).json({ error: message });
 }
@@ -654,6 +739,8 @@ type DonorCard = {
   has_phone: boolean;
   is_verified?: boolean;
   availability_status?: string;
+  /** Public, bounded self-report. Detailed history and organizations stay private. */
+  donation_summary?: PublicDonationSummary;
   /** Attribution for an imported listing; absent for registered members. */
   source?: { organization: string; url: string };
 };
@@ -668,6 +755,11 @@ export function importedDonorRef(publicId: string) {
 
 function registeredDonorCard(user: User, exactGroup: string): DonorCard {
   const profile = user.donor_profile!;
+  const donationSummary = createPublicDonationSummary(
+    profile.last_donation,
+    profile.donation_count,
+    profile.last_donation_date
+  );
   return {
     donor_ref: registeredDonorRef(user.id),
     donor_kind: 'REGISTERED',
@@ -679,7 +771,8 @@ function registeredDonorCard(user: User, exactGroup: string): DonorCard {
     phone_masked: maskPhone(user.phone),
     has_phone: Boolean(user.phone),
     is_verified: Boolean(user.is_verified),
-    availability_status: profile.availability_status
+    availability_status: profile.availability_status,
+    ...(donationSummary ? { donation_summary: donationSummary } : {})
   };
 }
 
@@ -1245,7 +1338,11 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   const upazila = location ? parseUpazila(location.area_name, req.body?.upazila) : undefined;
   const age = parseOptionalInteger(req.body?.age, 16, 70);
   const weight_kg = parseOptionalInteger(req.body?.weight_kg, 30, 200);
-  const last_donation_date = parseDate(req.body?.last_donation_date);
+  const donationDetails = resolveDonationDetails(
+    isPlainObject(req.body) ? req.body : {},
+    undefined,
+    []
+  );
 
   if (!phone || !name || !password) return validationError(res, 'Phone, name, and password are required');
   if (!challenge) return res.status(403).json({ error: 'Verify this phone before registering' });
@@ -1256,10 +1353,10 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
   if (age === null) return validationError(res, 'Age must be between 16 and 70');
   if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
-  if (last_donation_date === null) return validationError(res, 'Valid last donation date is required');
-  if (last_donation_date && new Date(last_donation_date).getTime() > Date.now()) {
-    return validationError(res, 'Last donation date cannot be in the future');
-  }
+  if ('error' in donationDetails) return validationError(res, donationDetails.error);
+  const hasDonationInput = ['last_donation', 'last_donation_date', 'donation_count']
+    .some(field => req.body?.[field] !== undefined && req.body?.[field] !== '');
+  if (hasDonationInput && !blood_group) return validationError(res, 'Donation details require a donor blood group');
 
   if (users.find(u => u.phone === phone)) {
     return res.status(400).json({ error: 'Phone already registered' });
@@ -1288,7 +1385,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       ...(upazila ? { upazila } : {}),
       ...(age ? { age } : {}),
       ...(weight_kg ? { weight_kg } : {}),
-      ...(last_donation_date ? { last_donation_date } : {}),
+      ...(donationDetails.value.last_donation ? { last_donation: donationDetails.value.last_donation } : {}),
+      ...(donationDetails.value.last_donation_date ? { last_donation_date: donationDetails.value.last_donation_date } : {}),
+      ...(donationDetails.value.donation_count !== undefined ? { donation_count: donationDetails.value.donation_count } : {}),
       availability_status: 'NOT_AVAILABLE',
       deferral_status: 'NONE',
       availability_history: [{ status: 'NOT_AVAILABLE', changed_at: new Date().toISOString() }]
@@ -1503,13 +1602,19 @@ app.post('/api/me/donor-profile', async (req, res) => {
   const blood_group = req.body?.blood_group;
   const availability_status = req.body?.availability_status;
   const location = parseLocation(req.body?.location);
-  const last_donation_date = parseDate(req.body?.last_donation_date);
   const donation_history = parseDonationHistory(req.body?.donation_history);
   const deferral_status = req.body?.deferral_status || 'NONE';
   const deferred_until = parseDate(req.body?.deferred_until);
   const upazila = location ? parseUpazila(location.area_name, req.body?.upazila) : undefined;
   const age = parseOptionalInteger(req.body?.age, 16, 70);
   const weight_kg = parseOptionalInteger(req.body?.weight_kg, 30, 200);
+  const existingProfile = auth.user.donor_profile;
+  const resolvedHistory = donation_history || existingProfile?.donation_history || [];
+  const donationDetails = resolveDonationDetails(
+    isPlainObject(req.body) ? req.body : {},
+    existingProfile,
+    resolvedHistory
+  );
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (!isOneOf(availability_status, AVAILABILITY_STATUSES)) return validationError(res, 'Valid availability status is required');
@@ -1517,15 +1622,13 @@ app.post('/api/me/donor-profile', async (req, res) => {
   if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
   if (age === null) return validationError(res, 'Age must be between 16 and 70');
   if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
-  if (last_donation_date === null) return validationError(res, 'Valid last donation date is required');
-  if (last_donation_date && new Date(last_donation_date).getTime() > Date.now()) return validationError(res, 'Last donation date cannot be in the future');
   if (donation_history === null) return validationError(res, 'Valid donation history is required');
+  if ('error' in donationDetails) return validationError(res, donationDetails.error);
   if (!isOneOf(deferral_status, DEFERRAL_STATUSES)) return validationError(res, 'Valid deferral status is required');
   if (deferred_until === null || (deferral_status === 'TEMPORARY' && !deferred_until)) return validationError(res, 'Temporary deferral needs an end date');
 
   const userIndex = users.findIndex(u => u.id === auth.user.id);
   if (userIndex !== -1) {
-    const existingProfile = users[userIndex].donor_profile;
     // An upazila only means anything inside its own district, so moving
     // district drops a stale one rather than carrying it across.
     const keptUpazila = existingProfile?.location.area_name === location.area_name
@@ -1543,11 +1646,13 @@ app.post('/api/me/donor-profile', async (req, res) => {
       upazila: upazila ?? keptUpazila,
       age: age ?? existingProfile?.age,
       weight_kg: weight_kg ?? existingProfile?.weight_kg,
-      ...(last_donation_date ? { last_donation_date } : { last_donation_date: undefined }),
+      last_donation: donationDetails.value.last_donation,
+      last_donation_date: donationDetails.value.last_donation_date,
+      donation_count: donationDetails.value.donation_count,
       deferral_status,
       deferred_until,
       availability_confirmed_at: availability_status === 'AVAILABLE' ? new Date().toISOString() : existingProfile?.availability_confirmed_at,
-      donation_history: donation_history || existingProfile?.donation_history || [],
+      donation_history: resolvedHistory,
       availability_history: availabilityHistory.slice(-50)
     };
     await saveToTable('common_users', users[userIndex]);
@@ -2058,7 +2163,12 @@ app.post('/api/requests/:id/donor-reports', async (req, res) => {
       return validationError(res, 'Valid last donation date is required');
     }
     if (donatedOn) {
-      auth.user.donor_profile.last_donation_date = donatedOn.slice(0, 10);
+      const date = donatedOn.slice(0, 10);
+      auth.user.donor_profile.last_donation = { kind: 'EXACT', date, reported_at: now };
+      auth.user.donor_profile.last_donation_date = date;
+      if (auth.user.donor_profile.donation_count === undefined) {
+        auth.user.donor_profile.donation_count = Math.max(1, auth.user.donor_profile.donation_history?.length || 0);
+      }
       await saveToTable('common_users', auth.user);
       await removeDonorFromAllPartitions(auth.user.id);
     }
@@ -2270,11 +2380,18 @@ app.post('/api/responses/:id/confirm-donation', async (req, res) => {
     const request = requests.find(item => item.id === response.request_id);
     if (donor?.donor_profile && request) {
       const date = response.requester_confirmed_at.slice(0, 10);
+      const previousHistory = donor.donor_profile.donation_history || [];
+      donor.donor_profile.last_donation = {
+        kind: 'EXACT', date, reported_at: response.requester_confirmed_at
+      };
       donor.donor_profile.last_donation_date = date;
       donor.donor_profile.availability_status = 'NOT_AVAILABLE';
-      donor.donor_profile.donation_history = [...(donor.donor_profile.donation_history || []), {
+      donor.donor_profile.donation_history = [...previousHistory, {
         id: response.id, date, organization: request.hospital_name || 'Receiving hospital'
       }];
+      donor.donor_profile.donation_count = donor.donor_profile.donation_count === undefined
+        ? donor.donor_profile.donation_history.length
+        : Math.max(donor.donor_profile.donation_count + 1, donor.donor_profile.donation_history.length);
       await saveToTable('common_users', donor);
       await removeDonorFromAllPartitions(donor.id);
       await recomputeRequestProgress(request);

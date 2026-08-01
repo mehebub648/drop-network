@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.54`
+Current application version: `0.0.55`
 
 ## Overview
 
@@ -52,6 +52,9 @@ Entry points:
   carries the patient details and the inline sign-in.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
+- `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
+  the exact/approximate/never-donated form model between registration and donor
+  profile editing. The server remains authoritative for dates and validation.
 - `src/components/` contains shared layout, authentication shell,
   error-boundary, metadata, and status UI.
 - The shared layout supplies the site header and institutional footer. The
@@ -115,9 +118,11 @@ Routes:
 - `/profile/account` edits the member name and phone and shows joined and
   verification information.
 - `/profile/donor` manages blood group, district, upazila, availability,
-  eligibility, and recent availability history, plus a self-declared age and
-  weight that deliberately do not affect eligibility. Without an upazila a donor
-  does not appear in upazila search, and the form says so.
+  eligibility, recent availability history, and a self-reported donation
+  summary: exact date, approximate days/months/years ago, or never donated,
+  together with a lifetime count. Self-declared age and weight deliberately do
+  not affect eligibility. Without an upazila a donor does not appear in upazila
+  search, and the form says so.
 - `/profile/requests` filters and updates requests owned by the member.
 - `/profile/invitations` manages private invitations, donor responses, mutual
   donation confirmation, purpose-limited contacts, and in-app notifications.
@@ -196,7 +201,8 @@ Security middleware:
 Main data types:
 
 - `User`
-- `DonorProfile`, including donation and availability history
+- `DonorProfile`, including a structured last-donation declaration, lifetime
+  donation count, private detailed donation history, and availability history
 - `RecipientProfile`
 - `BloodRequest`
 - `Comment`
@@ -278,8 +284,9 @@ API routes:
   removes donor/private patient data, cancels active requests, revokes sessions,
   and anonymizes records retained for coordination and safety auditing.
 - `GET /api/me/requests` returns requests owned by the current user.
-- `POST /api/me/donor-profile` updates donor profile and donation-history
-  data, rejects future donation dates, records availability changes, and
+- `POST /api/me/donor-profile` updates donor profile and donation-history data,
+  validates exact/approximate/never declarations and lifetime counts, derives a
+  canonical eligibility date on the server, records availability changes, and
   refreshes donor partitions.
 - `POST /api/requests` creates a complete private draft for a verified owner;
   `POST /api/requests/:id/publish` records consent and activates it.
@@ -474,7 +481,10 @@ docker compose --profile development run --rm app-dev npm run import-donors -- -
 Public donor discovery and request matching share authoritative user safety
 state. Public `/directory` discovery returns only eligible, opted-in,
 `AVAILABLE` registered donors; the optional session controls whether the phone
-field is present. Request matching is compatibility-aware: a request for group
+field is present. Registered results can include the donor's bounded
+self-reported last-donation summary and lifetime count; detailed records and
+organization names are never projected into search. Request matching is
+compatibility-aware: a request for group
 G searches every donor group medically compatible with G (e.g. an A+ request
 also searches A-, O+, and O- donors). Both flows:
 

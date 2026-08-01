@@ -1,3 +1,5 @@
+import type { LastDonationInput, PublicDonationSummary } from './donation';
+
 const API_BASE = '/api';
 
 // Create or retrieve browser fingerprint. The server rejects fingerprints
@@ -50,6 +52,7 @@ export type SearchDonorCard = {
   has_phone: boolean;
   is_verified?: boolean;
   availability_status?: string;
+  donation_summary?: PublicDonationSummary;
   source?: { organization: string; url: string };
 };
 
@@ -108,7 +111,13 @@ export const api = {
     verificationToken: string,
     blood_group?: string,
     location?: { lat: number; lng: number; area_name: string },
-    donorDetails: { upazila?: string; age?: number; weight_kg?: number; last_donation_date?: string } = {}
+    donorDetails: {
+      upazila?: string;
+      age?: number;
+      weight_kg?: number;
+      last_donation?: LastDonationInput;
+      donation_count?: number;
+    } = {}
   ) {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',

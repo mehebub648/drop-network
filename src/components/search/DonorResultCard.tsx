@@ -1,5 +1,6 @@
-import { CheckCircle2, LockKeyhole, MapPin, Phone, ShieldCheck } from 'lucide-react';
+import { CalendarDays, CheckCircle2, LockKeyhole, MapPin, Phone, ShieldCheck } from 'lucide-react';
 import type { SearchDonorCard } from '../../lib/api';
+import type { PublicDonationSummary } from '../../lib/donation';
 
 function availabilityLabel(status?: string) {
   if (!status) return null;
@@ -8,6 +9,20 @@ function availabilityLabel(status?: string) {
     .split('_')
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function donationSummaryLabel(summary: PublicDonationSummary) {
+  if (summary.kind === 'NEVER') return 'Never donated blood';
+  if (summary.kind === 'APPROXIMATE') {
+    const pluralUnit = summary.unit.toLowerCase();
+    const unit = summary.value === 1 ? pluralUnit.slice(0, -1) : pluralUnit;
+    return `Last donated about ${summary.value.toLocaleString()} ${unit} ago`;
+  }
+  const date = new Date(`${summary.date}T00:00:00`);
+  const label = Number.isNaN(date.getTime())
+    ? summary.date
+    : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return `Last donated ${label}`;
 }
 
 /**
@@ -24,6 +39,7 @@ export default function DonorResultCard({
   busy?: boolean;
 }) {
   const availability = availabilityLabel(donor.availability_status);
+  const donationSummary = donor.donor_kind === 'REGISTERED' ? donor.donation_summary : undefined;
 
   return (
     <article className="theme-card flex h-full flex-col p-5 sm:p-6">
@@ -66,6 +82,23 @@ export default function DonorResultCard({
           )}
         </div>
       </div>
+
+      {donationSummary && (
+        <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
+          <p className="text-[11px] font-extrabold uppercase tracking-wide text-emerald-800">Self-reported donation history</p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-700">
+            <span className="inline-flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
+              {donationSummaryLabel(donationSummary)}
+            </span>
+            {donationSummary.donation_count !== undefined && (
+              <span>
+                {donationSummary.donation_count.toLocaleString()} total donation{donationSummary.donation_count === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mt-5 flex min-h-20 flex-1 flex-col justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="flex items-center gap-2 font-semibold tabular-nums text-slate-700">

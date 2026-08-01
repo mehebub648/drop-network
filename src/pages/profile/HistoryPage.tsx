@@ -22,12 +22,23 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
 
   const persist = async (next: DonationRecord[], success: string) => {
     const latestRecordDate = next.map(record => record.date).sort().pop();
+    const knownLifetimeCount = user.donor_profile?.donation_count;
+    const donationCount = Math.max(knownLifetimeCount ?? 0, next.length);
     setSaving(true);
     setMessage(null);
     try {
       await api.updateDonorProfile(donorProfilePayload(user, {
         donation_history: next,
-        last_donation_date: latestRecordDate || user.donor_profile?.last_donation_date
+        // A remaining detailed record is an exact self-declared date. When the
+        // final detail is deleted, preserve the separately known summary and
+        // lifetime count instead of pretending the donor never donated.
+        ...(latestRecordDate ? {
+          last_donation: { kind: 'EXACT', date: latestRecordDate },
+          last_donation_date: latestRecordDate,
+          donation_count: Math.max(1, donationCount)
+        } : {
+          donation_count: knownLifetimeCount
+        })
       }));
       setRecords(next);
       await onUpdate();
@@ -84,7 +95,7 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
       <div className="theme-card border border-slate-100 p-6">
         <div className="flex items-center justify-between">
           <h2 className="font-extrabold flex items-center gap-2"><Calendar className="w-5 h-5 text-primary" /> Past donations</h2>
-          <span className="text-sm font-bold text-slate-400">{records.length} total</span>
+          <span className="text-sm font-bold text-slate-400">{records.length} detailed record{records.length === 1 ? '' : 's'}</span>
         </div>
         {records.length === 0 ? (
           <p className="py-10 text-center text-slate-500">No donation records yet.</p>

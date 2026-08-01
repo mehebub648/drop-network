@@ -1,3 +1,5 @@
+import type { LastDonationDeclaration, LastDonationInput } from '../../lib/donation';
+
 export type AvailabilityStatus = 'AVAILABLE' | 'SICK' | 'TRAVELING' | 'NOT_AVAILABLE';
 
 export type DonationRecord = {
@@ -13,6 +15,9 @@ export type AvailabilityHistoryEntry = {
 
 export type DonorProfileData = {
   blood_group: string;
+  last_donation?: LastDonationDeclaration;
+  donation_count?: number;
+  /** Legacy normalized value retained for eligibility and older profiles. */
   last_donation_date?: string;
   location: { lat: number; lng: number; area_name: string };
   /** Upazila within `location.area_name`; required to appear in donor search. */
@@ -26,6 +31,10 @@ export type DonorProfileData = {
   deferred_until?: string;
   donation_history?: DonationRecord[];
   availability_history?: AvailabilityHistoryEntry[];
+};
+
+export type DonorProfilePayload = Omit<DonorProfileData, 'last_donation'> & {
+  last_donation?: LastDonationDeclaration | LastDonationInput;
 };
 
 export type ProfileUser = {

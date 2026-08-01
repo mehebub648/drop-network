@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { CheckCircle2, Clock, HeartPulse, Save } from 'lucide-react';
+import DonationExperienceFields from '../../components/DonationExperienceFields';
 import { api } from '../../lib/api';
 import { BLOOD_GROUPS, DONATION_INTERVAL_DAYS, getEligibility } from '../../lib/blood';
+import {
+  canonicalLastDonationDate,
+  donationExperienceDraft,
+  donationExperiencePayload,
+  validateDonationExperience,
+  type DonationExperienceDraft
+} from '../../lib/donation';
 import { BD_LOCATION_NAMES, getLocationByName } from '../../lib/locations';
 import { getUpazilasForDistrict } from '../../lib/upazilas';
 import { cn } from '../../lib/utils';
@@ -22,6 +30,11 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   const [age, setAge] = useState(user.donor_profile?.age ? String(user.donor_profile.age) : '');
   const [weight, setWeight] = useState(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
   const [status, setStatus] = useState<AvailabilityStatus>(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
+  const [donationExperience, setDonationExperience] = useState<DonationExperienceDraft>(() => donationExperienceDraft(
+    user.donor_profile?.last_donation,
+    user.donor_profile?.last_donation_date,
+    user.donor_profile?.donation_count
+  ));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -32,11 +45,17 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     setAge(user.donor_profile?.age ? String(user.donor_profile.age) : '');
     setWeight(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
     setStatus(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
+    setDonationExperience(donationExperienceDraft(
+      user.donor_profile?.last_donation,
+      user.donor_profile?.last_donation_date,
+      user.donor_profile?.donation_count
+    ));
   }, [user]);
 
   const upazilas = useMemo(() => getUpazilasForDistrict(district), [district]);
 
   const latestDonation = useMemo(() => [
+    canonicalLastDonationDate(user.donor_profile?.last_donation),
     user.donor_profile?.last_donation_date,
     ...(user.donor_profile?.donation_history || []).map(record => record.date)
   ].filter(Boolean).sort().pop(), [user]);
@@ -46,6 +65,11 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     event.preventDefault();
     const location = getLocationByName(district);
     if (!location) return setMessage({ type: 'error', text: 'Choose a supported district.' });
+    const donationError = validateDonationExperience(
+      donationExperience,
+      user.donor_profile?.donation_history?.length || 0
+    );
+    if (donationError) return setMessage({ type: 'error', text: donationError });
     setSaving(true);
     setMessage(null);
     try {
@@ -55,7 +79,8 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
         upazila: upazila || undefined,
         age: age ? Number(age) : undefined,
         weight_kg: weight ? Number(weight) : undefined,
-        availability_status: status
+        availability_status: status,
+        ...donationExperiencePayload(donationExperience)
       }));
       await onUpdate();
       setMessage({ type: 'success', text: 'Donor profile updated.' });
@@ -128,6 +153,18 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </div>
           <p className="sm:col-span-2 -mt-2 text-xs text-slate-500">
             Age and weight are shown to nobody and never block a request. The collection facility screens you on the day.
+          </p>
+          <DonationExperienceFields
+            idPrefix="donor-profile"
+            value={donationExperience}
+            onChange={setDonationExperience}
+            optional
+            minimumCount={user.donor_profile?.donation_history?.length || 0}
+            className="sm:col-span-2"
+          />
+          <p className="sm:col-span-2 -mt-2 text-xs leading-5 text-slate-500">
+            Your last-donation summary and lifetime count appear publicly while you are listed as available.
+            Detailed donation records and hospital or organization names stay private in your account.
           </p>
           <div className="sm:col-span-2">
             <label htmlFor="donor-status" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Availability</label>
