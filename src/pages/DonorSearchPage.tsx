@@ -300,7 +300,7 @@ export default function DonorSearchPage({
                     title="Refine this donor search"
                     description="Update the area or request context. Your results refresh when you submit."
                     submitLabel="Update donor matches"
-                    stepLabel="Editing step 1"
+                    stepLabel="Editing search"
                   />
                 </div>
               )}

@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.60`
+Current application version: `0.0.61`
 
 ## Overview
 
@@ -61,9 +61,9 @@ Entry points:
 - `src/components/community/` renders semantic post cards and Markdown through
   `react-markdown` and GFM without raw HTML or Markdown-provided images.
 - `src/components/search/` holds the steps of that flow: the shared three-stage
-  progress guide, the criteria form with its progressive reveal, the donor
-  result card, and `RequestGate`, which carries the patient details and the
-  inline sign-in.
+  progress guide, the one-question-at-a-time criteria form and searchable
+  facility combobox, the donor result card, and `RequestGate`, which carries
+  the patient details and the inline sign-in.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
 - `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
@@ -98,10 +98,11 @@ Entry points:
 Routes:
 
 - `/` is a search-led landing page with the complete blood group, district,
-  upazila, collection-facility, and requester-role flow. It persists that
-  guided draft into `/directory` and introduces the shared Search area ->
-  Choose donor -> Confirm & call progress model, alongside network context,
-  privacy explanations, request preparation, safety guidance, and FAQs.
+  upazila, collection-facility, and requester-role flow presented one question
+  at a time. It persists that guided draft into `/directory` and introduces the
+  shared Search area -> Choose donor -> Confirm & call progress model, alongside
+  network context, privacy explanations, request preparation, safety guidance,
+  and FAQs.
 - `/requests` lists bounded pages of public blood requests with server-side
   blood-group/district/urgency filters persisted in the URL and makes the
   collection facility visible on each request card.
@@ -114,19 +115,20 @@ Routes:
   request is not a separate form any more: searching for donors is how a request
   is created (see below).
 - `/directory` is the combined search and request flow. It asks for blood group,
-  district and upazila with nothing pre-selected - a wrong default silently
-  searches the wrong place - then reveals the collection facility and "who are
-  you?" questions once those three are answered. After a search, the page
-  continues at the Choose donor stage with a compact summary of the carried
+  district, upazila, collection facility, and requester role in five short
+  slides with nothing pre-selected - a wrong default silently searches the
+  wrong place. After a search, the page continues at the Choose donor stage
+  with a compact summary of the carried
   criteria and an in-place refine panel instead of repeating the initial hero.
   A shared URL without request context opens that panel automatically before a
   contact can be requested. Results show every number masked. Asking for one
   number opens the patient-details gate, which also
   carries the explicit publication consent and the inline sign-in, and
-  publishing the request is what unmasks the number. Facility suggestions come
-  from the DGHS registry rows whose type is `Blood Bank`, ordered with the
-  searched upazila first; manual entry remains available and registry inclusion
-  is not proof of current service availability.
+  publishing the request is what unmasks the number. The keyboard-operable
+  facility combobox searches DGHS registry rows whose type is `Blood Bank`,
+  orders the searched district and upazila first, and explains when there is no
+  local registry suggestion; manual entry remains available and registry
+  inclusion is not proof of current service availability.
 - `/directory/call/:requestId/:donorRef` shows one revealed number with a copy
   button and a `tel:` link, and requires the outcome of that call before another
   number can be opened. The page has no exit control, but the enforcement is on

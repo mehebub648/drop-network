@@ -10,7 +10,6 @@ import {
   LockKeyhole,
   Search,
   ShieldCheck,
-  Sparkles,
   Users
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -91,22 +90,21 @@ export default function LandingPage({ user }: { user: any }) {
 
   return (
     <div className="space-y-12 pb-8 sm:space-y-16 lg:space-y-20">
-      <section className="relative overflow-hidden rounded-[2rem] border border-rose-100 bg-[linear-gradient(135deg,#ffffff_0%,#fffafa_48%,#fff1f2_100%)] px-5 py-7 shadow-[0_28px_80px_-52px_rgba(136,19,55,0.55)] sm:px-8 sm:py-10 lg:px-10 lg:py-12">
+      <section className="relative overflow-hidden rounded-[2rem] border border-rose-100 bg-[linear-gradient(135deg,#ffffff_0%,#fffafa_52%,#fff1f2_100%)] px-5 py-6 shadow-[0_28px_80px_-52px_rgba(136,19,55,0.55)] sm:px-8 sm:py-8 lg:px-9 lg:py-9">
         <div className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-rose-200/45 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/4 h-64 w-64 rounded-full bg-amber-100/45 blur-3xl" />
 
-        <div className="relative grid items-center gap-8 lg:grid-cols-[0.82fr_1.18fr] lg:gap-10 xl:gap-14">
+        <div className="relative grid items-center gap-7 lg:grid-cols-[0.7fr_1.3fr] lg:gap-9 xl:gap-12">
           <div>
             <div className="inline-flex min-h-9 items-center gap-2 rounded-full border border-rose-200 bg-white/85 px-4 text-[11px] font-extrabold uppercase tracking-[0.14em] text-rose-800 shadow-sm">
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              One connected search
+              <Search className="h-4 w-4" aria-hidden="true" />
+              Private donor search
             </div>
-            <h1 className="mt-5 max-w-3xl text-4xl font-extrabold leading-[1.07] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-[3.35rem] xl:text-6xl">
-              Find the right blood donor, without losing your place.
+            <h1 className="mt-5 max-w-2xl text-4xl font-extrabold leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-[3.15rem]">
+              Find a blood donor, one clear step at a time.
             </h1>
-            <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
-              Start here, compare private matches on the directory, then continue to a protected contact.
-              Your search details move with you through every step.
+            <p className="mt-4 max-w-xl text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
+              Answer one question, then the next. We carry your choices into private donor matches and a protected contact.
             </p>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -125,20 +123,10 @@ export default function LandingPage({ user }: { user: any }) {
               </Link>
             </div>
 
-            <div className="mt-6 flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold text-slate-600">
-              <span className="inline-flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                Public search
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                Opted-in donors
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                Private phone numbers
-              </span>
-            </div>
+            <p className="mt-5 inline-flex items-start gap-2 text-sm font-semibold leading-6 text-slate-600">
+              <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              Search publicly; phone numbers remain private until the protected request step.
+            </p>
           </div>
 
           <div id="donor-search" className="scroll-mt-28 rounded-[1.75rem] border border-white/80 bg-white/55 p-2.5 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.5)] backdrop-blur sm:p-3">

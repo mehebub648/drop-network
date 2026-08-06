@@ -1,5 +1,14 @@
-import { useMemo, type FormEvent } from 'react';
-import { Building2, ChevronDown, Droplet, MapPin, Search, UserRound } from 'lucide-react';
+import { useEffect, useId, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Building2,
+  Check,
+  ChevronDown,
+  MapPin,
+  Search,
+  UserRound
+} from 'lucide-react';
 import { BLOOD_GROUPS } from '../../lib/blood';
 import { BD_LOCATION_NAMES } from '../../lib/locations';
 import { getUpazilasForDistrict } from '../../lib/upazilas';
@@ -20,23 +29,32 @@ const ROLE_OPTIONS: Array<{ value: RequesterRole; label: string }> = [
   { value: 'THIRD_PARTY', label: "I'm a third-party volunteer" }
 ];
 
+const QUESTIONS = [
+  { title: 'Which blood group is needed?', hint: 'Choose the group written on the patient request.' },
+  { title: 'Which district should we search?', hint: 'We use this to narrow the donor directory.' },
+  { title: 'Which upazila or thana?', hint: 'This keeps the first matches close to the requested area.' },
+  { title: 'Where will blood be collected?', hint: 'Search the registry or enter any hospital or blood bank.' },
+  { title: 'Who is making this request?', hint: 'This remains private while you compare donor matches.' }
+] as const;
+
+function normalized(value: string) {
+  return value.trim().toLocaleLowerCase('en');
+}
+
 /**
- * Step one. Blood group, district and upazila are asked first and nothing is
- * pre-selected, because a wrong default here is worse than an empty field: it
- * silently searches the wrong place.
- *
- * The remaining two questions appear only once those three are answered, so the
- * first screen stays short enough to fill in one-handed.
+ * The first search stage is intentionally one question at a time. The parent
+ * still owns every answer so the same draft, URL handoff, privacy checks and
+ * stale-request clearing continue to work across home and directory routes.
  */
 export default function SearchCriteriaForm({
   value,
   onChange,
   onSubmit,
   submitting,
-  title = 'Where is blood needed?',
-  description = 'Start with the blood group and location. We will keep these details with you through the search.',
+  title = 'Start with one detail',
+  description = 'Answer one short question at a time. We will carry each answer into your donor search.',
   submitLabel = 'Show donor matches',
-  stepLabel = 'Step 1 of 3'
+  stepLabel = 'Search stage'
 }: {
   value: Criteria;
   onChange: (next: Criteria) => void;
@@ -47,28 +65,104 @@ export default function SearchCriteriaForm({
   submitLabel?: string;
   stepLabel?: string;
 }) {
+  const [activeStep, setActiveStep] = useState(0);
+  const [facilityOpen, setFacilityOpen] = useState(false);
+  const [activeFacilityIndex, setActiveFacilityIndex] = useState(0);
+  const facilityListId = useId();
+  const facilityHelpId = useId();
+  const question = QUESTIONS[activeStep];
   const upazilas = useMemo(() => getUpazilasForDistrict(value.district), [value.district]);
-  const facilities = useMemo(() => {
+
+  const districtFacilities = useMemo(() => {
     const inDistrict = REGISTERED_BLOOD_BANKS.filter(item => item.district === value.district);
-    // Facilities in the searched upazila first: they are the likely answer.
     return [...inDistrict].sort((a, b) => {
       const score = (locality: string) => (locality === value.upazila ? 0 : 1);
       return score(a.locality) - score(b.locality) || a.name.localeCompare(b.name, 'en');
     });
   }, [value.district, value.upazila]);
 
-  const hasPlace = Boolean(value.blood_group && value.district && value.upazila);
-  const complete = hasPlace && Boolean(value.collection_facility.trim() && value.requester_role);
+  const matchingFacilities = useMemo(() => {
+    const query = normalized(value.collection_facility);
+    const candidates = query ? REGISTERED_BLOOD_BANKS : districtFacilities;
+    return candidates
+      .filter(item => {
+        if (!query) return true;
+        return normalized(`${item.name} ${item.locality} ${item.district}`).includes(query);
+      })
+      .sort((a, b) => {
+        const districtScore = (district: string) => (district === value.district ? 0 : 1);
+        const localityScore = (locality: string) => (locality === value.upazila ? 0 : 1);
+        return districtScore(a.district) - districtScore(b.district)
+          || localityScore(a.locality) - localityScore(b.locality)
+          || a.name.localeCompare(b.name, 'en');
+      })
+      .slice(0, 8);
+  }, [districtFacilities, value.collection_facility, value.district, value.upazila]);
+
+  useEffect(() => {
+    setActiveFacilityIndex(0);
+  }, [value.collection_facility, value.district]);
+
+  const complete = Boolean(
+    value.blood_group
+    && value.district
+    && value.upazila
+    && value.collection_facility.trim()
+    && value.requester_role
+  );
+  const stepComplete = [
+    Boolean(value.blood_group),
+    Boolean(value.district),
+    Boolean(value.upazila),
+    Boolean(value.collection_facility.trim()),
+    Boolean(value.requester_role)
+  ][activeStep];
+
+  const next = () => {
+    if (!stepComplete) return;
+    if (activeStep < QUESTIONS.length - 1) {
+      setFacilityOpen(false);
+      setActiveStep(step => step + 1);
+    } else if (complete) {
+      onSubmit();
+    }
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (complete) onSubmit();
+    next();
+  };
+
+  const chooseFacility = (name: string) => {
+    onChange({ ...value, collection_facility: name });
+    setFacilityOpen(false);
+  };
+
+  const handleFacilityKeys = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      setFacilityOpen(false);
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setFacilityOpen(true);
+      if (!matchingFacilities.length) return;
+      setActiveFacilityIndex(index => {
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        return (index + direction + matchingFacilities.length) % matchingFacilities.length;
+      });
+      return;
+    }
+    if (event.key === 'Enter' && facilityOpen && matchingFacilities[activeFacilityIndex]) {
+      event.preventDefault();
+      chooseFacility(matchingFacilities[activeFacilityIndex].name);
+    }
   };
 
   return (
     <form onSubmit={submit} className="surface relative overflow-hidden p-5 sm:p-6">
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-rose-400 to-amber-300" aria-hidden="true" />
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div className="absolute inset-x-0 top-0 h-1 rounded-t-[1.5rem] bg-gradient-to-r from-primary via-rose-400 to-amber-300" aria-hidden="true" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <p className="eyebrow">Search details</p>
           <h2 className="mt-1.5 text-xl font-extrabold tracking-[-0.025em] text-slate-950 sm:text-2xl">{title}</h2>
@@ -79,132 +173,252 @@ export default function SearchCriteriaForm({
         </span>
       </div>
 
-      <p className="mb-3 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[9px] text-white">1</span> Match location</p>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <label className="block">
-          <span className="mb-2 block text-sm font-bold text-slate-700">Blood group</span>
-          <span className="relative block">
-            <Droplet className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-red-600" aria-hidden="true" />
-            <select
-              required
-              value={value.blood_group}
-              onChange={event => onChange({ ...value, blood_group: event.target.value })}
-              className="input appearance-none pl-11 pr-10"
-            >
-              <option value="">Select</option>
-              {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-          </span>
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-bold text-slate-700">District</span>
-          <span className="relative block">
-            <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700" aria-hidden="true" />
-            <select
-              required
-              value={value.district}
-              onChange={event => onChange({
-                ...value,
-                district: event.target.value,
-                // Upazila and facility names belong to one district.
-                upazila: '',
-                collection_facility: ''
-              })}
-              className="input appearance-none pl-11 pr-10"
-            >
-              <option value="">Select</option>
-              {BD_LOCATION_NAMES.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-          </span>
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-sm font-bold text-slate-700">Upazila / thana</span>
-          <span className="relative block">
-            <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700" aria-hidden="true" />
-            <select
-              required
-              disabled={!value.district}
-              value={value.upazila}
-              onChange={event => onChange({ ...value, upazila: event.target.value })}
-              className="input appearance-none pl-11 pr-10 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <option value="">{value.district ? 'Select' : 'Choose a district first'}</option>
-              {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-          </span>
-        </label>
+      <div className="mt-5 flex items-center gap-3" aria-label={`Question ${activeStep + 1} of ${QUESTIONS.length}`}>
+        <span className="shrink-0 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">
+          {activeStep + 1} of {QUESTIONS.length}
+        </span>
+        <div className="flex flex-1 gap-1.5" aria-hidden="true">
+          {QUESTIONS.map((item, index) => (
+            <span
+              key={item.title}
+              className={`h-1.5 flex-1 rounded-full transition-colors ${index <= activeStep ? 'bg-primary' : 'bg-slate-200'}`}
+            />
+          ))}
+        </div>
       </div>
 
-      {hasPlace && (
-        <div className="fade-in mt-5 grid gap-4 rounded-2xl border border-rose-100 bg-rose-50/35 p-4 sm:grid-cols-2 sm:p-5">
-          <div className="sm:col-span-2">
-            <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[9px] text-white">2</span> Request context</p>
-            <p className="mt-1 text-xs font-medium leading-5 text-slate-500">
-              This stays private while you browse and is used only if you ask to contact a donor.
-            </p>
-          </div>
-          <label className="block">
-            <span className="mb-2 block text-sm font-bold text-slate-700">Where will the blood be collected?</span>
-            <span className="relative block">
-              <Building2 className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-              <input
-                required
-                list="collection-facilities"
-                value={value.collection_facility}
-                onChange={event => onChange({ ...value, collection_facility: event.target.value })}
-                placeholder="Hospital or blood bank"
-                className="input pl-11"
-              />
-            </span>
-            <datalist id="collection-facilities">
-              {facilities.map(item => (
-                <option key={item.registryCode} value={item.name}>{item.locality}</option>
-              ))}
-            </datalist>
-            <span className="mt-2 block text-xs leading-5 text-slate-500">
-              Suggestions come from the{' '}
-              <a href={COLLECTION_FACILITY_SOURCE_URL} target="_blank" rel="noreferrer" className="font-bold underline">
-                DGHS facility registry
-              </a>
-              . Type any other place. Confirm collection with them directly.
-            </span>
-          </label>
+      <div key={activeStep} className="fade-in mt-5 min-h-[15.5rem] rounded-2xl border border-slate-200 bg-slate-50/65 p-4 sm:min-h-[14.5rem] sm:p-5">
+        <h3 className="text-lg font-extrabold tracking-tight text-slate-950 sm:text-xl">{question.title}</h3>
+        <p className="mt-1 text-sm font-medium leading-6 text-slate-500">{question.hint}</p>
 
-          <label className="block">
-            <span className="mb-2 block text-sm font-bold text-slate-700">Who are you?</span>
+        {activeStep === 0 && (
+          <fieldset className="mt-5">
+            <legend className="sr-only">Blood group</legend>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+              {BLOOD_GROUPS.map(group => {
+                const selected = value.blood_group === group;
+                return (
+                  <button
+                    key={group}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onChange({ ...value, blood_group: group })}
+                    className={`flex min-h-12 items-center justify-center rounded-xl border text-sm font-extrabold transition-colors ${
+                      selected
+                        ? 'border-primary bg-primary text-white shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-800 hover:border-rose-200 hover:bg-rose-50'
+                    }`}
+                  >
+                    {group}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+        )}
+
+        {activeStep === 1 && (
+          <label className="mt-5 block max-w-lg">
+            <span className="mb-2 block text-sm font-bold text-slate-700">District</span>
             <span className="relative block">
-              <UserRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+              <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
               <select
                 required
-                value={value.requester_role}
-                onChange={event => onChange({ ...value, requester_role: event.target.value as RequesterRole })}
+                autoFocus
+                value={value.district}
+                onChange={event => onChange({
+                  ...value,
+                  district: event.target.value,
+                  upazila: '',
+                  collection_facility: ''
+                })}
                 className="input appearance-none pl-11 pr-10"
               >
-                <option value="">Select</option>
-                {ROLE_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
+                <option value="">Choose a district</option>
+                {BD_LOCATION_NAMES.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
               <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
             </span>
           </label>
-        </div>
-      )}
+        )}
 
-      <button type="submit" disabled={!complete || submitting} className="primary-button mt-5 disabled:cursor-not-allowed disabled:opacity-60">
-        <Search className="h-5 w-5" aria-hidden="true" />
-        {submitting ? 'Searching...' : submitLabel}
-      </button>
-      {!hasPlace && (
-        <p className="mt-3 text-xs font-semibold text-slate-500">
-          Choose a blood group, district and upazila to continue.
-        </p>
-      )}
+        {activeStep === 2 && (
+          <label className="mt-5 block max-w-lg">
+            <span className="mb-2 block text-sm font-bold text-slate-700">Upazila / thana</span>
+            <span className="relative block">
+              <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
+              <select
+                required
+                autoFocus
+                disabled={!value.district}
+                value={value.upazila}
+                onChange={event => onChange({ ...value, upazila: event.target.value })}
+                className="input appearance-none pl-11 pr-10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">{value.district ? 'Choose an upazila or thana' : 'Choose a district first'}</option>
+                {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+            </span>
+          </label>
+        )}
+
+        {activeStep === 3 && (
+          <div className="mt-5 max-w-2xl">
+            <label htmlFor={`${facilityListId}-input`} className="mb-2 block text-sm font-bold text-slate-700">
+              Hospital or blood bank
+            </label>
+            <div
+              className="relative"
+              onBlur={event => {
+                const nextTarget = event.relatedTarget;
+                // Keep the in-flow panel mounted until Back/Continue receives
+                // its click. Removing it during blur would move that button
+                // between pointer down and click.
+                if (nextTarget instanceof HTMLElement && nextTarget.closest('[data-search-navigation]')) return;
+                if (!event.currentTarget.contains(nextTarget as Node | null)) setFacilityOpen(false);
+              }}
+            >
+              <Building2 className="pointer-events-none absolute left-4 top-6 z-10 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+              <input
+                id={`${facilityListId}-input`}
+                required
+                autoFocus
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls={facilityListId}
+                aria-expanded={facilityOpen}
+                aria-activedescendant={facilityOpen && matchingFacilities[activeFacilityIndex] ? `${facilityListId}-${activeFacilityIndex}` : undefined}
+                aria-describedby={facilityHelpId}
+                value={value.collection_facility}
+                onFocus={() => setFacilityOpen(true)}
+                onClick={() => setFacilityOpen(true)}
+                onKeyDown={handleFacilityKeys}
+                onChange={event => {
+                  onChange({ ...value, collection_facility: event.target.value });
+                  setFacilityOpen(true);
+                }}
+                placeholder="Search or type a place"
+                className="input pl-11 pr-11"
+              />
+              <button
+                type="button"
+                aria-label={facilityOpen ? 'Close facility suggestions' : 'Open facility suggestions'}
+                onClick={() => setFacilityOpen(open => !open)}
+                className="absolute right-1 top-1 flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${facilityOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
+
+              {facilityOpen && (
+                <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
+                  {matchingFacilities.length ? (
+                    <ul id={facilityListId} role="listbox" aria-label="Registered facility suggestions" className="max-h-64 overflow-y-auto p-1.5">
+                      {matchingFacilities.map((item, index) => (
+                        <li key={item.registryCode}>
+                          <button
+                            id={`${facilityListId}-${index}`}
+                            type="button"
+                            role="option"
+                            aria-selected={value.collection_facility === item.name}
+                            onMouseEnter={() => setActiveFacilityIndex(index)}
+                            onClick={() => chooseFacility(item.name)}
+                            className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2.5 text-left ${
+                              index === activeFacilityIndex ? 'bg-rose-50' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="min-w-0">
+                              <span className="block text-sm font-bold leading-5 text-slate-900">{item.name}</span>
+                              <span className="mt-0.5 block text-xs font-medium text-slate-500">{item.locality}, {item.district}</span>
+                            </span>
+                            {value.collection_facility === item.name && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div id={facilityListId} role="status" className="p-4">
+                      <p className="text-sm font-bold text-slate-800">No registry suggestion found.</p>
+                      <p className="mt-1 text-xs font-medium leading-5 text-slate-500">
+                        Keep your typed hospital or blood bank name to use it manually.
+                      </p>
+                    </div>
+                  )}
+                  <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 text-[11px] font-semibold leading-4 text-slate-500">
+                    {value.collection_facility.trim()
+                      ? 'Searching registered blood banks nationwide; nearby matches appear first.'
+                      : districtFacilities.length
+                        ? `${districtFacilities.length} registry suggestion${districtFacilities.length === 1 ? '' : 's'} in ${value.district}.`
+                        : `No registered Blood Bank entry is listed for ${value.district}; manual entry still works.`}
+                  </div>
+                </div>
+              )}
+            </div>
+            <p id={facilityHelpId} className="mt-2 text-xs leading-5 text-slate-500">
+              Suggestions come from the{' '}
+              <a href={COLLECTION_FACILITY_SOURCE_URL} target="_blank" rel="noreferrer" className="font-bold underline">
+                DGHS facility registry
+              </a>
+              . Other places are accepted. Confirm collection with the facility directly.
+            </p>
+          </div>
+        )}
+
+        {activeStep === 4 && (
+          <fieldset className="mt-5 max-w-2xl">
+            <legend className="sr-only">Requester role</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {ROLE_OPTIONS.map(option => {
+                const selected = value.requester_role === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onChange({ ...value, requester_role: option.value })}
+                    className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border px-3 text-center text-sm font-bold leading-5 transition-colors ${
+                      selected
+                        ? 'border-primary bg-rose-50 text-rose-950 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-800 hover:border-rose-200 hover:bg-rose-50'
+                    }`}
+                  >
+                    <UserRound className={`h-4 w-4 shrink-0 ${selected ? 'text-primary' : 'text-slate-400'}`} aria-hidden="true" />
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+        )}
+      </div>
+
+      <div className="mt-5 flex items-center gap-3">
+        {activeStep > 0 && (
+          <button
+            type="button"
+            data-search-navigation
+            onClick={() => {
+              setFacilityOpen(false);
+              setActiveStep(step => step - 1);
+            }}
+            className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-700 transition-colors hover:border-rose-200 hover:bg-rose-50"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back
+          </button>
+        )}
+        <button data-search-navigation type="submit" disabled={!stepComplete || submitting} className="primary-button disabled:cursor-not-allowed disabled:opacity-60">
+          {activeStep === QUESTIONS.length - 1 ? <Search className="h-5 w-5" aria-hidden="true" /> : <ArrowRight className="h-5 w-5" aria-hidden="true" />}
+          {submitting
+            ? 'Searching...'
+            : activeStep === QUESTIONS.length - 1
+              ? submitLabel
+              : 'Continue'}
+        </button>
+      </div>
+      <p className="mt-3 text-center text-xs font-semibold text-slate-500">
+        Your answers stay available if you go back or refine the search later.
+      </p>
     </form>
   );
 }

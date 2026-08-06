@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.60`
+Current version: `0.0.61`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -55,13 +55,14 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
   unconfigured OTP channel prints the code to protected server logs; production
   requires the complete provider-neutral HTTP SMS gateway settings documented
   in `.env.example` and never falls back to console delivery.
-- The complete donor search starts on `/`: blood group, district, upazila,
-  collection facility, and requester role carry into `/directory`. Registered,
-  opted-in donors are ranked first and explicitly labelled before attributed
-  public listings. Every result stays masked until the protected request and
-  one-at-a-time reveal workflow opens a contact. A shared three-step progress
-  guide and compact directory summary keep the home-to-results handoff visible;
-  requesters can refine the search without leaving the result page.
+- The complete donor search starts on `/` as a five-question guided flow: blood
+  group, district, upazila, collection facility, and requester role are shown
+  one at a time and carry into `/directory`. Registered, opted-in donors are
+  ranked first and explicitly labelled before attributed public listings. Every
+  result stays masked until the protected request and one-at-a-time reveal
+  workflow opens a contact. A shared three-step progress guide and compact
+  directory summary keep the home-to-results handoff visible; requesters can
+  refine the same guided answers without leaving the result page.
 - Registered donors can self-report an exact last-donation date, an approximate
   number of days, months, or years ago, or that they have never donated, plus a
   lifetime donation count. Search cards show that bounded summary when present;
@@ -69,10 +70,11 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 - Creating a public request requires a verified account, the exact blood
   collection facility and address, patient-reference details, a future required
   time, a verified contact, and explicit review/consent before publication.
-  The form suggests 198 entries categorized as `Blood Bank` in the supplied
-  DGHS facility export. Other facilities can still be entered manually, and
-  every requester is warned to confirm current collection, screening, and
-  transfusion arrangements directly.
+  The searchable facility picker suggests 198 entries categorized as `Blood
+  Bank` in the supplied DGHS facility export, prioritizes the search area, and
+  clearly reports when that registry has no local suggestion. Other facilities
+  can still be entered manually, and every requester is warned to confirm
+  current collection, screening, and transfusion arrangements directly.
 - Requesters invite eligible donors privately. Donors can accept, decline,
   report arrival/donation, and reveal coordination contacts only after
   acceptance. A donation counts only after requester confirmation.
