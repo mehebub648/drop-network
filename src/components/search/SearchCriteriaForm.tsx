@@ -1,18 +1,15 @@
 import { useEffect, useId, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
-  ArrowLeft,
-  ArrowRight,
   Building2,
   Check,
   ChevronDown,
   MapPin,
-  Search,
   UserRound
 } from 'lucide-react';
 import { BLOOD_GROUPS } from '../../lib/blood';
 import { BD_LOCATION_NAMES } from '../../lib/locations';
 import { getUpazilasForDistrict } from '../../lib/upazilas';
-import { REGISTERED_BLOOD_BANKS, COLLECTION_FACILITY_SOURCE_URL } from '../../lib/collectionFacilities';
+import { REGISTERED_BLOOD_BANKS } from '../../lib/collectionFacilities';
 import type { RequesterRole } from '../../lib/searchDraft';
 
 export type Criteria = {
@@ -30,11 +27,11 @@ const ROLE_OPTIONS: Array<{ value: RequesterRole; label: string }> = [
 ];
 
 const QUESTIONS = [
-  { title: 'Which blood group is needed?', hint: 'Choose the group written on the patient request.' },
-  { title: 'Which district should we search?', hint: 'We use this to narrow the donor directory.' },
-  { title: 'Which upazila or thana?', hint: 'This keeps the first matches close to the requested area.' },
-  { title: 'Where will blood be collected?', hint: 'Search the registry or enter any hospital or blood bank.' },
-  { title: 'Who is making this request?', hint: 'This remains private while you compare donor matches.' }
+  'What blood group is needed?',
+  'Which district?',
+  'Which upazila or thana?',
+  'Which hospital or blood bank?',
+  'Who are you?'
 ] as const;
 
 function normalized(value: string) {
@@ -51,25 +48,18 @@ export default function SearchCriteriaForm({
   onChange,
   onSubmit,
   submitting,
-  title = 'Start with one detail',
-  description = 'Answer one short question at a time. We will carry each answer into your donor search.',
-  submitLabel = 'Show donor matches',
-  stepLabel = 'Search stage'
+  submitLabel = 'Find donors'
 }: {
   value: Criteria;
   onChange: (next: Criteria) => void;
   onSubmit: () => void;
   submitting?: boolean;
-  title?: string;
-  description?: string;
   submitLabel?: string;
-  stepLabel?: string;
 }) {
   const [activeStep, setActiveStep] = useState(0);
   const [facilityOpen, setFacilityOpen] = useState(false);
   const [activeFacilityIndex, setActiveFacilityIndex] = useState(0);
   const facilityListId = useId();
-  const facilityHelpId = useId();
   const question = QUESTIONS[activeStep];
   const upazilas = useMemo(() => getUpazilasForDistrict(value.district), [value.district]);
 
@@ -160,36 +150,9 @@ export default function SearchCriteriaForm({
   };
 
   return (
-    <form onSubmit={submit} className="surface relative overflow-hidden p-5 sm:p-6">
-      <div className="absolute inset-x-0 top-0 h-1 rounded-t-[1.5rem] bg-gradient-to-r from-primary via-rose-400 to-amber-300" aria-hidden="true" />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div>
-          <p className="eyebrow">Search details</p>
-          <h2 className="mt-1.5 text-xl font-extrabold tracking-[-0.025em] text-slate-950 sm:text-2xl">{title}</h2>
-          <p className="mt-1.5 max-w-xl text-sm font-medium leading-6 text-slate-500">{description}</p>
-        </div>
-        <span className="inline-flex min-h-8 shrink-0 items-center self-start rounded-full border border-rose-100 bg-rose-50 px-3 text-[11px] font-extrabold text-rose-800">
-          {stepLabel}
-        </span>
-      </div>
-
-      <div className="mt-5 flex items-center gap-3" aria-label={`Question ${activeStep + 1} of ${QUESTIONS.length}`}>
-        <span className="shrink-0 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">
-          {activeStep + 1} of {QUESTIONS.length}
-        </span>
-        <div className="flex flex-1 gap-1.5" aria-hidden="true">
-          {QUESTIONS.map((item, index) => (
-            <span
-              key={item.title}
-              className={`h-1.5 flex-1 rounded-full transition-colors ${index <= activeStep ? 'bg-primary' : 'bg-slate-200'}`}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div key={activeStep} className="fade-in mt-5 min-h-[15.5rem] rounded-2xl border border-slate-200 bg-slate-50/65 p-4 sm:min-h-[14.5rem] sm:p-5">
-        <h3 className="text-lg font-extrabold tracking-tight text-slate-950 sm:text-xl">{question.title}</h3>
-        <p className="mt-1 text-sm font-medium leading-6 text-slate-500">{question.hint}</p>
+    <form onSubmit={submit} className="surface p-5 sm:p-7">
+      <div key={activeStep} className="fade-in min-h-[12rem] sm:min-h-[11rem]">
+        <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
 
         {activeStep === 0 && (
           <fieldset className="mt-5">
@@ -218,8 +181,8 @@ export default function SearchCriteriaForm({
         )}
 
         {activeStep === 1 && (
-          <label className="mt-5 block max-w-lg">
-            <span className="mb-2 block text-sm font-bold text-slate-700">District</span>
+          <label className="mt-6 block max-w-lg">
+            <span className="sr-only">District</span>
             <span className="relative block">
               <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
               <select
@@ -243,8 +206,8 @@ export default function SearchCriteriaForm({
         )}
 
         {activeStep === 2 && (
-          <label className="mt-5 block max-w-lg">
-            <span className="mb-2 block text-sm font-bold text-slate-700">Upazila / thana</span>
+          <label className="mt-6 block max-w-lg">
+            <span className="sr-only">Upazila / thana</span>
             <span className="relative block">
               <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
               <select
@@ -264,8 +227,8 @@ export default function SearchCriteriaForm({
         )}
 
         {activeStep === 3 && (
-          <div className="mt-5 max-w-2xl">
-            <label htmlFor={`${facilityListId}-input`} className="mb-2 block text-sm font-bold text-slate-700">
+          <div className="mt-6 max-w-2xl">
+            <label htmlFor={`${facilityListId}-input`} className="sr-only">
               Hospital or blood bank
             </label>
             <div
@@ -289,7 +252,6 @@ export default function SearchCriteriaForm({
                 aria-controls={facilityListId}
                 aria-expanded={facilityOpen}
                 aria-activedescendant={facilityOpen && matchingFacilities[activeFacilityIndex] ? `${facilityListId}-${activeFacilityIndex}` : undefined}
-                aria-describedby={facilityHelpId}
                 value={value.collection_facility}
                 onFocus={() => setFacilityOpen(true)}
                 onClick={() => setFacilityOpen(true)}
@@ -310,7 +272,7 @@ export default function SearchCriteriaForm({
                 <ChevronDown className={`h-4 w-4 transition-transform ${facilityOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
               </button>
 
-              {facilityOpen && (
+              {facilityOpen && (matchingFacilities.length > 0 || Boolean(value.collection_facility.trim())) && (
                 <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
                   {matchingFacilities.length ? (
                     <ul id={facilityListId} role="listbox" aria-label="Registered facility suggestions" className="max-h-64 overflow-y-auto p-1.5">
@@ -338,34 +300,19 @@ export default function SearchCriteriaForm({
                     </ul>
                   ) : (
                     <div id={facilityListId} role="status" className="p-4">
-                      <p className="text-sm font-bold text-slate-800">No registry suggestion found.</p>
-                      <p className="mt-1 text-xs font-medium leading-5 text-slate-500">
-                        Keep your typed hospital or blood bank name to use it manually.
+                      <p className="text-sm font-semibold text-slate-700">
+                        Continue to use “{value.collection_facility.trim()}”.
                       </p>
                     </div>
                   )}
-                  <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 text-[11px] font-semibold leading-4 text-slate-500">
-                    {value.collection_facility.trim()
-                      ? 'Searching registered blood banks nationwide; nearby matches appear first.'
-                      : districtFacilities.length
-                        ? `${districtFacilities.length} registry suggestion${districtFacilities.length === 1 ? '' : 's'} in ${value.district}.`
-                        : `No registered Blood Bank entry is listed for ${value.district}; manual entry still works.`}
-                  </div>
                 </div>
               )}
             </div>
-            <p id={facilityHelpId} className="mt-2 text-xs leading-5 text-slate-500">
-              Suggestions come from the{' '}
-              <a href={COLLECTION_FACILITY_SOURCE_URL} target="_blank" rel="noreferrer" className="font-bold underline">
-                DGHS facility registry
-              </a>
-              . Other places are accepted. Confirm collection with the facility directly.
-            </p>
           </div>
         )}
 
         {activeStep === 4 && (
-          <fieldset className="mt-5 max-w-2xl">
+          <fieldset className="mt-6 max-w-2xl">
             <legend className="sr-only">Requester role</legend>
             <div className="grid gap-2 sm:grid-cols-3">
               {ROLE_OPTIONS.map(option => {
@@ -401,14 +348,12 @@ export default function SearchCriteriaForm({
               setFacilityOpen(false);
               setActiveStep(step => step - 1);
             }}
-            className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-700 transition-colors hover:border-rose-200 hover:bg-rose-50"
+            className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-700 transition-colors hover:border-rose-200 hover:bg-rose-50"
           >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Back
           </button>
         )}
         <button data-search-navigation type="submit" disabled={!stepComplete || submitting} className="primary-button disabled:cursor-not-allowed disabled:opacity-60">
-          {activeStep === QUESTIONS.length - 1 ? <Search className="h-5 w-5" aria-hidden="true" /> : <ArrowRight className="h-5 w-5" aria-hidden="true" />}
           {submitting
             ? 'Searching...'
             : activeStep === QUESTIONS.length - 1
@@ -416,9 +361,6 @@ export default function SearchCriteriaForm({
               : 'Continue'}
         </button>
       </div>
-      <p className="mt-3 text-center text-xs font-semibold text-slate-500">
-        Your answers stay available if you go back or refine the search later.
-      </p>
     </form>
   );
 }

@@ -15,7 +15,6 @@ import {
 import { api } from '../lib/api';
 import { DONATION_INTERVAL_DAYS } from '../lib/blood';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
-import SearchJourneySteps from '../components/search/SearchJourneySteps';
 import { MetricCard } from '../components/ui';
 import {
   readSearchDraft,
@@ -94,17 +93,13 @@ export default function LandingPage({ user }: { user: any }) {
         <div className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-rose-200/45 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/4 h-64 w-64 rounded-full bg-amber-100/45 blur-3xl" />
 
-        <div className="relative grid items-center gap-7 lg:grid-cols-[0.7fr_1.3fr] lg:gap-9 xl:gap-12">
+        <div className="relative grid items-center gap-7 lg:grid-cols-[0.72fr_1.28fr] lg:gap-10 xl:gap-14">
           <div>
-            <div className="inline-flex min-h-9 items-center gap-2 rounded-full border border-rose-200 bg-white/85 px-4 text-[11px] font-extrabold uppercase tracking-[0.14em] text-rose-800 shadow-sm">
-              <Search className="h-4 w-4" aria-hidden="true" />
-              Private donor search
-            </div>
-            <h1 className="mt-5 max-w-2xl text-4xl font-extrabold leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-[3.15rem]">
-              Find a blood donor, one clear step at a time.
+            <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-[3.15rem]">
+              Find a blood donor.
             </h1>
-            <p className="mt-4 max-w-xl text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
-              Answer one question, then the next. We carry your choices into private donor matches and a protected contact.
+            <p className="mt-4 max-w-lg text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
+              Tell us what you need. We will show matching donors.
             </p>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -123,27 +118,14 @@ export default function LandingPage({ user }: { user: any }) {
               </Link>
             </div>
 
-            <p className="mt-5 inline-flex items-start gap-2 text-sm font-semibold leading-6 text-slate-600">
-              <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-              Search publicly; phone numbers remain private until the protected request step.
-            </p>
           </div>
 
-          <div id="donor-search" className="scroll-mt-28 rounded-[1.75rem] border border-white/80 bg-white/55 p-2.5 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.5)] backdrop-blur sm:p-3">
-            <SearchJourneySteps activeStep={1} />
-            <div className="mt-3">
-              <SearchCriteriaForm
-                value={criteria}
-                onChange={updateCriteria}
-                onSubmit={search}
-                submitLabel="Continue to donor matches"
-              />
-            </div>
-            <p className="mt-3 flex items-start gap-2 px-1 text-xs leading-5 text-slate-500">
-              <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
-              You can compare matches without signing in. A phone number opens only after the protected
-              request step.
-            </p>
+          <div id="donor-search" className="scroll-mt-28">
+            <SearchCriteriaForm
+              value={criteria}
+              onChange={updateCriteria}
+              onSubmit={search}
+            />
           </div>
         </div>
       </section>

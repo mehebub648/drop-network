@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.61`
+Current application version: `0.0.62`
 
 ## Overview
 
@@ -60,10 +60,9 @@ Entry points:
   public feed, public article, and authenticated publishing flow.
 - `src/components/community/` renders semantic post cards and Markdown through
   `react-markdown` and GFM without raw HTML or Markdown-provided images.
-- `src/components/search/` holds the steps of that flow: the shared three-stage
-  progress guide, the one-question-at-a-time criteria form and searchable
-  facility combobox, the donor result card, and `RequestGate`, which carries
-  the patient details and the inline sign-in.
+- `src/components/search/` holds the one-question-at-a-time criteria form and
+  searchable facility combobox, the donor result card, and `RequestGate`, which
+  carries the patient details and the inline sign-in.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
 - `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
@@ -99,10 +98,10 @@ Routes:
 
 - `/` is a search-led landing page with the complete blood group, district,
   upazila, collection-facility, and requester-role flow presented one question
-  at a time. It persists that guided draft into `/directory` and introduces the
-  shared Search area -> Choose donor -> Confirm & call progress model, alongside
+  at a time. Only the current question, its answer, and Back/Continue controls
+  are visible. It persists that guided draft into `/directory`, alongside
   network context, privacy explanations, request preparation, safety guidance,
-  and FAQs.
+  and FAQs elsewhere on the page.
 - `/requests` lists bounded pages of public blood requests with server-side
   blood-group/district/urgency filters persisted in the URL and makes the
   collection facility visible on each request card.
@@ -115,10 +114,10 @@ Routes:
   request is not a separate form any more: searching for donors is how a request
   is created (see below).
 - `/directory` is the combined search and request flow. It asks for blood group,
-  district, upazila, collection facility, and requester role in five short
-  slides with nothing pre-selected - a wrong default silently searches the
-  wrong place. After a search, the page continues at the Choose donor stage
-  with a compact summary of the carried
+  district, upazila, collection facility, and requester role one question at a
+  time with nothing pre-selected - a wrong default silently searches the wrong
+  place. No stage label or progress indicator surrounds those questions. After
+  a search, the page continues with a compact summary of the carried
   criteria and an in-place refine panel instead of repeating the initial hero.
   A shared URL without request context opens that panel automatically before a
   contact can be requested. Results show every number masked. Asking for one

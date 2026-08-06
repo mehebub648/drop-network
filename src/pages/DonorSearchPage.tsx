@@ -6,7 +6,6 @@ import {
   MapPin,
   PhoneCall,
   RefreshCw,
-  ShieldCheck,
   SlidersHorizontal,
   UserRound,
   UserRoundSearch
@@ -15,7 +14,6 @@ import { api, type SearchDonorCard } from '../lib/api';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
 import DonorResultCard from '../components/search/DonorResultCard';
 import RequestGate from '../components/search/RequestGate';
-import SearchJourneySteps from '../components/search/SearchJourneySteps';
 import { EmptyState } from '../components/ui';
 import {
   readSearchDraft,
@@ -201,28 +199,8 @@ export default function DonorSearchPage({
         <div className="page-hero-grid" aria-hidden="true" />
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-rose-200/40 blur-3xl" />
         <div className="relative">
-          <SearchJourneySteps activeStep={hasQuery ? 2 : 1} />
-
           {!hasQuery ? (
-            <div className="mt-6 grid gap-7 lg:grid-cols-[0.78fr_1.22fr] lg:items-center lg:gap-10">
-              <div>
-                <div className="inline-flex min-h-9 items-center gap-2 rounded-full border border-rose-200 bg-white px-4 text-[11px] font-extrabold uppercase tracking-[0.14em] text-rose-800 shadow-sm">
-                  <UserRoundSearch className="h-4 w-4" aria-hidden="true" />
-                  Donor directory
-                </div>
-                <h1 className="mt-5 text-3xl font-extrabold leading-tight tracking-[-0.035em] text-slate-950 sm:text-4xl lg:text-5xl">
-                  Start a private donor search.
-                </h1>
-                <p className="mt-4 max-w-xl text-base font-medium leading-7 text-slate-600">
-                  Search openly, compare masked matches, and share patient details only when you choose
-                  a donor to contact.
-                </p>
-                <p className="mt-5 inline-flex items-start gap-2 text-sm font-semibold leading-6 text-slate-600">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                  No phone number appears in public results
-                </p>
-              </div>
-
+            <div className="mx-auto max-w-3xl">
               <SearchCriteriaForm
                 value={criteria}
                 onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
@@ -231,7 +209,7 @@ export default function DonorSearchPage({
               />
             </div>
           ) : (
-            <div className="mt-6">
+            <div>
               <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex min-w-0 items-start gap-4 sm:items-center sm:gap-5">
                   <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-red-100 bg-white text-2xl font-extrabold text-red-700 shadow-sm sm:h-20 sm:w-20 sm:text-3xl">
@@ -297,10 +275,7 @@ export default function DonorSearchPage({
                     onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
                     onSubmit={runSearch}
                     submitting={loading}
-                    title="Refine this donor search"
-                    description="Update the area or request context. Your results refresh when you submit."
                     submitLabel="Update donor matches"
-                    stepLabel="Editing search"
                   />
                 </div>
               )}
