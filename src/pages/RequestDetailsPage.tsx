@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Flag, Heart, Hospital, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, User as UserIcon, Users, Zap } from 'lucide-react';
 import { api, BROWSER_FINGERPRINT } from '../lib/api';
 import { BLOOD_GROUPS, compatibleDonorsFor, DONATION_INTERVAL_DAYS, getEligibility, getUrgency, URGENCY_ORDER } from '../lib/blood';
-import { REGISTERED_BLOOD_BANKS } from '../lib/collectionFacilities';
+import {
+  loadRegisteredCollectionFacilities,
+  type RegisteredCollectionFacility
+} from '../lib/collectionFacilities';
 import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
 import { cn } from '../lib/utils';
 import { UrgencyBadge } from '../components/UrgencyBadge';
@@ -56,10 +59,24 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     district: '',
     contacts: []
   });
-  const editFacilitySuggestions = useMemo(
-    () => REGISTERED_BLOOD_BANKS.filter(facility => facility.district === editData.district),
-    [editData.district]
-  );
+  const [editFacilitySuggestions, setEditFacilitySuggestions] = useState<RegisteredCollectionFacility[]>([]);
+
+  useEffect(() => {
+    if (!isEditing || !editData.district) {
+      setEditFacilitySuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    loadRegisteredCollectionFacilities(editData.district, controller.signal)
+      .then(setEditFacilitySuggestions)
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setEditFacilitySuggestions([]);
+      });
+
+    return () => controller.abort();
+  }, [editData.district, isEditing]);
 
   useEffect(() => {
     async function load() {
@@ -346,14 +363,14 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Collection facility</label>
                 <input
                   required
-                  list="edit-registered-blood-banks"
+                  list="edit-registered-facilities"
                   type="text"
                   value={editData.hospital_name}
                   onChange={e => setEditData({ ...editData, hospital_name: e.target.value })}
                   className="input"
                   placeholder="Hospital or blood bank"
                 />
-                <datalist id="edit-registered-blood-banks">
+                <datalist id="edit-registered-facilities">
                   {editFacilitySuggestions.map(facility => <option key={facility.registryCode} value={facility.name}>{facility.locality}</option>)}
                 </datalist>
               </div>

@@ -1,7 +1,7 @@
 {
   "name": "drop-network",
   "private": true,
-  "version": "0.0.62",
+  "version": "0.0.63",
   "type": "module",
   "scripts": {
     "dev": "tsx watch server/server.ts",
@@ -13,7 +13,8 @@
     "test": "tsx --test src/lib/*.test.ts server/*.test.ts",
     "scrape": "tsx scripts/scrape/index.ts",
     "import-donors": "tsx scripts/import-donors.ts",
-    "generate-upazilas": "tsx scripts/generate-upazilas.ts"
+    "generate-upazilas": "tsx scripts/generate-upazilas.ts",
+    "generate-collection-facilities": "tsx scripts/generate-collection-facilities.ts"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.27.2",

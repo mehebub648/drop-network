@@ -3,13 +3,17 @@ import {
   Building2,
   Check,
   ChevronDown,
+  LoaderCircle,
   MapPin,
   UserRound
 } from 'lucide-react';
 import { BLOOD_GROUPS } from '../../lib/blood';
 import { BD_LOCATION_NAMES } from '../../lib/locations';
 import { getUpazilasForDistrict } from '../../lib/upazilas';
-import { REGISTERED_BLOOD_BANKS } from '../../lib/collectionFacilities';
+import {
+  loadRegisteredCollectionFacilities,
+  type RegisteredCollectionFacility
+} from '../../lib/collectionFacilities';
 import type { RequesterRole } from '../../lib/searchDraft';
 
 export type Criteria = {
@@ -59,35 +63,55 @@ export default function SearchCriteriaForm({
   const [activeStep, setActiveStep] = useState(0);
   const [facilityOpen, setFacilityOpen] = useState(false);
   const [activeFacilityIndex, setActiveFacilityIndex] = useState(0);
+  const [districtFacilities, setDistrictFacilities] = useState<RegisteredCollectionFacility[]>([]);
+  const [facilityLoading, setFacilityLoading] = useState(false);
+  const [facilityLoadFailed, setFacilityLoadFailed] = useState(false);
   const facilityListId = useId();
   const question = QUESTIONS[activeStep];
   const upazilas = useMemo(() => getUpazilasForDistrict(value.district), [value.district]);
 
-  const districtFacilities = useMemo(() => {
-    const inDistrict = REGISTERED_BLOOD_BANKS.filter(item => item.district === value.district);
-    return [...inDistrict].sort((a, b) => {
-      const score = (locality: string) => (locality === value.upazila ? 0 : 1);
-      return score(a.locality) - score(b.locality) || a.name.localeCompare(b.name, 'en');
-    });
-  }, [value.district, value.upazila]);
+  useEffect(() => {
+    if (!value.district) {
+      setDistrictFacilities([]);
+      setFacilityLoading(false);
+      setFacilityLoadFailed(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setDistrictFacilities([]);
+    setFacilityLoading(true);
+    setFacilityLoadFailed(false);
+
+    loadRegisteredCollectionFacilities(value.district, controller.signal)
+      .then(facilities => setDistrictFacilities(facilities))
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setFacilityLoadFailed(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setFacilityLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [value.district]);
 
   const matchingFacilities = useMemo(() => {
     const query = normalized(value.collection_facility);
-    const candidates = query ? REGISTERED_BLOOD_BANKS : districtFacilities;
-    return candidates
+    return districtFacilities
       .filter(item => {
         if (!query) return true;
-        return normalized(`${item.name} ${item.locality} ${item.district}`).includes(query);
+        return normalized(`${item.name} ${item.locality}`).includes(query);
       })
       .sort((a, b) => {
-        const districtScore = (district: string) => (district === value.district ? 0 : 1);
+        const queryScore = (name: string) => query && normalized(name).startsWith(query) ? 0 : 1;
         const localityScore = (locality: string) => (locality === value.upazila ? 0 : 1);
-        return districtScore(a.district) - districtScore(b.district)
+        return queryScore(a.name) - queryScore(b.name)
           || localityScore(a.locality) - localityScore(b.locality)
           || a.name.localeCompare(b.name, 'en');
       })
-      .slice(0, 8);
-  }, [districtFacilities, value.collection_facility, value.district, value.upazila]);
+      .slice(0, 10);
+  }, [districtFacilities, value.collection_facility, value.upazila]);
 
   useEffect(() => {
     setActiveFacilityIndex(0);
@@ -260,7 +284,7 @@ export default function SearchCriteriaForm({
                   onChange({ ...value, collection_facility: event.target.value });
                   setFacilityOpen(true);
                 }}
-                placeholder="Search or type a place"
+                placeholder={`Search in ${value.district}`}
                 className="input pl-11 pr-11"
               />
               <button
@@ -269,13 +293,24 @@ export default function SearchCriteriaForm({
                 onClick={() => setFacilityOpen(open => !open)}
                 className="absolute right-1 top-1 flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100"
               >
-                <ChevronDown className={`h-4 w-4 transition-transform ${facilityOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                {facilityLoading
+                  ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  : <ChevronDown className={`h-4 w-4 transition-transform ${facilityOpen ? 'rotate-180' : ''}`} aria-hidden="true" />}
               </button>
 
-              {facilityOpen && (matchingFacilities.length > 0 || Boolean(value.collection_facility.trim())) && (
+              {facilityOpen && (facilityLoading || facilityLoadFailed || matchingFacilities.length > 0 || Boolean(value.collection_facility.trim())) && (
                 <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
-                  {matchingFacilities.length ? (
-                    <ul id={facilityListId} role="listbox" aria-label="Registered facility suggestions" className="max-h-64 overflow-y-auto p-1.5">
+                  {facilityLoading ? (
+                    <div id={facilityListId} role="status" className="flex items-center gap-2 p-4 text-sm font-semibold text-slate-600">
+                      <LoaderCircle className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
+                      Loading hospitals…
+                    </div>
+                  ) : facilityLoadFailed ? (
+                    <div id={facilityListId} role="status" className="p-4 text-sm font-semibold text-slate-700">
+                      Type the hospital or blood bank instead.
+                    </div>
+                  ) : matchingFacilities.length ? (
+                    <ul id={facilityListId} role="listbox" aria-label={`Registered facilities in ${value.district}`} className="max-h-64 overflow-y-auto p-1.5">
                       {matchingFacilities.map((item, index) => (
                         <li key={item.registryCode}>
                           <button
@@ -291,7 +326,7 @@ export default function SearchCriteriaForm({
                           >
                             <span className="min-w-0">
                               <span className="block text-sm font-bold leading-5 text-slate-900">{item.name}</span>
-                              <span className="mt-0.5 block text-xs font-medium text-slate-500">{item.locality}, {item.district}</span>
+                              {item.locality && <span className="mt-0.5 block text-xs font-medium text-slate-500">{item.locality}</span>}
                             </span>
                             {value.collection_facility === item.name && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />}
                           </button>
@@ -301,7 +336,7 @@ export default function SearchCriteriaForm({
                   ) : (
                     <div id={facilityListId} role="status" className="p-4">
                       <p className="text-sm font-semibold text-slate-700">
-                        Continue to use “{value.collection_facility.trim()}”.
+                        Use “{value.collection_facility.trim()}”.
                       </p>
                     </div>
                   )}

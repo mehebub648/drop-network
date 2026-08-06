@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.62`
+Current application version: `0.0.63`
 
 ## Overview
 
@@ -75,8 +75,8 @@ Entry points:
 - The shared layout supplies the site header and institutional footer. The
   footer links product, company, legal, and safety routes.
 - `src/lib/urgency.ts` and `src/lib/utils.ts` contain shared frontend
-  utilities. `src/lib/collectionFacilities.ts` contains the category-filtered
-  DGHS collection-facility suggestions.
+  utilities. `src/lib/collectionFacilities.ts` loads the selected district's
+  generated DGHS facility file from `public/collection-facilities/`.
 - `src/lib/api.ts` wraps all fetch calls to `/api`.
 - `src/lib/searchDraft.ts` keeps the in-progress request in `localStorage`. The
   inline sign-in does not navigate, so this is not about surviving a route
@@ -124,10 +124,12 @@ Routes:
   number opens the patient-details gate, which also
   carries the explicit publication consent and the inline sign-in, and
   publishing the request is what unmasks the number. The keyboard-operable
-  facility combobox searches DGHS registry rows whose type is `Blood Bank`,
-  orders the searched district and upazila first, and explains when there is no
-  local registry suggestion; manual entry remains available and registry
-  inclusion is not proof of current service availability.
+  facility combobox preloads and searches only the selected district. The
+  generated snapshot includes every DGHS registry function except the two
+  `Administration` values, `Administrative`, and `Knowledge Management
+  (Medical Library)`, orders the selected upazila first, and retains manual
+  entry when no suggestion matches. Registry inclusion is not proof of current
+  service availability.
 - `/directory/call/:requestId/:donorRef` shows one revealed number with a copy
   button and a `tel:` link, and requires the outcome of that call before another
   number can be opened. The page has no exit control, but the enforcement is on

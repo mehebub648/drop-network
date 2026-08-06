@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.62`
+Current version: `0.0.63`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -35,6 +35,10 @@ For live development:
 
 The default app runs on `http://localhost:3000`; the dev profile runs on
 `http://localhost:3001` unless you override `PORT` or `DEV_PORT`.
+
+Refresh the district facility files from the public DGHS registry with:
+
+`docker compose --profile development run --rm app-dev npm run generate-collection-facilities`
 
 ## Runtime Configuration
 
@@ -70,11 +74,12 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 - Creating a public request requires a verified account, the exact blood
   collection facility and address, patient-reference details, a future required
   time, a verified contact, and explicit review/consent before publication.
-  The searchable facility picker suggests 198 entries categorized as `Blood
-  Bank` in the supplied DGHS facility export, prioritizes the search area, and
-  clearly reports when that registry has no local suggestion. Other facilities
-  can still be entered manually, and every requester is warned to confirm
-  current collection, screening, and transfusion arrangements directly.
+  The searchable facility picker loads only the selected district from a
+  33,799-entry DGHS registry snapshot. The snapshot excludes the two
+  `Administration` functions plus `Administrative` and `Knowledge Management
+  (Medical Library)`, while manual entry remains available. Registry inclusion
+  is not proof that transfusion is currently available; requesters must confirm
+  collection, screening, and transfusion arrangements directly.
 - Requesters invite eligible donors privately. Donors can accept, decline,
   report arrival/donation, and reveal coordination contacts only after
   acceptance. A donation counts only after requester confirmation.
