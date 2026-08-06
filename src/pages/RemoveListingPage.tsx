@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, ShieldOff } from 'lucide-react';
+import { CheckCircle2, KeyRound, Phone, ShieldOff } from 'lucide-react';
 import { api } from '../lib/api';
+import { PageHeader, StatusBadge, Surface } from '../components/ui';
 
 /**
  * Self-service removal for people whose number was scraped from someone else's
@@ -53,22 +54,34 @@ export default function RemoveListingPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl pb-12">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-primary">
-        <ShieldOff className="h-6 w-6" aria-hidden="true" />
-      </span>
-      <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">
-        Remove your number from the directory
-      </h1>
-      <p className="mt-4 leading-7 text-slate-600">
-        Some donor listings here were published by other organisations, not by the people on them. If
-        one of those numbers is yours and you do not want to be contacted through Drop, you can take it
-        off without creating an account.
-      </p>
+    <div className="mx-auto max-w-5xl space-y-7 pb-12">
+      <PageHeader
+        eyebrow="Your privacy choice"
+        title="Remove your number from the directory"
+        description="If another organisation published your number and you do not want to be contacted through Drop, take it off without creating an account."
+        icon={ShieldOff}
+        aside={(
+          <Surface className="grid gap-2 p-3">
+            {([
+              [Phone, 'Enter your number', step !== 'phone'],
+              [KeyRound, 'Verify the code', step === 'done'],
+              [CheckCircle2, 'Listing removed', step === 'done']
+            ] as const).map(([Icon, label, complete], index) => (
+              <div key={String(label)} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${complete ? 'bg-green-100 text-green-700' : index === (step === 'phone' ? 0 : step === 'code' ? 1 : 2) ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'}`}>
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span className="text-sm font-bold text-slate-700">{label}</span>
+              </div>
+            ))}
+          </Surface>
+        )}
+      />
 
       {step === 'phone' && (
-        <form onSubmit={sendCode} className="theme-card mt-8 p-6 sm:p-8">
-          <h2 className="text-xl font-extrabold text-slate-950">Confirm it is your number</h2>
+        <form onSubmit={sendCode} className="surface mx-auto w-full max-w-2xl p-6 sm:p-8">
+          <StatusBadge tone="brand" icon={Phone}>Step 1 of 2</StatusBadge>
+          <h2 className="mt-4 text-xl font-extrabold text-slate-950">Confirm it is your number</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             We send a code by SMS so nobody else can remove your listing, or remove someone else's.
           </p>
@@ -93,8 +106,9 @@ export default function RemoveListingPage() {
       )}
 
       {step === 'code' && (
-        <form onSubmit={confirm} className="theme-card mt-8 p-6 sm:p-8">
-          <h2 className="text-xl font-extrabold text-slate-950">Enter the code</h2>
+        <form onSubmit={confirm} className="surface mx-auto w-full max-w-2xl p-6 sm:p-8">
+          <StatusBadge tone="brand" icon={KeyRound}>Step 2 of 2</StatusBadge>
+          <h2 className="mt-4 text-xl font-extrabold text-slate-950">Enter the code</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             If {phone} appears in the directory, a six-digit code is on its way to it.
           </p>
@@ -124,7 +138,7 @@ export default function RemoveListingPage() {
       )}
 
       {step === 'done' && (
-        <div className="theme-card mt-8 p-6 sm:p-8">
+        <Surface className="mx-auto w-full max-w-2xl border-green-200 bg-green-50/60 p-6 sm:p-8">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-100 text-green-700">
             <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
           </span>
@@ -141,10 +155,10 @@ export default function RemoveListingPage() {
             <Link to="/register" className="font-bold text-primary underline">register as a donor</Link>{' '}
             and control your own availability.
           </p>
-        </div>
+        </Surface>
       )}
 
-      <p className="mt-8 text-sm leading-6 text-slate-500">
+      <p className="mx-auto max-w-2xl text-sm leading-6 text-slate-500">
         Something wrong, or a number you cannot receive SMS on?{' '}
         <Link to="/contact" className="font-bold underline">Contact us</Link> and a person will handle it.
       </p>

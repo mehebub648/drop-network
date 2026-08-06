@@ -16,6 +16,7 @@ import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCr
 import DonorResultCard from '../components/search/DonorResultCard';
 import RequestGate from '../components/search/RequestGate';
 import SearchJourneySteps from '../components/search/SearchJourneySteps';
+import { EmptyState } from '../components/ui';
 import {
   readSearchDraft,
   searchRequestPayload,
@@ -196,7 +197,8 @@ export default function DonorSearchPage({
 
   return (
     <div className="space-y-6 pb-8 sm:space-y-8">
-      <section className="relative overflow-hidden rounded-[2rem] border border-rose-100 bg-[linear-gradient(135deg,#ffffff_0%,#fffafa_54%,#fff1f2_100%)] px-5 py-6 shadow-[0_24px_70px_-50px_rgba(136,19,55,0.55)] sm:px-8 sm:py-8 lg:px-10">
+      <section className="page-hero block px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
+        <div className="page-hero-grid" aria-hidden="true" />
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-rose-200/40 blur-3xl" />
         <div className="relative">
           <SearchJourneySteps activeStep={hasQuery ? 2 : 1} />
@@ -366,20 +368,12 @@ export default function DonorSearchPage({
               ))}
             </div>
           ) : donors.length === 0 && !error ? (
-            <div className="theme-card px-5 py-12 text-center sm:px-8">
-              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-                <UserRoundSearch className="h-7 w-7" aria-hidden="true" />
-              </span>
-              <h3 className="mt-5 text-xl font-extrabold text-slate-950">No donors listed in this upazila yet.</h3>
-              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
-                Try a neighbouring upazila, and ask the collection facility which compatible groups they
-                can accept for this patient.
-              </p>
-              <button type="button" onClick={() => setReloadKey(value => value + 1)} className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-extrabold text-white hover:bg-primary-dark">
-                <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                Search again
-              </button>
-            </div>
+            <EmptyState
+              icon={UserRoundSearch}
+              title="No donors listed in this upazila yet"
+              description="Try a neighbouring upazila, and ask the collection facility which compatible groups they can accept for this patient."
+              action={<button type="button" onClick={() => setReloadKey(value => value + 1)} className="theme-button"><RefreshCw className="h-4 w-4" aria-hidden="true" />Search again</button>}
+            />
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {donors.map(donor => (

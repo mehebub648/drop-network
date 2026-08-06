@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.59`
+Current application version: `0.0.60`
 
 ## Overview
 
@@ -70,7 +70,9 @@ Entry points:
   the exact/approximate/never-donated form model between registration and donor
   profile editing. The server remains authoritative for dates and validation.
 - `src/components/` contains shared layout, authentication shell,
-  error-boundary, metadata, and status UI.
+  error-boundary, metadata, and status UI. `src/components/ui.tsx` supplies the
+  reusable page heading, surface, status, notice, metric, and empty-state
+  primitives used to keep public, member, and staff screens visually aligned.
 - The shared layout supplies the site header and institutional footer. The
   footer links product, company, legal, and safety routes.
 - `src/lib/urgency.ts` and `src/lib/utils.ts` contain shared frontend
@@ -88,8 +90,10 @@ Entry points:
   it; re-exporting means the API and the interface cannot disagree about blood
   compatibility or place names. `src/lib/blood.ts` still owns the frontend-only
   helpers: urgency derivation and the donor eligibility calculation.
-- `src/index.css` defines the responsive white-and-blood-red component system,
-  admin workspace layout, shared controls, and Tailwind CSS usage.
+- `src/index.css` defines the responsive warm-white-and-blood-red
+  humanitarian-utility system, semantic success/availability color, focus and
+  reduced-motion behavior, admin workspace layout, shared controls, and
+  Tailwind CSS usage.
 
 Routes:
 

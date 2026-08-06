@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.59`
+Current version: `0.0.60`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -86,11 +86,13 @@ The default app runs on `http://localhost:3000`; the dev profile runs on
 - Public requests use server-side filters and bounded pagination with URL-based
   filter state. `/health`, `/ready`, and Prometheus-format `/metrics` support
   production probes and monitoring.
-- The responsive white-and-blood-red interface includes a connected
-  search-led landing and donor-directory journey, mobile navigation,
-  redesigned authentication and information screens, an installable offline
-  shell, route-specific SEO/social metadata, accessible focus behavior, and
-  consistent production English copy.
+- The responsive humanitarian-utility interface uses warm white surfaces,
+  blood-red actions, semantic availability/success green, strong typography,
+  and lightweight drop, map, pulse, shield, and progress graphics. Shared
+  headings, surfaces, status badges, metrics, alerts, empty states, fields,
+  actions, loading treatments, focus behavior, and reduced-motion support keep
+  the search, request, contact, account, community, partner, information, and
+  staff journeys connected from 320px mobile through large desktop layouts.
 - Verified hospitals, blood banks, and NGOs can be reviewed by operators,
   listed in the public partner directory, and publish donation campaigns.
 - `/community` publishes member donation stories and Markdown-formatted health

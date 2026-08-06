@@ -66,19 +66,20 @@ export default function SearchCriteriaForm({
   };
 
   return (
-    <form onSubmit={submit} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.5)] sm:p-6">
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+    <form onSubmit={submit} className="surface relative overflow-hidden p-5 sm:p-6">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-rose-400 to-amber-300" aria-hidden="true" />
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary">Search details</p>
-          <h2 className="mt-1.5 text-xl font-extrabold tracking-tight text-slate-950">{title}</h2>
-          <p className="mt-1 max-w-xl text-xs font-medium leading-5 text-slate-500">{description}</p>
+          <p className="eyebrow">Search details</p>
+          <h2 className="mt-1.5 text-xl font-extrabold tracking-[-0.025em] text-slate-950 sm:text-2xl">{title}</h2>
+          <p className="mt-1.5 max-w-xl text-sm font-medium leading-6 text-slate-500">{description}</p>
         </div>
-        <span className="inline-flex min-h-8 shrink-0 items-center self-start rounded-full bg-rose-50 px-3 text-[11px] font-extrabold text-rose-800">
+        <span className="inline-flex min-h-8 shrink-0 items-center self-start rounded-full border border-rose-100 bg-rose-50 px-3 text-[11px] font-extrabold text-rose-800">
           {stepLabel}
         </span>
       </div>
 
-      <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Match location</p>
+      <p className="mb-3 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[9px] text-white">1</span> Match location</p>
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="block">
           <span className="mb-2 block text-sm font-bold text-slate-700">Blood group</span>
@@ -140,9 +141,9 @@ export default function SearchCriteriaForm({
       </div>
 
       {hasPlace && (
-        <div className="fade-in mt-5 grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2">
+        <div className="fade-in mt-5 grid gap-4 rounded-2xl border border-rose-100 bg-rose-50/35 p-4 sm:grid-cols-2 sm:p-5">
           <div className="sm:col-span-2">
-            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Request context</p>
+            <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[9px] text-white">2</span> Request context</p>
             <p className="mt-1 text-xs font-medium leading-5 text-slate-500">
               This stays private while you browse and is used only if you ask to contact a donor.
             </p>
@@ -195,7 +196,7 @@ export default function SearchCriteriaForm({
         </div>
       )}
 
-      <button type="submit" disabled={!complete || submitting} className="primary-button mt-4 disabled:cursor-not-allowed disabled:opacity-60">
+      <button type="submit" disabled={!complete || submitting} className="primary-button mt-5 disabled:cursor-not-allowed disabled:opacity-60">
         <Search className="h-5 w-5" aria-hidden="true" />
         {submitting ? 'Searching...' : submitLabel}
       </button>

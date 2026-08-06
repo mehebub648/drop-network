@@ -12,10 +12,10 @@ const navigation = [
 ];
 
 const desktopLink = ({ isActive }: { isActive: boolean }) =>
-  `inline-flex min-h-11 items-center rounded-xl px-3 text-sm font-bold transition-colors ${
+  `inline-flex min-h-10 items-center rounded-full px-3.5 text-sm font-bold transition-colors ${
     isActive
-      ? 'bg-rose-50 text-rose-800'
-      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+      ? 'bg-white text-rose-800 shadow-sm ring-1 ring-rose-100'
+      : 'text-slate-600 hover:bg-white/80 hover:text-slate-950'
   }`;
 
 const mobileLink = ({ isActive }: { isActive: boolean }) =>
@@ -58,7 +58,7 @@ export default function Layout({
   }, [mobileOpen]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-bg">
+    <div className="min-h-screen flex flex-col bg-transparent">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-3 focus:font-bold focus:text-slate-950 focus:shadow-lg"
@@ -66,18 +66,22 @@ export default function Layout({
         Skip to main content
       </a>
 
-      <header className="sticky top-0 z-50 border-b border-rose-950/10 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-18 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
-          <Link to="/" className="flex min-h-11 shrink-0 items-center gap-3 rounded-xl" aria-label="Drop Network home">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-sm shadow-rose-900/20">
-              <Droplet className="h-5 w-5 text-white" aria-hidden="true" />
+      <header className="sticky top-0 z-50 border-b border-rose-950/10 bg-white/90 shadow-[0_12px_34px_-30px_rgba(15,23,42,0.45)] backdrop-blur-xl">
+        <div className="mx-auto flex min-h-[4.75rem] max-w-[88rem] items-center gap-4 px-4 sm:px-6 lg:px-8">
+          <Link to="/" className="group flex min-h-11 shrink-0 items-center gap-3 rounded-xl" aria-label="Drop Network home">
+            <span className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-primary shadow-[0_12px_28px_-14px_rgba(190,18,60,0.8)] transition-transform group-hover:-rotate-3">
+              <span className="absolute inset-1 rounded-xl border border-white/25" aria-hidden="true" />
+              <Droplet className="relative h-5 w-5 text-white" aria-hidden="true" />
             </span>
-            <span className="text-xl font-extrabold tracking-tight text-slate-950">
-              Drop<span className="text-primary">.</span>
+            <span>
+              <span className="block text-xl font-extrabold leading-none tracking-[-0.04em] text-slate-950">
+                Drop<span className="text-primary">.</span>
+              </span>
+              <span className="mt-1 hidden text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400 sm:block">Donor network</span>
             </span>
           </Link>
 
-          <nav className="ml-2 hidden items-center gap-1 xl:flex" aria-label="Primary navigation">
+          <nav className="ml-4 hidden items-center gap-0.5 rounded-full border border-slate-200/80 bg-slate-50/80 p-1 xl:flex" aria-label="Primary navigation">
             {navigation.map(item => (
               <NavLink key={item.to} to={item.to} end={item.end} className={desktopLink}>
                 {item.label}
@@ -90,7 +94,7 @@ export default function Layout({
               <>
                 <Link
                   to="/directory"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white shadow-sm shadow-rose-900/20 transition-colors hover:bg-primary-dark"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-extrabold text-white shadow-[0_12px_28px_-18px_rgba(190,18,60,0.9)] transition-all hover:-translate-y-0.5 hover:bg-primary-dark"
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   Find blood
@@ -139,7 +143,7 @@ export default function Layout({
                 </Link>
                 <Link
                   to="/register"
-                  className="inline-flex min-h-11 items-center rounded-xl bg-primary px-4 text-sm font-extrabold text-white shadow-sm shadow-rose-900/20 transition-colors hover:bg-primary-dark"
+                  className="inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-sm font-extrabold text-white shadow-[0_12px_28px_-18px_rgba(190,18,60,0.9)] transition-all hover:-translate-y-0.5 hover:bg-primary-dark"
                 >
                   Join as a donor
                 </Link>
@@ -150,7 +154,7 @@ export default function Layout({
           <button
             ref={menuButtonRef}
             type="button"
-            className="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 xl:hidden"
+            className="ml-auto inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm xl:hidden"
             aria-expanded={mobileOpen}
             aria-controls="mobile-navigation"
             aria-haspopup="true"
@@ -162,8 +166,8 @@ export default function Layout({
         </div>
 
         {mobileOpen && (
-          <div id="mobile-navigation" className="border-t border-slate-100 bg-white px-4 pb-5 pt-3 shadow-lg xl:hidden">
-            <nav className="mx-auto grid max-w-7xl gap-1" aria-label="Mobile navigation">
+          <div id="mobile-navigation" className="border-t border-slate-100 bg-white/98 px-4 pb-5 pt-3 shadow-2xl xl:hidden">
+            <nav className="mx-auto grid max-w-7xl gap-1 rounded-2xl bg-slate-50 p-2" aria-label="Mobile navigation">
               {navigation.map(item => (
                 <NavLink key={item.to} to={item.to} end={item.end} className={mobileLink}>
                   {item.label}
@@ -230,7 +234,7 @@ export default function Layout({
         )}
       </header>
 
-      <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+      <main id="main-content" className="mx-auto w-full max-w-[88rem] flex-1 px-4 py-6 sm:px-6 sm:py-9 lg:px-8 lg:py-11">
         {children}
       </main>
       <Footer />

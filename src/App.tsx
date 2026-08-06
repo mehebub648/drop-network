@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
+import { Droplets } from 'lucide-react';
 import { api } from './lib/api';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
@@ -136,22 +137,27 @@ function CommunityRoute({ children }: { children: ReactNode }) {
 }
 
 function CommunityRouteLoading() {
-  return (
-    <div className="flex min-h-40 items-center justify-center" role="status" aria-live="polite">
-      <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
-        <span className="h-5 w-5 animate-spin rounded-full border-2 border-rose-100 border-t-primary" aria-hidden="true" />
-        Loading community…
-      </div>
-    </div>
-  );
+  return <LoadingPanel label="Loading community…" compact />;
 }
 
 function RouteLoading() {
+  return <LoadingPanel label="Loading your account…" />;
+}
+
+function LoadingPanel({ label, compact = false }: { label: string; compact?: boolean }) {
   return (
-    <div className="min-h-[45vh] flex items-center justify-center" role="status" aria-live="polite">
-      <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
-        <span className="h-5 w-5 rounded-full border-2 border-emerald-100 border-t-emerald-700 animate-spin" aria-hidden="true" />
-        Loading your account…
+    <div className={`flex items-center justify-center px-4 ${compact ? 'min-h-40' : 'min-h-[45vh]'}`} role="status" aria-live="polite">
+      <div className="surface flex w-full max-w-md items-center gap-4 p-5">
+        <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-primary" aria-hidden="true">
+          <span className="absolute inset-0 animate-ping rounded-2xl bg-rose-100 opacity-50" />
+          <Droplets className="relative h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-extrabold text-slate-900">{label}</p>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-rose-100" aria-hidden="true">
+            <span className="block h-full w-1/2 animate-pulse rounded-full bg-primary" />
+          </div>
+        </div>
       </div>
     </div>
   );

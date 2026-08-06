@@ -17,6 +17,7 @@ import { api } from '../lib/api';
 import { DONATION_INTERVAL_DAYS } from '../lib/blood';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
 import SearchJourneySteps from '../components/search/SearchJourneySteps';
+import { MetricCard } from '../components/ui';
 import {
   readSearchDraft,
   writeSearchDraft,
@@ -161,20 +162,12 @@ export default function LandingPage({ user }: { user: any }) {
 
       <section aria-label="Drop Network activity" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { value: stats?.donors, label: 'Donors', icon: Users },
-          { value: stats?.available_donors, label: 'Available now', icon: CheckCircle2 },
-          { value: stats?.active_requests, label: 'Active requests', icon: Activity },
-          { value: stats?.fulfilled_requests, label: 'Fulfilled requests', icon: HeartHandshake }
-        ].map(({ value, label, icon: Icon }) => (
-          <div key={label} className="theme-card flex items-center gap-4 p-5">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-              <Icon className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-2xl font-extrabold tabular-nums text-slate-950">{value?.toLocaleString() ?? '—'}</p>
-              <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-            </div>
-          </div>
+          { value: stats?.donors, label: 'Donors', icon: Users, tone: 'brand' as const },
+          { value: stats?.available_donors, label: 'Available now', icon: CheckCircle2, tone: 'success' as const },
+          { value: stats?.active_requests, label: 'Active requests', icon: Activity, tone: 'warning' as const },
+          { value: stats?.fulfilled_requests, label: 'Fulfilled requests', icon: HeartHandshake, tone: 'neutral' as const }
+        ].map(({ value, label, icon, tone }) => (
+          <MetricCard key={label} value={value?.toLocaleString() ?? '—'} label={label} icon={icon} tone={tone} />
         ))}
       </section>
 
