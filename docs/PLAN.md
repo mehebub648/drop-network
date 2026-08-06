@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.58`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.59`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -53,11 +53,10 @@ delivered.
 - [ ] **Directory paging is offset-by-overfetch.** `queryImportedDonors()` in
   `server/db.ts` fetches `offset + limit` rows and slices, because LanceDB has
   no OFFSET. Fine for shallow paging; revisit if deep paging is needed.
-- [ ] **Listed people cannot ask to be removed.** Imported listings can now be
-  called through the reveal flow, but the only route off the list is *claiming*
-  the profile - which means opting in to get out. Add a plain "remove my
-  listing" path that needs no account, and suppress the row from search without
-  deleting the audit trail.
+- [ ] **A re-import resets claim state.** `scripts/import-donors.ts` replaces
+  rows by public id, so a re-scrape drops `claim_status`, `claimed_by`, and
+  `claim_note` back to unclaimed. Withdrawals are now carried forward through
+  `findRemovedListings()`; claim state should be preserved the same way.
 - [ ] **Repeatedly reported wrong numbers stay searchable.** Call outcomes are
   recorded in `common_call_reports` but nothing acts on them. Suppress an
   imported listing after N independent `WRONG_NUMBER` reports from different

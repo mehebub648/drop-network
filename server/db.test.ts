@@ -124,16 +124,69 @@ test('unclaimed listings are reachable by any stored spelling of their upazila',
   await database.deleteImportedDonorsByPublicIds([donor.public_id]);
 });
 
+test('a withdrawn listing disappears from every way of reaching it', async () => {
+  const donor = toImportedDonor({
+    source_id: 'bd-scouts',
+    source_organization: 'Bangladesh Scouts',
+    source_url: 'https://service.scouts.gov.bd/blood-donation/1',
+    scraped_at: '2026-07-29T00:00:00.000Z',
+    source_ref: 'CC3001',
+    name: 'Scout Tanvir',
+    phone: '+8801733000044',
+    blood_group: 'B+',
+    district: 'Dhaka',
+    upazila: 'Gulshan'
+  }, '2026-07-29T00:00:00.000Z');
+  await database.addImportedDonors([toImportedDonorRow(donor)]);
+
+  assert.equal((await database.queryImportedDonorsForRequest({
+    district: 'Dhaka', upazilas: ['Gulshan'], bloodGroups: ['B+']
+  })).length, 1);
+  assert.ok(await database.getImportedDonor(donor.public_id));
+
+  const removed = await database.withdrawImportedDonorsByPhone('+8801733000044');
+  assert.equal(removed, 1);
+
+  // Search, the request-side lookup, counting, and the by-id read that backs
+  // the phone reveal must all stop finding it.
+  assert.equal((await database.queryImportedDonorsForRequest({
+    district: 'Dhaka', upazilas: ['Gulshan'], bloodGroups: ['B+']
+  })).length, 0);
+  assert.equal(await database.getImportedDonor(donor.public_id), null);
+  assert.equal(await database.countImportedDonors({ phone: '+8801733000044' }), 0);
+
+  // The row is kept, not deleted, so a re-import cannot quietly restore them
+  // and the request stays auditable.
+  assert.equal(await database.countImportedDonors({ phone: '+8801733000044', includeRemoved: true }), 1);
+  const kept = await database.getImportedDonor(donor.public_id, { includeRemoved: true });
+  assert.equal(kept?.listing_state, 'REMOVED');
+  assert.ok(kept?.removed_at);
+
+  // Removing again is a no-op rather than an error.
+  assert.equal(await database.withdrawImportedDonorsByPhone('+8801733000044'), 0);
+
+  // The importer asks for this so a re-scrape of the same source cannot undo
+  // the request. The source still publishes them; we still do not.
+  const stillRemoved = await database.findRemovedListings([donor.public_id, 'imp_not_a_real_id']);
+  assert.equal(stillRemoved.size, 1);
+  assert.equal(stillRemoved.get(donor.public_id), kept?.removed_at);
+});
+
 test('filters escape quoted values instead of breaking the predicate', () => {
+  // `includeRemoved` here only so the escaping is compared against an exact
+  // string; the listing-state clause is asserted separately below.
   assert.equal(
-    database.buildImportedFilter({ upazilas: ["Cox's Bazar Sadar"] }),
+    database.buildImportedFilter({ upazilas: ["Cox's Bazar Sadar"], includeRemoved: true }),
     `upazila IN ('Cox''s Bazar Sadar')`
   );
   assert.equal(
-    database.buildImportedFilter({ district: 'Dhaka', bloodGroups: ['A+', 'O-'] }),
+    database.buildImportedFilter({ district: 'Dhaka', bloodGroups: ['A+', 'O-'], includeRemoved: true }),
     `blood_group IN ('A+', 'O-') AND district = 'Dhaka'`
   );
-  assert.equal(database.buildImportedFilter({}), '');
+  // Removed listings are excluded unless a caller opts in, so a new query
+  // cannot expose them by forgetting to say so.
+  assert.match(database.buildImportedFilter({}), /listing_state/);
+  assert.equal(database.buildImportedFilter({ includeRemoved: true }), '');
 });
 
 test('call reports are queryable per request without loading the table', async () => {

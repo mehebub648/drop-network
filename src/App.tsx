@@ -29,6 +29,7 @@ import RouteMetadata from './components/RouteMetadata';
 import PartnersPage from './pages/PartnersPage';
 import DirectoryPage from './pages/DirectoryPage';
 import ClaimProfilePage from './pages/ClaimProfilePage';
+import RemoveListingPage from './pages/RemoveListingPage';
 import DonorSearchPage from './pages/DonorSearchPage';
 import CallDonorPage from './pages/CallDonorPage';
 import { getSafeReturnTo } from './lib/navigation';
@@ -92,6 +93,9 @@ export default function App() {
             <Route path="/directory" element={<DonorSearchPage user={user} onLogin={fetchUser} />} />
             <Route path="/directory/call/:requestId/:donorRef" element={requireUser(<CallDonorPage />)} />
             <Route path="/directory/imported" element={<DirectoryPage />} />
+            {/* Deliberately account-free: the other way off the directory is
+                claiming the profile, i.e. signing up in order to leave. */}
+            <Route path="/directory/remove" element={<RemoveListingPage />} />
             <Route path="/directory/imported/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
             <Route path="/directory/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
             <Route path="/login" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile"><LoginPage onLogin={fetchUser} /></GuestOnlyRoute>} />

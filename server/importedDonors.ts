@@ -25,6 +25,9 @@ export const IMPORTED_DONORS_TABLE = 'imported_donors';
 export const CLAIM_STATUSES = ['UNCLAIMED', 'PENDING_REVIEW', 'CLAIMED'] as const;
 export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
 
+export const LISTING_STATES = ['ACTIVE', 'REMOVED'] as const;
+export type ListingState = (typeof LISTING_STATES)[number];
+
 export type ImportedDonorSource = {
   id: string;
   organization: string;
@@ -84,6 +87,14 @@ export type ImportedDonor = {
   claimed_by?: string;
   claimed_at?: string;
   claim_note?: string;
+  /**
+   * `REMOVED` when the person on this listing asked to be taken off it. The
+   * row is kept rather than deleted so a re-import cannot quietly resurrect
+   * them and so the request stays auditable, but it is excluded from every
+   * search, count, and reveal.
+   */
+  listing_state?: ListingState;
+  removed_at?: string;
   imported_at: string;
 };
 
@@ -234,6 +245,17 @@ export function toPublicImportedDonor(donor: ImportedDonor): PublicImportedDonor
   };
 }
 
+/**
+ * Marks a listing as withdrawn at the request of the person on it.
+ *
+ * The row is kept, not deleted: re-importing the source would otherwise put
+ * them straight back, and a deleted row leaves no evidence that the request was
+ * honoured. Everything that reads listings filters removed rows out.
+ */
+export function withdrawImportedDonor(donor: ImportedDonor, removedAt = new Date().toISOString()): ImportedDonor {
+  return { ...donor, listing_state: 'REMOVED', removed_at: removedAt };
+}
+
 export type RevealedImportedDonor = PublicImportedDonor & { phone: string };
 
 /**
@@ -273,6 +295,7 @@ export function toImportedDonorRow(donor: ImportedDonor) {
     vector: storedDonor.location ? [storedDonor.location.lng, storedDonor.location.lat] : [0, 0],
     id: storedDonor.id,
     row_version: IMPORTED_ROW_VERSION,
+    listing_state: storedDonor.listing_state || 'ACTIVE',
     public_id: storedDonor.public_id,
     blood_group: storedDonor.blood_group,
     district: storedDonor.district,

@@ -5,6 +5,7 @@ import {
   IMPORTED_ROW_VERSION,
   toImportedDonorRow,
   withImportedDonorIdentity,
+  withdrawImportedDonor,
   type ImportedDonor
 } from './importedDonors';
 
@@ -106,7 +107,17 @@ export async function getAllFromTable(name: string) {
 // down; the full record still travels in `doc`.
 
 const IMPORTED_TABLE = 'imported_donors';
-const IMPORTED_BACKFILL_BATCH_SIZE = 1_000;
+/**
+ * Rows rewritten per backfill pass.
+ *
+ * Every pass re-scans the table for rows that still carry an older
+ * `row_version`, so the number of passes - not the number of rows - is what a
+ * migration costs. At a thousand rows that meant ~130 full scans of a 129k-row
+ * table and roughly forty minutes; ten thousand cuts it to ~13. The batch is
+ * held in memory as parsed documents, so this trades about 10-20 MB of peak
+ * boot memory for most of that time back.
+ */
+const IMPORTED_BACKFILL_BATCH_SIZE = 10_000;
 let importedTableReady: Promise<Awaited<ReturnType<typeof prepareImportedDonorTable>>> | null = null;
 
 function stringLiteral(value: string) {
@@ -138,6 +149,7 @@ async function readable(table: lancedb.Table) {
 export type ImportedDonorRow = {
   id: string;
   row_version: string;
+  listing_state: string;
   public_id: string;
   blood_group: string;
   district: string;
@@ -218,13 +230,23 @@ async function prepareImportedDonorTable() {
   if (tables.includes(IMPORTED_TABLE)) {
     const table = await conn.openTable(IMPORTED_TABLE);
     const schema = await table.schema();
-    const missing = ['public_id', 'upazila', 'row_version']
-      .filter(name => !schema.fields.some(field => field.name === name));
     // Upazila is the granularity a requester searches at, and was always
-    // present in `doc`; this promotes it to a column so LanceDB can filter on
-    // it. row_version records which set of columns a row was written with.
+    // present in `doc`; promoting it to a column lets LanceDB filter on it.
+    // `row_version` records which set of columns a row was written with.
+    //
+    // `listing_state` is different: every existing row is correctly `ACTIVE`,
+    // so the column default is the whole migration. It deliberately does not
+    // bump `row_version`, because nothing needs rewriting from `doc`.
+    const defaults: Record<string, string> = {
+      public_id: "''",
+      upazila: "''",
+      row_version: "''",
+      listing_state: "'ACTIVE'"
+    };
+    const missing = Object.keys(defaults)
+      .filter(name => !schema.fields.some(field => field.name === name));
     if (missing.length > 0) {
-      await table.addColumns(missing.map(name => ({ name, valueSql: "''" })));
+      await table.addColumns(missing.map(name => ({ name, valueSql: defaults[name] })));
     }
     await deleteContactlessImportedDonors(table);
     await backfillImportedDonorColumns(table);
@@ -235,6 +257,7 @@ async function prepareImportedDonorTable() {
     vector: [0, 0],
     id: 'dummy',
     row_version: IMPORTED_ROW_VERSION,
+    listing_state: 'ACTIVE',
     public_id: '',
     blood_group: '',
     district: '',
@@ -299,8 +322,16 @@ export type ImportedDonorQuery = {
   upazilas?: string[];
   sourceId?: string;
   claimStatus?: string;
+  /** Exact E.164 match, used by the self-service removal flow. */
+  phone?: string;
   /** Case-insensitive substring match against name/district/upazila. */
   search?: string;
+  /**
+   * Include listings the person asked to have removed. Off by default so a new
+   * query cannot expose them by forgetting to exclude them; the only callers
+   * that set it are the withdrawal itself and staff tooling.
+   */
+  includeRemoved?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -308,6 +339,13 @@ export type ImportedDonorQuery = {
 /** Exported for tests; callers should use the query helpers below. */
 export function buildImportedFilter(query: ImportedDonorQuery) {
   const clauses: string[] = [];
+  // Withdrawn listings are excluded unless explicitly asked for, so this is a
+  // decision a caller has to make on purpose rather than one they can omit.
+  if (!query.includeRemoved) {
+    // NULL-tolerant: a row from before the column existed must still be
+    // visible, and `x <> 'REMOVED'` is not true for NULL.
+    clauses.push(`(listing_state IS NULL OR listing_state <> ${stringLiteral('REMOVED')})`);
+  }
   if (query.bloodGroups?.length) {
     clauses.push(`blood_group IN (${query.bloodGroups.map(stringLiteral).join(', ')})`);
   }
@@ -317,6 +355,7 @@ export function buildImportedFilter(query: ImportedDonorQuery) {
   }
   if (query.sourceId) clauses.push(`source_id = ${stringLiteral(query.sourceId)}`);
   if (query.claimStatus) clauses.push(`claim_status = ${stringLiteral(query.claimStatus)}`);
+  if (query.phone) clauses.push(`phone = ${stringLiteral(query.phone)}`);
   if (query.search) {
     clauses.push(`search_text LIKE ${stringLiteral(`%${query.search.toLowerCase()}%`)}`);
   }
@@ -369,12 +408,74 @@ export async function queryImportedDonorsForRequest(params: {
   });
 }
 
-export async function getImportedDonor(publicId: string) {
+/**
+ * One listing by public id. A withdrawn listing reads as missing, because this
+ * backs the detail page, the claim flow, and the phone reveal - if it returned
+ * the row, a removal would not actually remove anything.
+ */
+export async function getImportedDonor(publicId: string, options: { includeRemoved?: boolean } = {}) {
   const table = await readable(await ensureImportedDonorTable());
-  const results = await table.query().where(`public_id = ${stringLiteral(publicId)}`).limit(1).toArray();
+  const clauses = [`public_id = ${stringLiteral(publicId)}`];
+  if (!options.includeRemoved) {
+    clauses.push(`(listing_state IS NULL OR listing_state <> ${stringLiteral('REMOVED')})`);
+  }
+  const results = await table.query().where(clauses.join(' AND ')).limit(1).toArray();
   return results.length > 0
     ? importedDonorFromRow(results[0] as unknown as Record<string, unknown>)
     : null;
+}
+
+/**
+ * Which of these public ids belong to someone who asked to be removed, and when
+ * they asked.
+ *
+ * The importer replaces rows wholesale, so without this a re-scrape of the same
+ * source would put a withdrawn person straight back into the directory. A
+ * removal has to outlive the data it was made against.
+ */
+export async function findRemovedListings(publicIds: string[]) {
+  const removedAt = new Map<string, string>();
+  if (publicIds.length === 0) return removedAt;
+  const table = await readable(await ensureImportedDonorTable());
+
+  // Chunked so the predicate cannot grow unbounded on a large import batch.
+  for (let index = 0; index < publicIds.length; index += 500) {
+    const chunk = publicIds.slice(index, index + 500);
+    const rows = await table
+      .query()
+      .where(`listing_state = ${stringLiteral('REMOVED')} AND public_id IN (${chunk.map(stringLiteral).join(', ')})`)
+      .limit(chunk.length)
+      .toArray();
+    for (const row of rows as unknown as Array<Record<string, unknown>>) {
+      const donor = importedDonorFromRow(row);
+      removedAt.set(donor.public_id, donor.removed_at || new Date().toISOString());
+    }
+  }
+  return removedAt;
+}
+
+/**
+ * Withdraws every listing published under one phone number.
+ *
+ * A person can appear more than once - the same number scraped from two
+ * sources, or listed twice by one - and they asked to be off the directory,
+ * not off one row of it. Returns how many were withdrawn so the caller can
+ * tell them.
+ */
+export async function withdrawImportedDonorsByPhone(phone: string) {
+  const table = await readable(await ensureImportedDonorTable());
+  const rows = await table
+    .query()
+    .where(`phone = ${stringLiteral(phone)} AND (listing_state IS NULL OR listing_state <> ${stringLiteral('REMOVED')})`)
+    .limit(500)
+    .toArray();
+  if (rows.length === 0) return 0;
+
+  const removedAt = new Date().toISOString();
+  const withdrawn = (rows as unknown as Array<Record<string, unknown>>)
+    .map(row => toImportedDonorRow(withdrawImportedDonor(importedDonorFromRow(row), removedAt)));
+  await table.mergeInsert('id').whenMatchedUpdateAll().execute(withdrawn);
+  return withdrawn.length;
 }
 
 // --- Call reports --------------------------------------------------------

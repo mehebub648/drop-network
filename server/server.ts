@@ -10,7 +10,7 @@ import bcrypt from 'bcryptjs';
 import { randomInt } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { v4 as uuidv4 } from 'uuid';
-import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, replaceImportedDonor, addCallReports, queryCallReports } from './db';
+import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, replaceImportedDonor, withdrawImportedDonorsByPhone, addCallReports, queryCallReports } from './db';
 import { evaluateClaim, maskPhone, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, IMPORT_SOURCES, type ImportedDonor } from './importedDonors';
 import { getLocationByName } from './locations';
 import { getSmsProvider, isSmsConfigured } from './sms';
@@ -94,7 +94,10 @@ const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
 // SIGN_IN serves the blood request flow, where the requester gives a phone
 // number without first saying whether they have an account. It is the only
 // purpose that works for both an existing and a new account.
-const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'SIGN_IN'] as const;
+// REMOVE_LISTING lets someone who never signed up take their scraped number off
+// the directory. It needs no account, which is the point: requiring one would
+// mean opting in to opt out.
+const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'SIGN_IN', 'REMOVE_LISTING'] as const;
 const allowedCorsOrigins = new Set(
   (process.env.CORS_ORIGIN || process.env.APP_URL || '')
     .split(',')
@@ -336,7 +339,7 @@ type BloodRequest = {
 type OtpChallenge = {
   id: string;
   phone: string;
-  purpose: 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN';
+  purpose: (typeof OTP_PURPOSES)[number];
   code_hash: string;
   created_at: string;
   expires_at: string;
@@ -1406,7 +1409,9 @@ app.get('/sitemap.xml', asyncRoute(async (req, res) => {
     res.set('Cache-Control', 'public, max-age=300, must-revalidate');
     return res.type('application/xml').send(communitySitemapCache.xml);
   }
-  const routes = ['', '/requests', '/register', '/directory', '/community', '/partners', '/about', '/contact', '/safety', '/privacy', '/terms'];
+  // `/directory/remove` is listed so someone searching for how to get their
+  // number off the directory can find the page without going through us.
+  const routes = ['', '/requests', '/register', '/directory', '/directory/remove', '/community', '/partners', '/about', '/contact', '/safety', '/privacy', '/terms'];
   let communityUrls = '';
   try {
     // A sitemap document may contain at most 50,000 URLs. Reserve room for
@@ -1618,6 +1623,66 @@ app.get('/media/community/:key', asyncRoute(async (req, res) => {
   res.send(image);
 }));
 
+/**
+ * Creates and sends one verification challenge, enforcing the per-purpose
+ * resend cooldown. A failed persist or send invalidates the new challenge so it
+ * cannot leave the caller inside a cooldown for a code that never arrived.
+ */
+async function issueOtpChallenge(
+  phone: string,
+  purpose: OtpChallenge['purpose'],
+  provider: NonNullable<ReturnType<typeof getSmsProvider>>
+) {
+  const recent = otpChallenges.find(challenge =>
+    challenge.phone === phone && challenge.purpose === purpose &&
+    new Date(challenge.expires_at).getTime() > Date.now() &&
+    Date.now() - new Date(challenge.created_at).getTime() < 60_000
+  );
+  if (recent) return { error: 'Wait before requesting another code', status: 429 } as const;
+
+  const code = String(randomInt(100000, 1_000_000));
+  const now = Date.now();
+  const challenge: OtpChallenge = {
+    id: uuidv4(), phone, purpose,
+    code_hash: await bcrypt.hash(code, BCRYPT_ROUNDS),
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + OTP_TTL_MS).toISOString(),
+    attempts: 0
+  };
+  otpChallenges.push(challenge);
+
+  const invalidate = async () => {
+    otpChallenges = otpChallenges.filter(item => item.id !== challenge.id);
+    challenge.expires_at = new Date(0).toISOString();
+    challenge.verification_expires_at = new Date(0).toISOString();
+    try {
+      await saveToTable('common_otps', challenge);
+    } catch {
+      // The in-memory challenge is already gone. Avoid exposing datastore or
+      // provider details while readiness monitoring reports persistent errors.
+    }
+  };
+
+  try {
+    await saveToTable('common_otps', challenge);
+  } catch {
+    await invalidate();
+    return { error: 'Phone verification is temporarily unavailable', status: 503 } as const;
+  }
+
+  try {
+    await provider.sendOtp(phone, code);
+  } catch {
+    await invalidate();
+    return {
+      error: 'Verification code delivery failed; please try again',
+      status: provider.name === 'http' ? 502 : 503
+    } as const;
+  }
+
+  return { challenge } as const;
+}
+
 app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const purpose = req.body?.purpose;
@@ -1638,50 +1703,8 @@ app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
   // entered the code sent to that number - so they learn about their own phone
   // and nobody else's.
 
-  const recent = otpChallenges.find(challenge =>
-    challenge.phone === phone && challenge.purpose === purpose &&
-    new Date(challenge.expires_at).getTime() > Date.now() &&
-    Date.now() - new Date(challenge.created_at).getTime() < 60_000
-  );
-  if (recent) return res.status(429).json({ error: 'Wait before requesting another code' });
-
-  const code = String(randomInt(100000, 1_000_000));
-  const now = Date.now();
-  const challenge: OtpChallenge = {
-    id: uuidv4(), phone, purpose,
-    code_hash: await bcrypt.hash(code, BCRYPT_ROUNDS),
-    created_at: new Date(now).toISOString(),
-    expires_at: new Date(now + OTP_TTL_MS).toISOString(),
-    attempts: 0
-  };
-  otpChallenges.push(challenge);
-  try {
-    await saveToTable('common_otps', challenge);
-  } catch {
-    otpChallenges = otpChallenges.filter(item => item.id !== challenge.id);
-    challenge.expires_at = new Date(0).toISOString();
-    try {
-      await saveToTable('common_otps', challenge);
-    } catch {
-      // There is no in-memory cooldown even when persistence is unavailable.
-    }
-    return res.status(503).json({ error: 'Phone verification is temporarily unavailable' });
-  }
-  try {
-    await provider.sendOtp(phone, code);
-  } catch {
-    otpChallenges = otpChallenges.filter(item => item.id !== challenge.id);
-    challenge.expires_at = new Date(0).toISOString();
-    challenge.verification_expires_at = new Date(0).toISOString();
-    try {
-      await saveToTable('common_otps', challenge);
-    } catch {
-      // The in-memory challenge is already gone. Avoid exposing datastore or
-      // provider details while readiness monitoring reports persistent errors.
-    }
-    const status = provider.name === 'http' ? 502 : 503;
-    return res.status(status).json({ error: 'Verification code delivery failed; please try again' });
-  }
+  const issued = await issueOtpChallenge(phone, purpose, provider);
+  if ('error' in issued) return res.status(issued.status).json({ error: issued.error });
   res.json({ success: true, provider: provider.name });
 });
 
@@ -2363,7 +2386,7 @@ const revealLimiter = rateLimit({
 
 /** How wide the membership re-check looks; a superset of one result page. */
 const REVEAL_MATCH_LIMIT = 200;
-
+/** A reveal is only "unreported" once the caller has had time to dial. */
 async function requestCallReports(requestId: string, actorId?: string) {
   return await queryCallReports<CallReport>({ requestId, actorId, limit: 1_000 });
 }
@@ -3499,6 +3522,60 @@ app.get('/api/directory/:id', async (req, res) => {
 // auto-approved only when the caller's verified phone is the number the source
 // published; anything else waits for a moderator, because nothing else in the
 // imported data proves ownership.
+/**
+ * Takes a scraped listing down at the request of the person on it.
+ *
+ * Deliberately account-free. These people never signed up here, and the only
+ * other way off the directory is *claiming* the profile - which means creating
+ * an account in order to leave. Proving control of the number by code is the
+ * whole check, and it is the same bar the rest of the app uses for a phone.
+ *
+ * Whether a number is listed is never disclosed: the request step always
+ * answers the same way, exactly like password recovery, so this cannot be used
+ * to test which numbers are in the directory.
+ */
+app.post('/api/directory/removals/request', authLimiter, async (req, res) => {
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
+
+  const provider = getSmsProvider();
+  if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
+
+  let listed = 0;
+  try {
+    listed = await countImportedDonors({ phone });
+  } catch {
+    return res.status(503).json({ error: 'The directory is temporarily unavailable' });
+  }
+  // Answer identically whether or not anything is listed.
+  if (listed === 0) return res.json({ success: true });
+
+  const issued = await issueOtpChallenge(phone, 'REMOVE_LISTING', provider);
+  if ('error' in issued) return res.status(issued.status).json({ error: issued.error });
+  res.json({ success: true, provider: provider.name });
+});
+
+app.post('/api/directory/removals/confirm', authLimiter, async (req, res) => {
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
+
+  const challenge = verifiedChallenge(phone, 'REMOVE_LISTING', req.body?.verification_token);
+  if (!challenge) return res.status(403).json({ error: 'Verify this number before removing its listings' });
+
+  let removed = 0;
+  try {
+    removed = await withdrawImportedDonorsByPhone(phone);
+  } catch {
+    return res.status(503).json({ error: 'The directory is temporarily unavailable' });
+  }
+  await consumeChallenge(challenge);
+
+  // Recorded without the number itself: the audit trail should show that a
+  // removal happened, not republish the thing being removed.
+  await audit('self-service', 'DIRECTORY_LISTING_REMOVED', 'IMPORTED_DONOR', 'phone-verified', { removed });
+  res.json({ success: true, removed });
+});
+
 app.post('/api/directory/:id/claim', async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });

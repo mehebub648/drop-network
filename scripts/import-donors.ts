@@ -10,11 +10,12 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { getLocationByName } from '../src/lib/locations';
-import { addImportedDonors, deleteImportedDonorsByPublicIds, ensureImportedDonorTable } from '../server/db';
+import { addImportedDonors, deleteImportedDonorsByPublicIds, ensureImportedDonorTable, findRemovedListings } from '../server/db';
 import {
   dedupeKey,
   toImportedDonor,
   toImportedDonorRow,
+  withdrawImportedDonor,
   type ImportedDonor,
   type ScrapedRecordInput
 } from '../server/importedDonors';
@@ -141,15 +142,27 @@ async function main() {
   }
 
   await ensureImportedDonorTable();
+  let preserved = 0;
   for (let index = 0; index < donors.length; index += BATCH_SIZE) {
     const batch = donors.slice(index, index + BATCH_SIZE);
+    // Someone who asked to be taken off the directory stays off it. The source
+    // still publishes them, so without carrying the withdrawal forward this
+    // import would undo their request.
+    const removed = await findRemovedListings(batch.map(donor => donor.public_id));
+    preserved += removed.size;
     // Public ids remain stable across the legacy and opaque storage-id formats,
     // so reimports replace old rows instead of leaving duplicates behind.
     await deleteImportedDonorsByPublicIds(batch.map(donor => donor.public_id));
-    await addImportedDonors(batch.map(toImportedDonorRow));
+    await addImportedDonors(batch.map(donor => {
+      const removedAt = removed.get(donor.public_id);
+      return toImportedDonorRow(removedAt ? withdrawImportedDonor(donor, removedAt) : donor);
+    }));
     console.log(`imported ${Math.min(index + BATCH_SIZE, donors.length)}/${donors.length}`);
   }
-  console.log('\nImport complete.');
+  console.log(
+    `\nImport complete.` +
+    (preserved > 0 ? `\n  ${preserved} withdrawn listing(s) kept off the directory.` : '')
+  );
 }
 
 main().catch(error => {

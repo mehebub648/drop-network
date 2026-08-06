@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.58`
+Current version: `0.0.59`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -129,7 +129,15 @@ refuses to open another number until the last call is reported. Detail and claim
 screens use `/directory/imported/:id` with opaque public IDs that contain no
 phone or source key. A successful claim verifies ownership but starts the
 registered donor profile unavailable; the owner must separately opt in before
-appearing in live search. See
+appearing in live search.
+
+Anyone listed can take their own number off at `/directory/remove` **without
+creating an account** — the alternative would be signing up in order to leave.
+The number is verified by SMS so only its owner can remove it, and the request
+step answers identically whether or not the number is listed, so the page cannot
+be used to test which numbers are in the directory. A withdrawn row is kept
+rather than deleted: re-importing the same source carries the withdrawal
+forward, so the removal is not undone by the next scrape. See
 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the claim rules and how to
 add a source.
 

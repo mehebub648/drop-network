@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.58`
+Current application version: `0.0.59`
 
 ## Overview
 
@@ -30,9 +30,14 @@ environments use console delivery while production fails closed.
    (`public_id`, `upazila`, `row_version`), deletes any imported row without a
    phone number, and non-destructively backfills the remaining legacy rows in
    batches, preserving row identity and claim state. On a store that predates
-   these columns this rewrites every row and takes tens of minutes; progress is
-   logged, `/ready` reports 503 until it finishes, and an interrupted run
-   resumes where it stopped rather than starting over.
+   these columns this rewrites every row; progress is logged, `/ready` reports
+   503 until it finishes, and an interrupted run resumes where it stopped rather
+   than starting over. Each pass re-scans for rows still on an older
+   `row_version`, so the batch size sets how many full scans a migration costs -
+   it is 10,000, which is why a 129k-row store takes about a dozen passes rather
+   than a hundred and thirty. A column whose correct value for every existing
+   row is a constant, like `listing_state`, is filled by the column default and
+   needs no pass at all.
 4. Active requests with past `expires_at` timestamps are marked `CANCELLED`.
 5. No data is seeded; the datastore starts empty and is populated only by real
    user activity.
@@ -489,8 +494,21 @@ account:
   result with the organisation that published it, say plainly on the call page
   that the person is not expecting the call, never show an invented availability
   status, and require an outcome for each call so wrong and dead numbers get
-  found. An opt-out path for listed people is still missing and is tracked in
-  `docs/PLAN.md`.
+  found.
+- **Anyone listed can remove themselves at `/directory/remove`, with no
+  account.** Requiring one would mean signing up in order to leave. Control of
+  the number is proved by SMS code (`REMOVE_LISTING`), and
+  `POST /api/directory/removals/request` answers identically whether or not the
+  number appears, so it cannot be used to test membership of the directory.
+  Confirming withdraws every listing carrying that number.
+- A withdrawn row is marked `listing_state = 'REMOVED'`, not deleted. Deleting
+  would leave no evidence the request was honoured and would let the next
+  re-import restore the person; `findRemovedListings()` is what
+  `scripts/import-donors.ts` uses to carry a withdrawal across a re-scrape.
+  Every read path excludes removed rows by default - `buildImportedFilter()`
+  adds the clause unless a caller explicitly passes `includeRemoved`, and
+  `getImportedDonor()` reports a withdrawn listing as missing, so search, the
+  detail page, the claim flow, and the phone reveal all stop finding it.
 - Imported records never enter the donor match partitions and are never
   invited to a request.
 - A record becomes a real donor profile only through

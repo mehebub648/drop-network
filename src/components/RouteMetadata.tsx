@@ -32,6 +32,7 @@ const metadata: Record<string, [string, string]> = {
   '/directory': ['Find blood donors near you — Drop Network', 'Search donors by blood group, district and upazila. Numbers stay masked until you say who needs blood.'],
   '/directory/imported': ['Imported donor archive — Drop Network', 'Browse donor entries published by other Bangladesh organisations. Contact details remain masked for everyone.'],
   '/directory/call': ['Call a donor — Drop Network', 'Contact one donor for your published blood request and record how the call went.'],
+  '/directory/remove': ['Remove your number from the directory — Drop Network', 'Take a publicly imported donor listing off Drop by verifying the number. No account needed.'],
   '/profile': ['My Drop account', 'Manage your donor profile, requests, invitations, history, security, and privacy settings.'],
   '/admin': ['Drop operations workspace', 'Role-aware administration for Drop Network operations.']
 };
@@ -50,6 +51,8 @@ export default function RouteMetadata() {
           // title rather than inheriting the archive's.
           : pathname.startsWith('/directory/call/')
             ? '/directory/call'
+          : pathname === '/directory/remove'
+            ? '/directory/remove'
           : pathname.startsWith('/directory/imported') || (pathname.startsWith('/directory/') && pathname !== '/directory')
             ? '/directory/imported'
             : pathname.startsWith('/profile')

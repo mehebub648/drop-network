@@ -38,7 +38,7 @@ async function readJsonOrThrow(res: Response, fallbackMessage: string) {
   return result;
 }
 
-export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN';
+export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN' | 'REMOVE_LISTING';
 
 export type SearchDonorCard = {
   donor_ref: string;
@@ -557,6 +557,22 @@ export const api = {
     if (params.page) query.set('page', String(params.page));
     const res = await fetch(`${API_BASE}/directory?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load the donor directory');
+  },
+
+  // Taking your own scraped listing down. No account involved: requiring one
+  // would mean signing up in order to leave.
+  async requestListingRemoval(phone: string) {
+    const res = await fetch(`${API_BASE}/directory/removals/request`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone })
+    });
+    return readJsonOrThrow(res, 'Failed to send the verification code');
+  },
+
+  async confirmListingRemoval(phone: string, verificationToken: string) {
+    const res = await fetch(`${API_BASE}/directory/removals/confirm`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone, verification_token: verificationToken })
+    });
+    return readJsonOrThrow(res, 'Failed to remove your listing');
   },
 
   async getDirectorySources() {
