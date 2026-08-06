@@ -113,6 +113,28 @@ function stringLiteral(value: string) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+/**
+ * Moves a cached table handle to the newest committed version before reading.
+ *
+ * A LanceDB `Table` is pinned to the version it was opened at, and these
+ * handles are memoized for the life of the process - so without this, a row
+ * written a moment ago is invisible to the next query and only appears after a
+ * restart. That is not a slow read, it is a wrong one: it silently broke the
+ * rule that a requester must report a call before opening another number.
+ *
+ * Reopening the table per query would work too, but this keeps the memoized
+ * handle and costs a metadata check.
+ */
+async function readable(table: lancedb.Table) {
+  try {
+    await table.checkoutLatest();
+  } catch {
+    // An older LanceDB, or a table already at the latest version. Reading the
+    // pinned version is still better than failing the request.
+  }
+  return table;
+}
+
 export type ImportedDonorRow = {
   id: string;
   row_version: string;
@@ -302,7 +324,7 @@ export function buildImportedFilter(query: ImportedDonorQuery) {
 }
 
 export async function queryImportedDonors(query: ImportedDonorQuery) {
-  const table = await ensureImportedDonorTable();
+  const table = await readable(await ensureImportedDonorTable());
   const limit = Math.max(1, query.limit ?? 30);
   const offset = Math.max(0, query.offset ?? 0);
   const filter = buildImportedFilter(query);
@@ -318,7 +340,7 @@ export async function queryImportedDonors(query: ImportedDonorQuery) {
 }
 
 export async function countImportedDonors(query: ImportedDonorQuery = {}) {
-  const table = await ensureImportedDonorTable();
+  const table = await readable(await ensureImportedDonorTable());
   const filter = buildImportedFilter(query);
   return await table.countRows(filter || undefined);
 }
@@ -348,7 +370,7 @@ export async function queryImportedDonorsForRequest(params: {
 }
 
 export async function getImportedDonor(publicId: string) {
-  const table = await ensureImportedDonorTable();
+  const table = await readable(await ensureImportedDonorTable());
   const results = await table.query().where(`public_id = ${stringLiteral(publicId)}`).limit(1).toArray();
   return results.length > 0
     ? importedDonorFromRow(results[0] as unknown as Record<string, unknown>)
@@ -452,7 +474,7 @@ export function buildCallReportFilter(query: CallReportQuery) {
 }
 
 export async function queryCallReports<T = Record<string, unknown>>(query: CallReportQuery = {}): Promise<T[]> {
-  const table = await ensureCallReportTable();
+  const table = await readable(await ensureCallReportTable());
   const limit = Math.max(1, query.limit ?? 200);
   const offset = Math.max(0, query.offset ?? 0);
   const filter = buildCallReportFilter(query);
@@ -467,7 +489,7 @@ export async function queryCallReports<T = Record<string, unknown>>(query: CallR
 }
 
 export async function countCallReports(query: CallReportQuery = {}) {
-  const table = await ensureCallReportTable();
+  const table = await readable(await ensureCallReportTable());
   const filter = buildCallReportFilter(query);
   return await table.countRows(filter || undefined);
 }

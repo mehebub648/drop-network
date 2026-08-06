@@ -31,6 +31,7 @@ const metadata: Record<string, [string, string]> = {
   '/terms': ['Terms of Use — Drop Network', 'Rules and safety expectations for using Drop responsibly.'],
   '/directory': ['Find blood donors near you — Drop Network', 'Search donors by blood group, district and upazila. Numbers stay masked until you say who needs blood.'],
   '/directory/imported': ['Imported donor archive — Drop Network', 'Browse donor entries published by other Bangladesh organisations. Contact details remain masked for everyone.'],
+  '/directory/call': ['Call a donor — Drop Network', 'Contact one donor for your published blood request and record how the call went.'],
   '/profile': ['My Drop account', 'Manage your donor profile, requests, invitations, history, security, and privacy settings.'],
   '/admin': ['Drop operations workspace', 'Role-aware administration for Drop Network operations.']
 };
@@ -45,6 +46,10 @@ export default function RouteMetadata() {
         ? '/community'
         : pathname.startsWith('/request/')
           ? '/requests'
+          // The call page carries a revealed contact number, so it gets its own
+          // title rather than inheriting the archive's.
+          : pathname.startsWith('/directory/call/')
+            ? '/directory/call'
           : pathname.startsWith('/directory/imported') || (pathname.startsWith('/directory/') && pathname !== '/directory')
             ? '/directory/imported'
             : pathname.startsWith('/profile')

@@ -150,3 +150,22 @@ test('call reports are queryable per request without loading the table', async (
   assert.deepEqual(reveals.map(report => report.id).sort(), ['cr-1', 'cr-3']);
   assert.equal(await database.countCallReports({ requestId: 'req-2' }), 1);
 });
+
+test('a report written now is visible to the very next read', async () => {
+  // A cached LanceDB table handle is pinned to the version it was opened at,
+  // so without an explicit move to the latest version this row stays invisible
+  // until the process restarts. That silently disabled the rule that a
+  // requester must report a call before opening another number, so it is
+  // pinned here rather than left to be rediscovered.
+  await database.addCallReports([
+    { id: 'fresh-1', kind: 'REVEAL', request_id: 'req-fresh', actor_id: 'user-9', donor_ref: 'imp:zzz' }
+  ]);
+  const immediately = await database.queryCallReports<{ id: string }>({ requestId: 'req-fresh' });
+  assert.deepEqual(immediately.map(report => report.id), ['fresh-1']);
+  assert.equal(await database.countCallReports({ requestId: 'req-fresh' }), 1);
+
+  await database.addCallReports([
+    { id: 'fresh-2', kind: 'CALL_OUTCOME', request_id: 'req-fresh', actor_id: 'user-9', donor_ref: 'imp:zzz' }
+  ]);
+  assert.equal((await database.queryCallReports({ requestId: 'req-fresh' })).length, 2);
+});

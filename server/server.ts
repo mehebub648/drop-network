@@ -2363,8 +2363,6 @@ const revealLimiter = rateLimit({
 
 /** How wide the membership re-check looks; a superset of one result page. */
 const REVEAL_MATCH_LIMIT = 200;
-/** A reveal is only "unreported" once the caller has had time to dial. */
-const REVEAL_REPORT_GRACE_MS = 60_000;
 
 async function requestCallReports(requestId: string, actorId?: string) {
   return await queryCallReports<CallReport>({ requestId, actorId, limit: 1_000 });
@@ -2380,12 +2378,18 @@ function unansweredReveals(reports: CallReport[]) {
 }
 
 /**
- * The reveal a requester owes an answer for. The grace period keeps the prompt
- * from appearing while they are still on the call page having just opened it.
+ * The reveal a requester owes an answer for.
+ *
+ * There is no grace period. An earlier version ignored reveals younger than a
+ * minute so the prompt would not appear while the caller was still on the call
+ * page, but that also meant the "one call at a time" rule did nothing for
+ * anyone clicking quickly - a requester could open a screenful of numbers
+ * inside the window without answering for any of them. Reopening the *same*
+ * donor is handled by reusing the open reveal instead, which is what the call
+ * page actually needs.
  */
-function pendingReveal(reports: CallReport[], now = Date.now()) {
-  return unansweredReveals(reports)
-    .find(report => now - new Date(report.created_at).getTime() > REVEAL_REPORT_GRACE_MS) || null;
+function pendingReveal(reports: CallReport[]) {
+  return unansweredReveals(reports)[0] || null;
 }
 
 /**

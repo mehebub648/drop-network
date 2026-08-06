@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.57`
+Current version: `0.0.58`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -121,8 +121,11 @@ A valid Bangladesh mobile number is mandatory for an imported listing. Records
 without one are rejected by the importer, and any stored before that rule are
 deleted the first time the directory table is opened.
 
-Imported people never registered here, so `/directory/imported` always serves
-their phone numbers masked, including to signed-in members. Detail and claim
+Imported people never registered here, so browsing `/directory/imported` always
+serves their phone numbers masked, including to signed-in members. The only way
+a listing's number is served in full is the one-at-a-time reveal behind a
+published blood request in that person's own upazila, which is recorded and
+refuses to open another number until the last call is reported. Detail and claim
 screens use `/directory/imported/:id` with opaque public IDs that contain no
 phone or source key. A successful claim verifies ownership but starts the
 registered donor profile unavailable; the owner must separately opt in before
