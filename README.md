@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.65`
+Current version: `0.0.66`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -93,13 +93,13 @@ Refresh the district facility files from the public DGHS registry with:
 - Public requests use server-side filters and bounded pagination with URL-based
   filter state. `/health`, `/ready`, and Prometheus-format `/metrics` support
   production probes and monitoring.
-- The responsive humanitarian-utility interface uses warm white surfaces,
-  blood-red actions, semantic availability/success green, strong typography,
-  and lightweight drop, map, pulse, shield, and progress graphics. Shared
-  headings, surfaces, status badges, metrics, alerts, empty states, fields,
-  actions, loading treatments, focus behavior, and reduced-motion support keep
-  the search, request, contact, account, community, partner, information, and
-  staff journeys connected from 320px mobile through large desktop layouts.
+- The responsive interface uses a minimal cartoon system: a blush canvas,
+  warm paper surfaces, ink-like outlines, blood-red actions, semantic
+  availability/success green, rounded typography, and lightweight line art.
+  One shared 78rem content frame plus consistent cards, controls, status UI,
+  focus behavior, and reduced-motion support keeps search, request, contact,
+  account, community, partner, information, and staff journeys visually
+  connected from 320px mobile through large desktop layouts.
 - Verified hospitals, blood banks, and NGOs can be reviewed by operators,
   listed in the public partner directory, and publish donation campaigns.
 - `/community` publishes member donation stories and Markdown-formatted health

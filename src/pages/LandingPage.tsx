@@ -16,6 +16,7 @@ import { api } from '../lib/api';
 import { DONATION_INTERVAL_DAYS } from '../lib/blood';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
 import { MetricCard } from '../components/ui';
+import BloodBagDoodle from '../components/BloodBagDoodle';
 import {
   readSearchDraft,
   writeSearchDraft,
@@ -91,26 +92,29 @@ export default function LandingPage({ user }: { user: any }) {
     <div className="space-y-12 pb-8 sm:space-y-16 lg:space-y-20">
       <div className="space-y-6 sm:space-y-8">
         <section className="landing-hero px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
-          <div className="relative grid items-center gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:gap-10 xl:gap-14">
-            <div className="max-w-xl lg:py-5">
-              <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.04] tracking-[-0.045em] text-white drop-shadow-sm sm:text-5xl lg:text-[3.4rem]">
-                Find a blood donor.
+          <div className="relative grid items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-10 xl:gap-12">
+            <div className="landing-hero-copy max-w-xl lg:py-3">
+              <div className="cartoon-kicker"><HeartHandshake className="h-4 w-4" aria-hidden="true" /> Neighbours helping neighbours</div>
+              <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.02] tracking-[-0.045em] text-slate-950 sm:text-5xl lg:text-[3.65rem]">
+                Find the right donor, <span className="text-primary">one safe step</span> at a time.
               </h1>
-              <p className="mt-5 max-w-lg text-base font-medium leading-7 text-rose-50/90 sm:text-lg sm:leading-8">
-                Tell us what you need. We will show matching donors.
+              <p className="mt-5 max-w-lg text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">
+                Choose the blood group and collection area. Drop keeps every number masked until a genuine request is confirmed.
               </p>
+
+              <BloodBagDoodle className="landing-doodle mt-2 w-full max-w-[25rem]" />
 
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 <a
                   href="#donor-search"
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-6 text-sm font-extrabold text-rose-800 shadow-[0_16px_34px_-18px_rgba(0,0,0,0.75)] transition-all hover:-translate-y-0.5 hover:bg-rose-50"
+                  className="cartoon-button cartoon-button-primary inline-flex min-h-12 items-center justify-center gap-2 px-6 text-sm font-extrabold"
                 >
                   Start your search
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </a>
                 <Link
                   to="/requests"
-                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/25 bg-rose-950/30 px-6 text-sm font-extrabold text-white backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/15"
+                  className="cartoon-button cartoon-button-secondary inline-flex min-h-12 items-center justify-center px-6 text-sm font-extrabold"
                 >
                   See open requests
                 </Link>
@@ -152,7 +156,7 @@ export default function LandingPage({ user }: { user: any }) {
 
         <div className="mt-9 grid gap-4 md:grid-cols-3">
           {steps.map(({ icon: Icon, title, body }, index) => (
-            <article key={title} className="theme-card p-6 sm:p-7">
+            <article key={title} className="theme-card cartoon-step-card p-6 sm:p-7">
               <div className="flex items-center justify-between">
                 <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
                   <Icon className="h-6 w-6" aria-hidden="true" />
@@ -167,7 +171,7 @@ export default function LandingPage({ user }: { user: any }) {
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-3xl border border-emerald-100 bg-emerald-50/70 p-6 sm:p-9">
+        <div className="cartoon-panel cartoon-panel-pink p-6 sm:p-9">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-emerald-700 shadow-sm">
             <ShieldCheck className="h-6 w-6" aria-hidden="true" />
           </div>
@@ -194,7 +198,7 @@ export default function LandingPage({ user }: { user: any }) {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-red-100 bg-white p-6 sm:p-9">
+        <div className="cartoon-panel p-6 sm:p-9">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-700">
             <Building2 className="h-6 w-6" aria-hidden="true" />
           </span>
@@ -249,7 +253,7 @@ export default function LandingPage({ user }: { user: any }) {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-emerald-200 bg-white p-6 sm:p-9">
+      <section className="cartoon-panel cartoon-cta p-6 sm:p-9">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">Keep the network useful</p>

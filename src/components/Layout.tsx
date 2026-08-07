@@ -66,8 +66,8 @@ export default function Layout({
         Skip to main content
       </a>
 
-      <header className="sticky top-0 z-50 border-b border-rose-950/10 bg-white/90 shadow-[0_12px_34px_-30px_rgba(15,23,42,0.45)] backdrop-blur-xl">
-        <div className="mx-auto flex min-h-[4.75rem] max-w-[88rem] items-center gap-4 px-4 sm:px-6 lg:px-8">
+      <header className="site-header sticky top-0 z-50">
+        <div className="site-header-inner mx-auto flex min-h-[4.5rem] items-center gap-4 px-4 sm:px-5">
           <Link to="/" className="group flex min-h-11 shrink-0 items-center gap-3 rounded-xl" aria-label="Drop Network home">
             <span className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-primary shadow-[0_12px_28px_-14px_rgba(190,18,60,0.8)] transition-transform group-hover:-rotate-3">
               <span className="absolute inset-1 rounded-xl border border-white/25" aria-hidden="true" />
@@ -81,7 +81,7 @@ export default function Layout({
             </span>
           </Link>
 
-          <nav className="ml-4 hidden items-center gap-0.5 rounded-full border border-slate-200/80 bg-slate-50/80 p-1 xl:flex" aria-label="Primary navigation">
+          <nav className="site-desktop-nav ml-4 hidden items-center gap-0.5 rounded-full p-1 xl:flex" aria-label="Primary navigation">
             {navigation.map(item => (
               <NavLink key={item.to} to={item.to} end={item.end} className={desktopLink}>
                 {item.label}
@@ -166,8 +166,8 @@ export default function Layout({
         </div>
 
         {mobileOpen && (
-          <div id="mobile-navigation" className="border-t border-slate-100 bg-white/98 px-4 pb-5 pt-3 shadow-2xl xl:hidden">
-            <nav className="mx-auto grid max-w-7xl gap-1 rounded-2xl bg-slate-50 p-2" aria-label="Mobile navigation">
+          <div id="mobile-navigation" className="site-mobile-navigation px-4 pb-5 pt-3 xl:hidden">
+            <nav className="mx-auto grid gap-1 rounded-2xl p-2" aria-label="Mobile navigation">
               {navigation.map(item => (
                 <NavLink key={item.to} to={item.to} end={item.end} className={mobileLink}>
                   {item.label}
@@ -175,7 +175,7 @@ export default function Layout({
               ))}
             </nav>
 
-            <div className="mx-auto mt-3 grid max-w-7xl gap-2 border-t border-slate-100 pt-4 sm:grid-cols-2">
+            <div className="mx-auto mt-3 grid gap-2 border-t border-slate-100 pt-4 sm:grid-cols-2">
               {user ? (
                 <>
                   <Link
@@ -234,7 +234,7 @@ export default function Layout({
         )}
       </header>
 
-      <main id="main-content" className="mx-auto w-full max-w-[88rem] flex-1 px-4 py-6 sm:px-6 sm:py-9 lg:px-8 lg:py-11">
+      <main id="main-content" className="site-main mx-auto w-full flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:py-10">
         {children}
       </main>
       <Footer />
