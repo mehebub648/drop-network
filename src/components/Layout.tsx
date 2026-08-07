@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { Droplet, LogOut, Menu, Plus, ShieldCheck, UserRound, X } from 'lucide-react';
+import { Droplet, Heart, LogOut, MapPin, Menu, Plus, ShieldCheck, Sparkles, UserRound, X } from 'lucide-react';
 import Footer from './Footer';
 
 const navigation = [
@@ -235,6 +235,13 @@ export default function Layout({
       </header>
 
       <main id="main-content" className="site-main mx-auto w-full flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+        <div className="site-doodle-layer" aria-hidden="true">
+          <Heart className="site-doodle-mark site-doodle-heart" />
+          <Sparkles className="site-doodle-mark site-doodle-sparkles" />
+          <Droplet className="site-doodle-mark site-doodle-drop" />
+          <MapPin className="site-doodle-mark site-doodle-pin" />
+          <Plus className="site-doodle-mark site-doodle-plus" />
+        </div>
         {children}
       </main>
       <Footer />

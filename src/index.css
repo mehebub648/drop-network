@@ -1779,8 +1779,8 @@ body {
   }
 }
 
-/* Minimal cartoon presentation layer. Rounded line art and restrained red
-   details add warmth without turning the white site canvas into a poster. */
+/* Doodle-led presentation layer. Rounded line art, generated editorial
+   illustrations and restrained red details add warmth without obscuring UI. */
 :root {
   --cartoon-ink: #1d2939;
   --cartoon-paper: #ffffff;
@@ -1855,7 +1855,71 @@ h3,
 }
 
 .site-main {
+  position: relative;
   min-width: 0;
+}
+
+.site-main > :not(.site-doodle-layer) {
+  position: relative;
+  z-index: 1;
+}
+
+.site-doodle-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.site-doodle-mark {
+  position: absolute;
+  color: var(--cartoon-red);
+  fill: rgba(255, 241, 242, 0.72);
+  stroke-width: 1.55;
+  opacity: 0.12;
+}
+
+.site-doodle-heart {
+  top: 7%;
+  left: 0.35rem;
+  width: 3.25rem;
+  height: 3.25rem;
+  transform: rotate(-12deg);
+}
+
+.site-doodle-sparkles {
+  top: 27%;
+  right: 0.4rem;
+  width: 3rem;
+  height: 3rem;
+  color: var(--cartoon-ink);
+  transform: rotate(8deg);
+}
+
+.site-doodle-drop {
+  top: 49%;
+  left: 0.75rem;
+  width: 2.7rem;
+  height: 2.7rem;
+  transform: rotate(10deg);
+}
+
+.site-doodle-pin {
+  top: 70%;
+  right: 0.7rem;
+  width: 3rem;
+  height: 3rem;
+  color: var(--cartoon-ink);
+  transform: rotate(12deg);
+}
+
+.site-doodle-plus {
+  top: 88%;
+  left: 0.6rem;
+  width: 3.1rem;
+  height: 3.1rem;
+  transform: rotate(-8deg);
 }
 
 .site-main :where(input:not([type='checkbox'], [type='radio']), select, textarea) {
@@ -1941,6 +2005,30 @@ h3,
   filter: drop-shadow(0 12px 16px rgba(15, 23, 42, 0.05));
 }
 
+.landing-section-doodle,
+.landing-privacy-doodle,
+.landing-community-doodle,
+.footer-doodle {
+  filter: drop-shadow(0 14px 18px rgba(15, 23, 42, 0.08));
+}
+
+.landing-illustrated-section {
+  position: relative;
+}
+
+.landing-illustrated-section::before {
+  position: absolute;
+  top: 0.1rem;
+  left: -0.4rem;
+  width: 4rem;
+  height: 0.65rem;
+  border-top: 3px solid rgba(200, 16, 46, 0.42);
+  border-radius: 50%;
+  content: '';
+  transform: rotate(-4deg);
+  pointer-events: none;
+}
+
 .cartoon-panel {
   min-width: 0;
   border: 1px solid #e4e7ec;
@@ -1974,6 +2062,19 @@ h3,
 
 .cartoon-step-card {
   position: relative;
+  overflow: hidden;
+}
+
+.cartoon-step-card::after {
+  position: absolute;
+  right: -1.25rem;
+  bottom: -1.2rem;
+  width: 4.5rem;
+  height: 4.5rem;
+  border: 2px dashed rgba(200, 16, 46, 0.16);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
 }
 
 .cartoon-step-card:nth-child(2) {
@@ -2052,8 +2153,19 @@ input[type='radio'] {
 
 .site-footer {
   border-top: 1px solid #e4e7ec;
-  background: #ffffff;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(200, 16, 46, 0.08) 1px, transparent 1.5px),
+    #ffffff;
+  background-size: 28px 28px;
   color: var(--cartoon-ink);
+}
+
+.footer-story {
+  position: relative;
+}
+
+.footer-doodle {
+  opacity: 0.86;
 }
 
 .footer-trust-grid {
@@ -2162,6 +2274,10 @@ input[type='radio'] {
   .landing-hero-copy > div:last-child {
     justify-content: center;
   }
+
+  .site-doodle-mark {
+    opacity: 0.08;
+  }
 }
 
 @media (max-width: 767px) {
@@ -2188,6 +2304,20 @@ input[type='radio'] {
 
   .landing-doodle {
     max-height: 12rem;
+  }
+
+  .landing-section-doodle {
+    max-width: 20rem;
+  }
+
+  .landing-community-doodle {
+    max-width: 14rem;
+  }
+
+  .site-doodle-mark {
+    width: 2rem;
+    height: 2rem;
+    opacity: 0.07;
   }
 
   .cartoon-button {

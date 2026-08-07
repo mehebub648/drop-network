@@ -186,7 +186,7 @@ export default function SearchCriteriaForm({
         {activeStep === 0 && (
           <fieldset className="mt-5">
             <legend className="sr-only">Blood group</legend>
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+            <div className={`grid grid-cols-4 gap-2 ${compact ? '' : 'sm:grid-cols-8'}`}>
               {BLOOD_GROUPS.map(group => {
                 const selected = value.blood_group === group;
                 return (

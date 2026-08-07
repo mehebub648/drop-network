@@ -68,7 +68,7 @@ export default function Footer() {
         </div>
 
         <div className="grid gap-10 py-10 md:grid-cols-[1.1fr_2fr] lg:gap-14">
-          <div>
+          <div className="footer-story">
             <Link to="/" className="inline-flex min-h-11 items-center gap-3 rounded-xl" aria-label="Drop Network home">
               <span className="footer-logo relative flex h-11 w-11 items-center justify-center rounded-2xl bg-primary">
                 <Droplet className="relative h-5 w-5 text-white" aria-hidden="true" />
@@ -86,6 +86,14 @@ export default function Footer() {
             <p className="mt-4 max-w-md text-xs leading-5 text-slate-500">
               Drop does not collect blood, provide medical care, or replace a hospital or licensed blood bank.
             </p>
+            <img
+              src="/images/doodles/facility-doodle.webp"
+              alt=""
+              className="footer-doodle mt-5 h-auto w-full max-w-sm"
+              loading="lazy"
+              decoding="async"
+              aria-hidden="true"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">

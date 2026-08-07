@@ -92,7 +92,7 @@ export default function LandingPage({ user }: { user: any }) {
     <div className="space-y-12 pb-8 sm:space-y-16 lg:space-y-20">
       <div className="space-y-6 sm:space-y-8">
         <section className="landing-hero px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
-          <div className="relative grid items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-10 xl:gap-12">
+          <div className="relative grid items-center gap-8 lg:grid-cols-[minmax(0,1.12fr)_minmax(25rem,0.88fr)] lg:gap-10 xl:gap-14">
             <div className="landing-hero-copy max-w-xl lg:py-3">
               <div className="cartoon-kicker"><HeartHandshake className="h-4 w-4" aria-hidden="true" /> Neighbours helping neighbours</div>
               <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.02] tracking-[-0.045em] text-slate-950 sm:text-5xl lg:text-[3.65rem]">
@@ -121,7 +121,7 @@ export default function LandingPage({ user }: { user: any }) {
               </div>
             </div>
 
-            <div id="donor-search" className="landing-hero-search scroll-mt-28">
+            <div id="donor-search" className="landing-hero-search w-full scroll-mt-28 lg:max-w-[42rem] lg:justify-self-end">
               <SearchCriteriaForm
                 value={criteria}
                 onChange={updateCriteria}
@@ -144,14 +144,24 @@ export default function LandingPage({ user }: { user: any }) {
         </section>
       </div>
 
-      <section>
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Simple and accountable</p>
-          <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">How Drop works</h2>
-          <p className="mt-4 text-base leading-7 text-slate-600">
-            Drop helps people find one another and protect contact details. The receiving hospital or blood bank
-            remains responsible for screening, collection, and clinical decisions.
-          </p>
+      <section className="landing-illustrated-section">
+        <div className="grid items-center gap-6 md:grid-cols-[minmax(0,1fr)_minmax(16rem,0.58fr)] md:gap-10">
+          <div className="max-w-3xl md:text-left">
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Simple and accountable</p>
+            <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">How Drop works</h2>
+            <p className="mt-4 text-base leading-7 text-slate-600">
+              Drop helps people find one another and protect contact details. The receiving hospital or blood bank
+              remains responsible for screening, collection, and clinical decisions.
+            </p>
+          </div>
+          <img
+            src="/images/doodles/facility-doodle.webp"
+            alt=""
+            className="landing-section-doodle mx-auto h-auto w-full max-w-md"
+            loading="lazy"
+            decoding="async"
+            aria-hidden="true"
+          />
         </div>
 
         <div className="mt-9 grid gap-4 md:grid-cols-3">
@@ -171,30 +181,42 @@ export default function LandingPage({ user }: { user: any }) {
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="cartoon-panel cartoon-panel-accent p-6 sm:p-9">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary shadow-sm">
-            <ShieldCheck className="h-6 w-6" aria-hidden="true" />
-          </div>
-          <h2 className="mt-5 text-2xl font-extrabold text-slate-950 sm:text-3xl">Contact privacy is part of the workflow.</h2>
-          <p className="mt-4 max-w-2xl leading-7 text-slate-600">
-            Search shows only what you need to judge a possible match, with every number masked. A number opens
-            one at a time, for a published request in that donor's own upazila, and only after you say how the
-            last call went. Every reveal is recorded, and claiming an imported profile never makes that donor
-            available automatically.
-          </p>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <Link
-              to="/privacy"
-              className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-5 text-sm font-extrabold text-white hover:bg-primary-dark"
-            >
-              Review privacy
-            </Link>
-            <Link
-              to="/directory/imported"
-              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-rose-200 bg-white px-5 text-sm font-extrabold text-slate-800 hover:bg-rose-50"
-            >
-              View imported listings
-            </Link>
+        <div className="cartoon-panel cartoon-panel-accent overflow-hidden p-6 sm:p-9">
+          <div className="grid items-center gap-6 md:grid-cols-[minmax(0,1fr)_12rem]">
+            <div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary shadow-sm">
+                <ShieldCheck className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <h2 className="mt-5 text-2xl font-extrabold text-slate-950 sm:text-3xl">Contact privacy is part of the workflow.</h2>
+              <p className="mt-4 max-w-2xl leading-7 text-slate-600">
+                Search shows only what you need to judge a possible match, with every number masked. A number opens
+                one at a time, for a published request in that donor's own upazila, and only after you say how the
+                last call went. Every reveal is recorded, and claiming an imported profile never makes that donor
+                available automatically.
+              </p>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <Link
+                  to="/privacy"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-5 text-sm font-extrabold text-white hover:bg-primary-dark"
+                >
+                  Review privacy
+                </Link>
+                <Link
+                  to="/directory/imported"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-rose-200 bg-white px-5 text-sm font-extrabold text-slate-800 hover:bg-rose-50"
+                >
+                  View imported listings
+                </Link>
+              </div>
+            </div>
+            <img
+              src="/images/doodles/privacy-doodle.webp"
+              alt=""
+              className="landing-privacy-doodle mx-auto hidden h-auto w-full max-w-[12rem] md:block"
+              loading="lazy"
+              decoding="async"
+              aria-hidden="true"
+            />
           </div>
         </div>
 
@@ -253,8 +275,8 @@ export default function LandingPage({ user }: { user: any }) {
         </div>
       </section>
 
-      <section className="cartoon-panel cartoon-cta p-6 sm:p-9">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+      <section className="cartoon-panel cartoon-cta overflow-hidden p-6 sm:p-9">
+        <div className="grid items-center gap-7 lg:grid-cols-[minmax(0,1fr)_15rem] xl:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="max-w-3xl">
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Keep the network useful</p>
             <h2 className="mt-3 text-2xl font-extrabold text-slate-950 sm:text-3xl">Ready to help the next genuine request?</h2>
@@ -262,21 +284,29 @@ export default function LandingPage({ user }: { user: any }) {
               Create a donor profile, keep availability current, and respond only when you can safely reach the
               named clinical facility.
             </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Link
+                to={user ? '/profile/donor' : '/register'}
+                className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-extrabold text-white hover:bg-primary-dark"
+              >
+                {user ? 'Update availability' : 'Join as a donor'}
+              </Link>
+              <Link
+                to="/requests"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-6 text-sm font-extrabold text-slate-800 hover:bg-slate-50"
+              >
+                View live requests
+              </Link>
+            </div>
           </div>
-          <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
-            <Link
-              to={user ? '/profile/donor' : '/register'}
-              className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-6 text-sm font-extrabold text-white hover:bg-primary-dark"
-            >
-              {user ? 'Update availability' : 'Join as a donor'}
-            </Link>
-            <Link
-              to="/requests"
-              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 px-6 text-sm font-extrabold text-slate-800 hover:bg-slate-50"
-            >
-              View live requests
-            </Link>
-          </div>
+          <img
+            src="/images/doodles/community-doodle.webp"
+            alt=""
+            className="landing-community-doodle mx-auto h-auto w-full max-w-[18rem]"
+            loading="lazy"
+            decoding="async"
+            aria-hidden="true"
+          />
         </div>
       </section>
     </div>

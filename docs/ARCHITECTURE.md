@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.67`
+Current application version: `0.0.68`
 
 ## Overview
 
@@ -73,7 +73,9 @@ Entry points:
   reusable page heading, surface, status, notice, metric, and empty-state
   primitives used to keep public, member, and staff screens visually aligned.
   `BloodBagDoodle.tsx` provides the reusable inline SVG line illustration used
-  by the landing and authentication surfaces without a raster dependency.
+  by the landing and authentication surfaces. Optimized transparent WebP
+  doodles under `public/images/doodles/` support the landing sections and the
+  shared footer without entering application or API data flow.
 - The shared layout supplies the site header and institutional footer. The
   footer links product, company, legal, and safety routes.
 - `src/lib/urgency.ts` and `src/lib/utils.ts` contain shared frontend
@@ -91,11 +93,12 @@ Entry points:
   it; re-exporting means the API and the interface cannot disagree about blood
   compatibility or place names. `src/lib/blood.ts` still owns the frontend-only
   helpers: urgency derivation and the donor eligibility calculation.
-- `src/index.css` defines the responsive minimal-cartoon system: a white
-  canvas, white surfaces with soft neutral boundaries and shadows, shared
-  92rem content rail, deep-red actions, semantic success/availability color,
-  focus and reduced-motion behavior, admin workspace layout, shared controls,
-  and Tailwind CSS usage.
+- `src/index.css` defines the responsive doodle-led cartoon system: a white
+  canvas, white surfaces with soft neutral boundaries and shadows, lightweight
+  decorative marks behind the shared layout, generated editorial illustrations,
+  a shared 92rem content rail, deep-red actions, semantic success/availability
+  color, focus and reduced-motion behavior, admin workspace layout, shared
+  controls, and Tailwind CSS usage.
 
 Routes:
 
