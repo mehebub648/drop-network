@@ -52,13 +52,15 @@ export default function SearchCriteriaForm({
   onChange,
   onSubmit,
   submitting,
-  submitLabel = 'Find donors'
+  submitLabel = 'Find donors',
+  compact = false
 }: {
   value: Criteria;
   onChange: (next: Criteria) => void;
   onSubmit: () => void;
   submitting?: boolean;
   submitLabel?: string;
+  compact?: boolean;
 }) {
   const [activeStep, setActiveStep] = useState(0);
   const [facilityOpen, setFacilityOpen] = useState(false);
@@ -174,8 +176,11 @@ export default function SearchCriteriaForm({
   };
 
   return (
-    <form onSubmit={submit} className="surface p-5 sm:p-7">
-      <div key={activeStep} className="fade-in min-h-[12rem] sm:min-h-[11rem]">
+    <form onSubmit={submit} className={`surface p-5 ${compact ? 'sm:p-6' : 'sm:p-7'}`}>
+      <div
+        key={activeStep}
+        className={`fade-in ${compact ? 'min-h-[8.5rem]' : 'min-h-[12rem] sm:min-h-[11rem]'}`}
+      >
         <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
 
         {activeStep === 0 && (
@@ -374,7 +379,7 @@ export default function SearchCriteriaForm({
         )}
       </div>
 
-      <div className="mt-5 flex items-center gap-3">
+      <div className={`${compact ? 'mt-4' : 'mt-5'} flex items-center gap-3`}>
         {activeStep > 0 && (
           <button
             type="button"
