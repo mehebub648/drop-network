@@ -89,13 +89,13 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
           return (
             <li key={item.id} className="text-center">
               <span className={`mx-auto flex h-9 w-9 items-center justify-center rounded-full border text-sm font-extrabold ${
-                complete ? 'border-emerald-700 bg-emerald-700 text-white'
-                  : active ? 'border-emerald-700 bg-emerald-50 text-emerald-800'
+                complete ? 'border-primary bg-primary text-white'
+                  : active ? 'border-primary bg-rose-50 text-primary'
                     : 'border-slate-200 bg-white text-slate-400'
               }`}>
                 {complete ? <Check className="h-4 w-4" /> : index + 1}
               </span>
-              <span className={`mt-2 block text-xs font-bold ${active || complete ? 'text-emerald-800' : 'text-slate-400'}`}>{item.label}</span>
+              <span className={`mt-2 block text-xs font-bold ${active || complete ? 'text-primary' : 'text-slate-400'}`}>{item.label}</span>
             </li>
           );
         })}
@@ -129,7 +129,7 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
 
       {step === 'CODE' && (
         <form onSubmit={verifyCode} className="space-y-5">
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-900">
             Code sent for <strong>{phone}</strong>
           </div>
           {deliveryMode === 'console' && (
@@ -155,13 +155,13 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
             {loading ? 'Checking code…' : <>Verify phone <CheckCircle2 className="h-5 w-5" /></>}
           </button>
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <button type="button" onClick={() => setStep('PHONE')} className="inline-flex min-h-11 items-center gap-2 font-bold text-slate-600 hover:text-emerald-800">
+            <button type="button" onClick={() => setStep('PHONE')} className="inline-flex min-h-11 items-center gap-2 font-bold text-slate-600 hover:text-primary">
               <ArrowLeft className="h-4 w-4" /> Change number
             </button>
             <button type="button" disabled={loading} onClick={() => void act(async () => {
               const result = await api.requestOtp(phone, 'REGISTER');
               setDeliveryMode(result.provider || '');
-            })} className="min-h-11 font-bold text-emerald-700 hover:text-emerald-900 disabled:opacity-50">
+            })} className="min-h-11 font-bold text-primary hover:text-primary-dark disabled:opacity-50">
               Send another code
             </button>
           </div>
@@ -170,7 +170,7 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
 
       {step === 'ACCOUNT' && (
         <form onSubmit={register} className="space-y-5">
-          <div className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+          <div className="flex items-center gap-3 rounded-2xl border border-green-100 bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
             <CheckCircle2 className="h-5 w-5" /> Phone verified
           </div>
           <Field label="Full name">
@@ -214,12 +214,12 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
           <button disabled={loading} className="primary-button min-h-12">
             {loading ? 'Creating account…' : <>Create verified account <ArrowRight className="h-5 w-5" /></>}
           </button>
-          <p className="text-center text-xs leading-5 text-slate-500">By joining, you agree to the <Link to="/terms" className="font-semibold text-emerald-700 hover:underline">Terms</Link> and acknowledge the <Link to="/privacy" className="font-semibold text-emerald-700 hover:underline">Privacy Policy</Link>.</p>
+          <p className="text-center text-xs leading-5 text-slate-500">By joining, you agree to the <Link to="/terms" className="font-semibold text-primary hover:underline">Terms</Link> and acknowledge the <Link to="/privacy" className="font-semibold text-primary hover:underline">Privacy Policy</Link>.</p>
         </form>
       )}
 
       <p className="mt-7 border-t border-slate-100 pt-6 text-center text-sm text-slate-600">
-        Already registered? <Link to={returnTo === '/profile/donor' ? '/login' : `/login?returnTo=${encodeURIComponent(returnTo)}`} className="font-bold text-emerald-700 hover:text-emerald-900 hover:underline">Sign in</Link>
+        Already registered? <Link to={returnTo === '/profile/donor' ? '/login' : `/login?returnTo=${encodeURIComponent(returnTo)}`} className="font-bold text-primary hover:text-primary-dark hover:underline">Sign in</Link>
       </p>
     </AuthShell>
   );

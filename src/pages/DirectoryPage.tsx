@@ -163,7 +163,7 @@ export default function DirectoryPage() {
 
       {sources.length > 0 && (
         <details className="theme-card group">
-          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 font-extrabold text-slate-900 transition-colors hover:text-emerald-800 sm:px-6">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 font-extrabold text-slate-900 transition-colors hover:text-primary sm:px-6">
             <span>Where these records come from</span>
             <ChevronDown className="h-5 w-5 shrink-0 text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" />
           </summary>
@@ -174,7 +174,7 @@ export default function DirectoryPage() {
                   href={source.url}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="inline-flex min-h-11 items-center gap-2 font-extrabold text-emerald-800 hover:underline"
+                  className="inline-flex min-h-11 items-center gap-2 font-extrabold text-primary hover:underline"
                 >
                   {source.organization}
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -192,7 +192,7 @@ export default function DirectoryPage() {
       <section aria-labelledby="archive-filter-heading" className="theme-card p-4 sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 id="archive-filter-heading" className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-900">
-            <Filter className="h-4 w-4 text-emerald-700" aria-hidden="true" />
+            <Filter className="h-4 w-4 text-primary" aria-hidden="true" />
             Filter archive
           </h2>
           {!loading && (
@@ -270,7 +270,7 @@ export default function DirectoryPage() {
             <button
               type="button"
               onClick={() => setSearchParams({})}
-              className="inline-flex min-h-12 items-center justify-center rounded-xl px-4 text-sm font-extrabold text-emerald-800 hover:bg-emerald-50"
+              className="inline-flex min-h-12 items-center justify-center rounded-xl px-4 text-sm font-extrabold text-primary hover:bg-rose-50"
             >
               Clear filters
             </button>
@@ -337,7 +337,7 @@ export default function DirectoryPage() {
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate font-extrabold text-slate-950">{profile.name}</h2>
                     <p className="mt-1 flex items-start gap-1.5 text-sm font-semibold leading-5 text-slate-600">
-                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                       {[profile.upazila, profile.district].filter(Boolean).join(', ') || 'Location not published'}
                     </p>
                   </div>
@@ -362,7 +362,7 @@ export default function DirectoryPage() {
                     href={profile.source.url}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="font-bold text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-emerald-800"
+                    className="font-bold text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-primary"
                   >
                     {profile.source.organization}
                   </a>
@@ -370,7 +370,7 @@ export default function DirectoryPage() {
 
                 <Link
                   to={`/directory/imported/${encodeURIComponent(profile.id)}`}
-                  className="mt-auto inline-flex min-h-11 items-center gap-2 pt-4 text-sm font-extrabold text-emerald-800 hover:underline"
+                  className="mt-auto inline-flex min-h-11 items-center gap-2 pt-4 text-sm font-extrabold text-primary hover:underline"
                 >
                   <UserCheck className="h-4 w-4" aria-hidden="true" />
                   This is me - claim listing

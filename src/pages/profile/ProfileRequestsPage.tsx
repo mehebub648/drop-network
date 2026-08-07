@@ -59,7 +59,7 @@ export default function ProfileRequestsPage() {
 
       {error && <p className="mt-5 text-sm font-bold text-red-600">{error}</p>}
       {loading ? (
-        <div className="py-16 flex justify-center"><div className="w-8 h-8 border-4 border-emerald-100 border-t-primary rounded-full animate-spin" /></div>
+        <div className="py-16 flex justify-center"><div className="w-8 h-8 border-4 border-rose-100 border-t-primary rounded-full animate-spin" /></div>
       ) : visible.length === 0 ? (
         <div className="py-14 text-center">
           <Heart className="w-10 h-10 text-slate-300 mx-auto" />
@@ -85,7 +85,7 @@ export default function ProfileRequestsPage() {
                     <option value="ACTIVE">Active</option>
                     <option value="CANCELLED">Cancelled</option>
                   </select>
-                  <Link to={`/request/${request.id}`} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold inline-flex items-center gap-1"><Activity className="w-4 h-4" /> View</Link>
+                  <Link to={`/request/${request.id}`} className="px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold inline-flex items-center gap-1 hover:bg-primary-dark"><Activity className="w-4 h-4" /> View</Link>
                 </div>
               </div>
             </article>

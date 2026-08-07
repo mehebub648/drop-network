@@ -56,7 +56,7 @@ export default function CommunityPage({ user }: { user: any }) {
 
   return (
     <div className="space-y-8 sm:space-y-10">
-      <header className="overflow-hidden rounded-3xl border border-rose-100 bg-gradient-to-br from-white via-rose-50/60 to-emerald-50/50 p-6 sm:p-10 lg:flex lg:items-end lg:justify-between lg:gap-10">
+      <header className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10 lg:flex lg:items-end lg:justify-between lg:gap-10">
         <div className="max-w-3xl">
           <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Drop community</p>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
@@ -94,7 +94,7 @@ export default function CommunityPage({ user }: { user: any }) {
                   to={pageHref(filter.value || undefined, 1)}
                   aria-current={active ? 'page' : undefined}
                   className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold transition-colors ${
-                    active ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                    active ? 'bg-primary text-white' : 'border border-slate-200 bg-white text-slate-700 hover:border-rose-200 hover:text-primary'
                   }`}
                 >
                   {Icon && <Icon className="h-4 w-4" aria-hidden="true" />}
@@ -133,7 +133,7 @@ export default function CommunityPage({ user }: { user: any }) {
             <BookOpenText className="mx-auto h-12 w-12 text-slate-300" aria-hidden="true" />
             <h2 className="mt-4 text-xl font-extrabold text-slate-900">No posts in this section yet</h2>
             <p className="mt-2 text-sm text-slate-500">Choose another category or be the first member to share something helpful.</p>
-            <Link to="/community" className="mt-5 inline-flex min-h-11 items-center font-extrabold text-emerald-700 hover:text-emerald-900">View all community posts</Link>
+            <Link to="/community" className="mt-5 inline-flex min-h-11 items-center font-extrabold text-primary hover:text-primary-dark">View all community posts</Link>
           </div>
         ) : data ? (
           <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-3">

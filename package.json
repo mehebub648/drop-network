@@ -1,7 +1,7 @@
 {
   "name": "drop-network",
   "private": true,
-  "version": "0.0.66",
+  "version": "0.0.67",
   "type": "module",
   "scripts": {
     "dev": "tsx watch server/server.ts",

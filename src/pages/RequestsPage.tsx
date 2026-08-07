@@ -48,7 +48,7 @@ export default function RequestsPage() {
   const hasFilters = Boolean(groupFilter || districtFilter || urgentOnly);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-7 sm:space-y-9">
+    <div className="space-y-7 sm:space-y-9">
       <PageHeader
         eyebrow="Live coordination"
         title="Blood requests that need a response"
@@ -149,7 +149,7 @@ export default function RequestsPage() {
                     {request.comment_count > 0 && <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500"><MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />{request.comment_count} update{request.comment_count === 1 ? '' : 's'}</p>}
                   </div>
                 </div>
-                <Link to={`/request/${request.id}`} className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-extrabold text-white transition-colors hover:bg-primary">
+                <Link to={`/request/${request.id}`} className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-primary px-5 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark">
                   View request <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Link>
               </div>

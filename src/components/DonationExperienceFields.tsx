@@ -127,7 +127,7 @@ export default function DonationExperienceFields({
         )}
 
         {value.kind === 'NEVER' && (
-          <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 sm:col-span-2">
+          <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 sm:col-span-2">
             Lifetime donations are fixed at 0.
           </div>
         )}

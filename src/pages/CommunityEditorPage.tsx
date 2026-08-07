@@ -367,7 +367,7 @@ export default function CommunityEditorPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">{communityPostTypeLabel(post.type)}</span>
-                    <span className={post.status === 'PUBLISHED' ? 'text-emerald-700' : post.status === 'HIDDEN' ? 'text-amber-700' : 'text-slate-500'}>{post.status.toLowerCase()}</span>
+                    <span className={post.status === 'PUBLISHED' ? 'text-green-700' : post.status === 'HIDDEN' ? 'text-amber-700' : 'text-slate-500'}>{post.status.toLowerCase()}</span>
                     <time dateTime={post.updated_at} className="text-slate-400">Updated {formatCommunityDate(post.updated_at)}</time>
                   </div>
                   <h3 className="mt-2 truncate font-extrabold text-slate-950">{post.title}</h3>

@@ -59,7 +59,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | 
         <label className="block">
           <span className="mb-2 flex items-center justify-between gap-3 text-sm font-bold text-slate-800">
             Password
-            <Link to="/forgot-password" className="text-xs text-emerald-700 hover:text-emerald-900 hover:underline">Forgot password?</Link>
+            <Link to="/forgot-password" className="text-xs text-primary hover:text-primary-dark hover:underline">Forgot password?</Link>
           </span>
           <span className="relative block">
             <LockKeyhole className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -89,7 +89,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | 
       </form>
 
       <div className="mt-7 border-t border-slate-100 pt-6 text-center text-sm text-slate-600">
-        New to Drop? <Link to={returnTo === '/profile' ? '/register' : `/register?returnTo=${encodeURIComponent(returnTo)}`} className="font-bold text-emerald-700 hover:text-emerald-900 hover:underline">Create a verified account</Link>
+        New to Drop? <Link to={returnTo === '/profile' ? '/register' : `/register?returnTo=${encodeURIComponent(returnTo)}`} className="font-bold text-primary hover:text-primary-dark hover:underline">Create a verified account</Link>
       </div>
       <p className="mt-4 text-center text-xs leading-5 text-slate-500">Donor numbers are masked while you search. They open one at a time, through a published blood request, and every reveal is recorded.</p>
     </AuthShell>

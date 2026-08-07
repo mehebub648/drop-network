@@ -50,7 +50,7 @@ export default function ProfileLayout({ user }: { user: ProfileUser }) {
                   to={item.to}
                   className={({ isActive }) => cn(
                     'flex min-h-11 items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition-colors',
-                    isActive ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-rose-50 hover:text-rose-950'
+                    isActive ? 'bg-primary text-white shadow-sm' : 'text-slate-600 hover:bg-rose-50 hover:text-primary'
                   )}
                 >
                   <Icon className="w-4 h-4" />

@@ -183,7 +183,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
         <BookOpenText className="mx-auto h-12 w-12 text-slate-300" aria-hidden="true" />
         <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-slate-950">Community post not found</h1>
         <p className="mt-2 text-slate-500">This post may have been removed or its address may be incorrect.</p>
-        <Link to="/community" className="mt-6 inline-flex min-h-11 items-center rounded-xl bg-slate-900 px-5 text-sm font-extrabold text-white hover:bg-slate-800">Browse community posts</Link>
+        <Link to="/community" className="mt-6 inline-flex min-h-11 items-center rounded-xl bg-primary px-5 text-sm font-extrabold text-white hover:bg-primary-dark">Browse community posts</Link>
       </div>
     );
   }
@@ -286,18 +286,18 @@ export default function CommunityPostPage({ user }: { user: any }) {
           </form>
         )}
         {reportMessage && (
-          <p className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${reportMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`} role={reportMessage.type === 'error' ? 'alert' : 'status'}>
+          <p className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${reportMessage.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`} role={reportMessage.type === 'error' ? 'alert' : 'status'}>
             {reportMessage.text}
           </p>
         )}
       </section>
 
-      <footer className="mt-8 flex flex-col gap-4 rounded-3xl bg-slate-900 p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-8">
+      <footer className="mt-8 flex flex-col gap-4 rounded-3xl border border-rose-100 bg-rose-50 p-6 text-slate-950 sm:flex-row sm:items-center sm:justify-between sm:p-8">
         <div>
           <h2 className="text-xl font-extrabold">Have something useful to share?</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-300">Publish a donation experience or a responsible health suggestion.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-600">Publish a donation experience or a responsible health suggestion.</p>
         </div>
-        <Link to="/community/new" className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-extrabold text-slate-950 hover:bg-slate-100">
+        <Link to="/community/new" className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-extrabold text-white hover:bg-primary-dark">
           <PenLine className="h-4 w-4" aria-hidden="true" /> Write a post
         </Link>
       </footer>

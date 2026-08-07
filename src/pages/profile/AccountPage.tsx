@@ -41,7 +41,7 @@ export default function AccountPage({ user, onUpdate }: ProfilePageProps) {
       <p className="mt-2 text-slate-500">Keep the identity and phone number used for request coordination current.</p>
 
       <div className="mt-7 flex items-center gap-4 rounded-2xl bg-slate-50 p-5">
-        <div className="w-14 h-14 rounded-2xl bg-white text-primary border border-emerald-100 flex items-center justify-center font-extrabold">{initials}</div>
+        <div className="w-14 h-14 rounded-2xl bg-white text-primary border border-rose-100 flex items-center justify-center font-extrabold">{initials}</div>
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <strong>{user.name}</strong>
@@ -67,7 +67,7 @@ export default function AccountPage({ user, onUpdate }: ProfilePageProps) {
           </div>
         </div>
         {message && <p className={message.type === 'success' ? 'text-green-700 font-bold text-sm' : 'text-red-600 font-bold text-sm'}>{message.text}</p>}
-        <button disabled={saving} className="inline-flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl font-bold disabled:opacity-50">
+        <button disabled={saving} className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark disabled:opacity-50">
           <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save account'}
         </button>
       </form>

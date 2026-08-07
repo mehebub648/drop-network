@@ -14,7 +14,7 @@ const navigation = [
 const desktopLink = ({ isActive }: { isActive: boolean }) =>
   `inline-flex min-h-10 items-center rounded-full px-3.5 text-sm font-bold transition-colors ${
     isActive
-      ? 'bg-white text-rose-800 shadow-sm ring-1 ring-rose-100'
+      ? 'bg-white text-primary shadow-sm ring-1 ring-rose-100'
       : 'text-slate-600 hover:bg-white/80 hover:text-slate-950'
   }`;
 
@@ -234,7 +234,7 @@ export default function Layout({
         )}
       </header>
 
-      <main id="main-content" className="site-main mx-auto w-full flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:py-10">
+      <main id="main-content" className="site-main mx-auto w-full flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         {children}
       </main>
       <Footer />

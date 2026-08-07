@@ -200,7 +200,7 @@ export default function DonorSearchPage({
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-rose-200/40 blur-3xl" />
         <div className="relative">
           {!hasQuery ? (
-            <div className="mx-auto max-w-3xl">
+            <div className="mx-auto max-w-5xl">
               <SearchCriteriaForm
                 value={criteria}
                 onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
@@ -288,7 +288,7 @@ export default function DonorSearchPage({
         <section aria-labelledby="search-results-heading">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-emerald-700">Step 2 · Donor matches</p>
+              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-primary">Step 2 · Donor matches</p>
               <h2 id="search-results-heading" className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
                 Choose who to contact
               </h2>

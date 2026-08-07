@@ -102,16 +102,16 @@ export default function DonorResultCard({
         </div>
       )}
 
-      <div className="mt-5 flex min-h-20 flex-1 flex-col justify-center gap-3 rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-white sm:flex-row sm:items-center sm:justify-between">
-        <p className="flex items-center gap-2 font-semibold tabular-nums text-slate-100">
-          <LockKeyhole className="h-4 w-4 shrink-0 text-rose-300" aria-hidden="true" />
+      <div className="mt-5 flex min-h-20 flex-1 flex-col justify-center gap-3 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-slate-950 sm:flex-row sm:items-center sm:justify-between">
+        <p className="flex items-center gap-2 font-semibold tabular-nums text-slate-700">
+          <LockKeyhole className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           {donor.has_phone ? donor.phone_masked : 'No number published'}
         </p>
         <button
           type="button"
           disabled={!donor.has_phone || busy}
           onClick={() => onSelect(donor)}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-extrabold text-slate-950 transition-colors hover:bg-rose-50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Phone className="h-4 w-4" aria-hidden="true" />
           {busy ? 'Opening...' : 'Request contact'}

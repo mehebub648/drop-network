@@ -46,7 +46,7 @@ export default function ForgotPasswordPage() {
       description="Verify the registered Bangladesh mobile, choose a new password, and automatically revoke every existing session."
     >
       <div className="mb-7 flex items-center gap-3" aria-label={`Step ${step} of 3`}>
-        {[1, 2, 3].map(value => <span key={value} className={`h-2 flex-1 rounded-full ${value <= step ? 'bg-emerald-700' : 'bg-slate-100'}`} />)}
+        {[1, 2, 3].map(value => <span key={value} className={`h-2 flex-1 rounded-full ${value <= step ? 'bg-primary' : 'bg-slate-100'}`} />)}
       </div>
       <form onSubmit={submit} className="space-y-5">
         {step === 1 && (
@@ -57,7 +57,7 @@ export default function ForgotPasswordPage() {
         )}
         {step === 2 && (
           <>
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">Enter the code sent for <strong>{phone}</strong>.</div>
+            <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-900">Enter the code sent for <strong>{phone}</strong>.</div>
             {deliveryMode === 'console' && <div role="status" className="flex gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900"><TerminalSquare className="mt-0.5 h-5 w-5 shrink-0" /><span><strong>Development mode:</strong> the OTP was printed in the server logs.</span></div>}
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-slate-800">Six-digit verification code</span>
@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
         )}
         {step === 3 && (
           <>
-            <div className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800"><CheckCircle2 className="h-5 w-5" />Phone verified</div>
+            <div className="flex items-center gap-3 rounded-2xl border border-green-100 bg-green-50 px-4 py-3 text-sm font-bold text-green-800"><CheckCircle2 className="h-5 w-5" />Phone verified</div>
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-slate-800">New password</span>
               <input required autoFocus autoComplete="new-password" type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 8 characters" className="input min-h-12" />
@@ -80,7 +80,7 @@ export default function ForgotPasswordPage() {
           {busy ? 'Please wait…' : step === 1 ? <>Send recovery code <ArrowRight className="h-5 w-5" /></> : step === 2 ? <>Verify code <KeyRound className="h-5 w-5" /></> : <>Save new password <CheckCircle2 className="h-5 w-5" /></>}
         </button>
       </form>
-      <Link to="/login" className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-emerald-800"><ArrowLeft className="h-4 w-4" />Back to sign in</Link>
+      <Link to="/login" className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-primary"><ArrowLeft className="h-4 w-4" />Back to sign in</Link>
     </AuthShell>
   );
 }

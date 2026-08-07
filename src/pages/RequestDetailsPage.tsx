@@ -204,7 +204,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     } catch (error: any) { setActionMessage({ type: 'error', text: error.message || 'Could not submit the report.' }); }
   };
 
-  if (loading) return <div className="flex justify-center p-12"><div className="w-10 h-10 border-[3px] border-emerald-100 border-t-primary rounded-full animate-spin"></div></div>;
+  if (loading) return <div className="flex justify-center p-12"><div className="w-10 h-10 border-[3px] border-rose-100 border-t-primary rounded-full animate-spin"></div></div>;
   if (loadError) return (
     <div className="max-w-3xl mx-auto theme-card p-10 text-center border border-slate-100">
       <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
@@ -218,7 +218,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   const isOwner = (user && user.id === request.user_id) || request.user_id === BROWSER_FINGERPRINT;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 fade-in">
+    <div className="mx-auto max-w-6xl space-y-8 fade-in">
       <div className="flex items-center gap-4 pb-4 border-b border-slate-100">
         <Link to="/requests" className="text-slate-400 hover:text-slate-900 transition-colors">
           &larr; Back
@@ -247,10 +247,10 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       )}
 
       {/* Main Request Header */}
-      <div className="theme-card p-6 md:p-8 bg-emerald-50/40 border border-emerald-100 shadow-sm relative overflow-hidden">
+      <div className="theme-card p-6 md:p-8 bg-white border border-slate-200 shadow-sm relative overflow-hidden">
         {request.status === 'FULFILLED' && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
-            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+            <div className="w-16 h-16 bg-green-100 text-green-700 rounded-full flex items-center justify-center mb-4">
               <CheckCircle2 className="w-8 h-8" />
             </div>
             <h3 className="text-2xl font-bold text-slate-900">Request Fulfilled</h3>
@@ -315,7 +315,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         </div>
 
         {request.status === 'ACTIVE' && (
-          <div className="flex items-center gap-3 mt-6 pt-5 border-t border-emerald-100 relative z-0">
+          <div className="flex items-center gap-3 mt-6 pt-5 border-t border-slate-100 relative z-0">
             <span className="text-xs font-bold uppercase tracking-widest text-slate-400 mr-1">Spread the word</span>
             <button
               onClick={() => shareRequest('whatsapp')}
@@ -479,7 +479,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-6">
                <button onClick={() => setIsEditing(false)} className="px-5 py-2.5 text-slate-500 font-bold text-sm">Cancel</button>
-               <button onClick={handleSaveDetails} className="px-6 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-sm shadow-sm">Save Changes</button>
+               <button onClick={handleSaveDetails} className="px-6 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-sm hover:bg-primary-dark">Save Changes</button>
             </div>
           </div>
         ) : (
@@ -540,7 +540,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         ) : (
           <div className="grid gap-4">
             {matches.map((m, i) => (
-              <div key={i} className="theme-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-emerald-200 border border-slate-100 transition-colors shadow-sm bg-white">
+              <div key={i} className="theme-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-rose-200 border border-slate-100 transition-colors shadow-sm bg-white">
                 <div className="flex items-center gap-5 flex-1">
                   <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl overflow-hidden bg-slate-50 flex-shrink-0 flex items-center justify-center text-primary text-xl font-extrabold border border-slate-100">
                     {m.blood_group}
@@ -560,7 +560,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                 </div>
                 {!data.responses?.some(response => response.donor_id === m.user_id && !['DECLINED', 'CANCELLED', 'NO_SHOW'].includes(response.status)) && (
                   <div className="flex-shrink-0 md:w-32">
-                    <button disabled={inviting === m.user_id} onClick={() => inviteDonor(m.user_id)} className="w-full px-4 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform hover:bg-slate-800 shadow-sm disabled:opacity-50">
+                    <button disabled={inviting === m.user_id} onClick={() => inviteDonor(m.user_id)} className="w-full px-4 py-3 bg-primary text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform hover:bg-primary-dark shadow-sm disabled:opacity-50">
                       {inviting === m.user_id ? 'Sending…' : 'Invite donor'}
                     </button>
                   </div>
@@ -614,7 +614,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               value={anonName}
               onChange={e => setAnonName(e.target.value)}
               placeholder="Your Name (required)"
-              className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50 text-sm font-medium outline-none transition-all w-[240px]"
+              className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-primary focus:ring-4 focus:ring-rose-100 text-sm font-medium outline-none transition-all w-[240px]"
             />
           )}
           <div className="flex gap-3">
@@ -623,10 +623,10 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               value={newComment} 
               onChange={e => setNewComment(e.target.value)}
               placeholder="Type your comment or question..."
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50 text-sm font-medium outline-none transition-all"
+              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-primary focus:ring-4 focus:ring-rose-100 text-sm font-medium outline-none transition-all"
               onKeyDown={e => e.key === 'Enter' && submitComment()}
             />
-            <button onClick={submitComment} className="px-5 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform shadow-sm">
+            <button onClick={submitComment} className="px-5 py-3 bg-primary text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform shadow-sm hover:bg-primary-dark">
               Post
             </button>
           </div>

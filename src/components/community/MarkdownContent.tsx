@@ -61,7 +61,7 @@ export default function MarkdownContent({ markdown, className = '' }: { markdown
                 href={safeHref}
                 target={external ? '_blank' : undefined}
                 rel={external ? 'nofollow noreferrer noopener' : undefined}
-                className="font-bold text-emerald-700 underline decoration-emerald-300 underline-offset-4 hover:text-emerald-900"
+                className="font-bold text-primary underline decoration-rose-300 underline-offset-4 hover:text-primary-dark"
               >
                 {children}
               </a>

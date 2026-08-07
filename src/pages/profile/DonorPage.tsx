@@ -174,7 +174,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </div>
         </div>
         {message && <p className={message.type === 'success' ? 'mt-4 text-green-700 font-bold text-sm' : 'mt-4 text-red-600 font-bold text-sm'}>{message.text}</p>}
-        <button disabled={saving} className="mt-6 inline-flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl font-bold disabled:opacity-50"><Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save donor profile'}</button>
+        <button disabled={saving} className="mt-6 inline-flex items-center gap-2 px-5 py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark disabled:opacity-50"><Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save donor profile'}</button>
       </form>
 
       <div className="theme-card border border-slate-100 p-6">

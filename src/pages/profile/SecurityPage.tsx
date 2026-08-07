@@ -35,7 +35,7 @@ export default function SecurityPage() {
   return (
     <div className="space-y-6"><div className="theme-card border border-slate-100 p-6 sm:p-8">
       <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center"><ShieldCheck className="w-6 h-6" /></div>
+        <div className="w-11 h-11 rounded-xl bg-rose-50 text-primary flex items-center justify-center"><ShieldCheck className="w-6 h-6" /></div>
         <div>
           <h2 className="text-2xl font-extrabold tracking-tight">Security</h2>
           <p className="text-slate-500 mt-1">Change the password used to sign in.</p>
@@ -55,7 +55,7 @@ export default function SecurityPage() {
           <input id="confirm-password" type="password" minLength={8} required value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary" />
         </div>
         {message && <p className={message.type === 'success' ? 'text-green-700 font-bold text-sm' : 'text-red-600 font-bold text-sm'}>{message.text}</p>}
-        <button disabled={saving} className="px-5 py-3 bg-slate-900 text-white rounded-xl font-bold inline-flex items-center gap-2 disabled:opacity-50"><KeyRound className="w-4 h-4" /> {saving ? 'Changing...' : 'Change password'}</button>
+        <button disabled={saving} className="px-5 py-3 bg-primary text-white rounded-xl font-bold inline-flex items-center gap-2 hover:bg-primary-dark disabled:opacity-50"><KeyRound className="w-4 h-4" /> {saving ? 'Changing...' : 'Change password'}</button>
       </form>
     </div><div className="theme-card border border-slate-100 p-6 sm:p-8"><h2 className="text-xl font-extrabold flex items-center gap-2"><Monitor className="w-5 h-5 text-primary" /> Signed-in devices</h2><div className="mt-4 space-y-3">{sessions.map(session => <div key={session.id} className="border rounded-xl p-4 flex items-center justify-between gap-3"><div><p className="text-sm font-bold">{session.current ? 'This device' : session.user_agent}</p><p className="text-xs text-slate-500 mt-1">Signed in {new Date(session.created_at).toLocaleString()} · expires {new Date(session.expires_at).toLocaleDateString()}</p></div><button onClick={async () => { const result = await api.revokeSession(session.id); if (result.current) window.location.href = '/login'; else loadSessions(); }} className="px-3 py-2 text-xs font-bold border rounded-lg">Revoke</button></div>)}</div><button onClick={async () => { await api.logoutAll(); window.location.href = '/login'; }} className="mt-5 px-4 py-3 bg-red-50 text-red-700 rounded-xl font-bold inline-flex gap-2"><LogOut className="w-4 h-4" /> Log out all devices</button></div></div>
   );

@@ -49,8 +49,8 @@ export default function SettingsPage({ user }: { user: ProfileUser }) {
             <h3 className="font-extrabold flex items-center gap-2"><Bell className="w-5 h-5 text-primary" /> Notification preferences</h3>
             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mt-3">These choices are stored on this device only. Push and email delivery are not connected yet.</p>
             <div className="mt-4 space-y-3">
-              <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.urgentAlerts} onChange={event => setPreferences(current => ({ ...current, urgentAlerts: event.target.checked }))} className="w-4 h-4 accent-emerald-700" /> <span className="font-medium">Urgent requests for my blood group</span></label>
-              <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.requestUpdates} onChange={event => setPreferences(current => ({ ...current, requestUpdates: event.target.checked }))} className="w-4 h-4 accent-emerald-700" /> <span className="font-medium">Updates to my requests</span></label>
+              <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.urgentAlerts} onChange={event => setPreferences(current => ({ ...current, urgentAlerts: event.target.checked }))} className="w-4 h-4 accent-primary" /> <span className="font-medium">Urgent requests for my blood group</span></label>
+              <label className="flex items-center gap-3"><input type="checkbox" checked={preferences.requestUpdates} onChange={event => setPreferences(current => ({ ...current, requestUpdates: event.target.checked }))} className="w-4 h-4 accent-primary" /> <span className="font-medium">Updates to my requests</span></label>
             </div>
           </section>
 
@@ -61,7 +61,7 @@ export default function SettingsPage({ user }: { user: ProfileUser }) {
         </div>
 
         <div className="mt-7 flex items-center gap-3">
-          <button type="button" onClick={save} className="px-5 py-3 bg-slate-900 text-white rounded-xl font-bold inline-flex items-center gap-2"><Save className="w-4 h-4" /> Save preferences</button>
+          <button type="button" onClick={save} className="px-5 py-3 bg-primary text-white rounded-xl font-bold inline-flex items-center gap-2 hover:bg-primary-dark"><Save className="w-4 h-4" /> Save preferences</button>
           {saved && <span className="text-sm font-bold text-green-700">Saved on this device.</span>}
         </div>
       </div>

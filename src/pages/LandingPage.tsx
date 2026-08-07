@@ -146,7 +146,7 @@ export default function LandingPage({ user }: { user: any }) {
 
       <section>
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">Simple and accountable</p>
+          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Simple and accountable</p>
           <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">How Drop works</h2>
           <p className="mt-4 text-base leading-7 text-slate-600">
             Drop helps people find one another and protect contact details. The receiving hospital or blood bank
@@ -158,10 +158,10 @@ export default function LandingPage({ user }: { user: any }) {
           {steps.map(({ icon: Icon, title, body }, index) => (
             <article key={title} className="theme-card cartoon-step-card p-6 sm:p-7">
               <div className="flex items-center justify-between">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-primary">
                   <Icon className="h-6 w-6" aria-hidden="true" />
                 </span>
-                <span className="text-sm font-extrabold text-emerald-700">0{index + 1}</span>
+                <span className="text-sm font-extrabold text-primary">0{index + 1}</span>
               </div>
               <h3 className="mt-5 text-xl font-extrabold text-slate-950">{title}</h3>
               <p className="mt-3 text-sm leading-6 text-slate-600">{body}</p>
@@ -171,8 +171,8 @@ export default function LandingPage({ user }: { user: any }) {
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="cartoon-panel cartoon-panel-pink p-6 sm:p-9">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-emerald-700 shadow-sm">
+        <div className="cartoon-panel cartoon-panel-accent p-6 sm:p-9">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary shadow-sm">
             <ShieldCheck className="h-6 w-6" aria-hidden="true" />
           </div>
           <h2 className="mt-5 text-2xl font-extrabold text-slate-950 sm:text-3xl">Contact privacy is part of the workflow.</h2>
@@ -191,7 +191,7 @@ export default function LandingPage({ user }: { user: any }) {
             </Link>
             <Link
               to="/directory/imported"
-              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-200 bg-white px-5 text-sm font-extrabold text-slate-800 hover:bg-emerald-50"
+              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-rose-200 bg-white px-5 text-sm font-extrabold text-slate-800 hover:bg-rose-50"
             >
               View imported listings
             </Link>
@@ -218,12 +218,12 @@ export default function LandingPage({ user }: { user: any }) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-3xl">
+      <section>
         <div className="text-center">
-          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">Before donating</p>
+          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Before donating</p>
           <h2 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950">Common questions</h2>
         </div>
-        <div className="mt-8 space-y-3">
+        <div className="mt-8 grid gap-3 lg:grid-cols-2">
           {[
             {
               q: 'Who decides whether I can donate?',
@@ -243,7 +243,7 @@ export default function LandingPage({ user }: { user: any }) {
             }
           ].map(({ q, a }) => (
             <details key={q} className="theme-card group">
-              <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 font-extrabold text-slate-900 transition-colors hover:text-emerald-800 sm:px-6">
+              <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 font-extrabold text-slate-900 transition-colors hover:text-primary sm:px-6">
                 {q}
                 <ChevronDown className="h-5 w-5 shrink-0 text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" />
               </summary>
@@ -256,7 +256,7 @@ export default function LandingPage({ user }: { user: any }) {
       <section className="cartoon-panel cartoon-cta p-6 sm:p-9">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">Keep the network useful</p>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Keep the network useful</p>
             <h2 className="mt-3 text-2xl font-extrabold text-slate-950 sm:text-3xl">Ready to help the next genuine request?</h2>
             <p className="mt-3 leading-7 text-slate-600">
               Create a donor profile, keep availability current, and respond only when you can safely reach the

@@ -45,7 +45,7 @@ export default function CommunityPostCard({ post }: { post: PublicCommunityPostS
         <p className="mt-3 flex-1 text-sm leading-7 text-slate-600" itemProp="description">{post.excerpt}</p>
         <div className="mt-5 flex items-center justify-between gap-4 border-t border-slate-100 pt-4 text-sm">
           <span className="font-semibold text-slate-600" itemProp="author">By {post.author.name}</span>
-          <Link to={`/community/${post.slug}`} className="inline-flex min-h-11 items-center font-extrabold text-emerald-700 hover:text-emerald-900">
+          <Link to={`/community/${post.slug}`} className="inline-flex min-h-11 items-center font-extrabold text-primary hover:text-primary-dark">
             Read post<span className="sr-only">: {post.title}</span>
           </Link>
         </div>

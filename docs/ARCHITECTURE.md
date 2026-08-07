@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.66`
+Current application version: `0.0.67`
 
 ## Overview
 
@@ -91,11 +91,11 @@ Entry points:
   it; re-exporting means the API and the interface cannot disagree about blood
   compatibility or place names. `src/lib/blood.ts` still owns the frontend-only
   helpers: urgency derivation and the donor eligibility calculation.
-- `src/index.css` defines the responsive minimal-cartoon system: the blush
-  canvas, warm paper surfaces, ink-like outlines and shadows, shared 78rem
-  frame, blood-red actions, semantic success/availability color, focus and
-  reduced-motion behavior, admin workspace layout, shared controls, and
-  Tailwind CSS usage.
+- `src/index.css` defines the responsive minimal-cartoon system: a white
+  canvas, white surfaces with soft neutral boundaries and shadows, shared
+  92rem content rail, deep-red actions, semantic success/availability color,
+  focus and reduced-motion behavior, admin workspace layout, shared controls,
+  and Tailwind CSS usage.
 
 Routes:
 

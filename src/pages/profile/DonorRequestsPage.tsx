@@ -134,7 +134,7 @@ export default function DonorRequestsPage({ user }: ProfilePageProps) {
                 </div>
                 <h3 className="mt-3 text-lg font-extrabold text-slate-950">{request.hospital_name || 'Collection place not stated'}</h3>
                 <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-slate-600">
-                  <MapPin className="h-4 w-4 text-emerald-700" aria-hidden="true" />
+                  <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
                   {request.upazila ? `${request.upazila}, ` : ''}{request.location.area_name}
                 </p>
                 <p className="mt-2 text-sm text-slate-600">Requested by {request.requester_name || 'a member'}</p>

@@ -85,7 +85,7 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
             <input id="donation-organization" required maxLength={120} value={organization} onChange={event => setOrganization(event.target.value)} placeholder="e.g. Dhaka Medical College Hospital" className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-primary" />
           </div>
           <div className="flex gap-2">
-            <button disabled={saving} className="px-4 py-3 bg-slate-900 text-white rounded-xl font-bold inline-flex items-center gap-2 disabled:opacity-50">{editingId ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}{editingId ? 'Update' : 'Add'}</button>
+            <button disabled={saving} className="px-4 py-3 bg-primary text-white rounded-xl font-bold inline-flex items-center gap-2 hover:bg-primary-dark disabled:opacity-50">{editingId ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}{editingId ? 'Update' : 'Add'}</button>
             {editingId && <button type="button" onClick={resetForm} className="px-3 py-3 bg-slate-100 rounded-xl font-bold">Cancel</button>}
           </div>
         </form>
