@@ -90,37 +90,34 @@ export default function LandingPage({ user }: { user: any }) {
   return (
     <div className="space-y-12 pb-8 sm:space-y-16 lg:space-y-20">
       <div className="space-y-6 sm:space-y-8">
-        <section className="relative overflow-hidden rounded-[2rem] border border-rose-100 bg-[linear-gradient(135deg,#ffffff_0%,#fffafa_52%,#fff1f2_100%)] px-5 py-6 shadow-[0_28px_80px_-52px_rgba(136,19,55,0.55)] sm:px-8 sm:py-8">
-          <div className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-rose-200/45 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-32 left-1/4 h-64 w-64 rounded-full bg-amber-100/45 blur-3xl" />
-
-          <div className="relative grid items-center gap-7 lg:grid-cols-[0.9fr_1.1fr] lg:gap-10 xl:gap-12">
-            <div>
-              <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-[3.15rem]">
+        <section className="landing-hero px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
+          <div className="relative grid items-center gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:gap-10 xl:gap-14">
+            <div className="max-w-xl lg:py-5">
+              <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.04] tracking-[-0.045em] text-white drop-shadow-sm sm:text-5xl lg:text-[3.4rem]">
                 Find a blood donor.
               </h1>
-              <p className="mt-4 max-w-lg text-base font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
+              <p className="mt-5 max-w-lg text-base font-medium leading-7 text-rose-50/90 sm:text-lg sm:leading-8">
                 Tell us what you need. We will show matching donors.
               </p>
 
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 <a
                   href="#donor-search"
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-extrabold text-white shadow-lg shadow-emerald-900/15 transition-colors hover:bg-primary-dark"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-6 text-sm font-extrabold text-rose-800 shadow-[0_16px_34px_-18px_rgba(0,0,0,0.75)] transition-all hover:-translate-y-0.5 hover:bg-rose-50"
                 >
                   Start your search
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </a>
                 <Link
                   to="/requests"
-                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-6 text-sm font-extrabold text-slate-800 transition-colors hover:border-emerald-200 hover:bg-emerald-50"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/25 bg-rose-950/30 px-6 text-sm font-extrabold text-white backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/15"
                 >
                   See open requests
                 </Link>
               </div>
             </div>
 
-            <div id="donor-search" className="scroll-mt-28">
+            <div id="donor-search" className="landing-hero-search scroll-mt-28">
               <SearchCriteriaForm
                 value={criteria}
                 onChange={updateCriteria}

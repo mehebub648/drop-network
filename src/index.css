@@ -198,6 +198,73 @@ body {
   mask-image: linear-gradient(to right, transparent 5%, black 72%);
 }
 
+/* Landing search hero. The generated artwork is decorative; layered gradients
+   keep the copy and guided search readable across responsive crops. */
+.landing-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(136, 19, 55, 0.35);
+  border-radius: 2rem;
+  background: #4c0519;
+  box-shadow: 0 34px 85px -48px rgba(76, 5, 25, 0.9);
+}
+
+.landing-hero::before,
+.landing-hero::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+}
+
+.landing-hero::before {
+  z-index: -2;
+  background-image: url('/images/hero-network-background.webp');
+  background-position: center;
+  background-size: cover;
+}
+
+.landing-hero::after {
+  z-index: -1;
+  background:
+    linear-gradient(90deg, rgba(35, 2, 12, 0.94) 0%, rgba(76, 5, 25, 0.8) 36%, rgba(76, 5, 25, 0.2) 68%, rgba(76, 5, 25, 0.42) 100%),
+    linear-gradient(0deg, rgba(76, 5, 25, 0.3), transparent 72%);
+}
+
+.landing-hero-search .surface {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 28px 70px -34px rgba(31, 2, 10, 0.8);
+  backdrop-filter: blur(16px);
+}
+
+@media (max-width: 1023px) {
+  .landing-hero::before {
+    background-position: 64% center;
+  }
+
+  .landing-hero::after {
+    background:
+      linear-gradient(180deg, rgba(31, 2, 11, 0.92) 0%, rgba(76, 5, 25, 0.78) 38%, rgba(76, 5, 25, 0.54) 68%, rgba(45, 3, 15, 0.82) 100%),
+      linear-gradient(90deg, rgba(76, 5, 25, 0.4), transparent 82%);
+  }
+}
+
+@media (max-width: 639px) {
+  .landing-hero {
+    border-radius: 1.5rem;
+  }
+
+  .landing-hero::before {
+    background-position: 70% center;
+  }
+
+  .landing-hero-search .surface {
+    border-radius: 1.25rem;
+  }
+}
+
 .eyebrow-chip,
 .eyebrow {
   color: #9f1239;
