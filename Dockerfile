@@ -43,11 +43,12 @@ COPY --from=build /app/dist ./dist
 COPY server ./server
 COPY docker-entrypoint.sh ./
 
-# Create the data directory owned by the unprivileged "node" user. The
-# container starts as root so the entrypoint can fix ownership of the mounted
-# volume (which may pre-exist with foreign ownership), then drops to "node".
+# Create the writable data directories for the unprivileged "node" user. The
+# application tree only needs to be readable; recursively changing ownership of
+# installed dependencies adds substantial image-build I/O without improving
+# runtime isolation.
 RUN mkdir -p /data/lancedb /data/media/community \
-    && chown -R node:node /data /app \
+    && chown -R node:node /data \
     && chmod +x docker-entrypoint.sh
 
 EXPOSE 3000

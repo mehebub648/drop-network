@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.70`
+Current application version: `0.0.71`
 
 ## Overview
 
@@ -622,8 +622,10 @@ Persistent storage:
 
 `./data/` is git-ignored: it is large and holds personal data.
 
-The production image runs as the unprivileged `node` user and owns
-`/data/lancedb` and `/data/media/community`.
+The production process runs as the unprivileged `node` user and owns
+`/data/lancedb` and `/data/media/community`. The application and dependency
+tree remains root-owned and read-only; the image build does not recursively
+rewrite ownership for files the process never needs to modify.
 
 Operational endpoints and jobs:
 
