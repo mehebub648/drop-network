@@ -25,6 +25,8 @@ export type SearchDraft = {
   patient_name: string;
   patient_age: string;
   requester_name: string;
+  /** The coordinator's private account/verification number. Never sent in the request body. */
+  requester_phone: string;
   requester_relation: string;
   contact_owner: 'PATIENT' | 'RELATIVE' | '';
   contact_name: string;
@@ -44,6 +46,7 @@ export const EMPTY_DRAFT: SearchDraft = {
   patient_name: '',
   patient_age: '',
   requester_name: '',
+  requester_phone: '',
   requester_relation: '',
   contact_owner: '',
   contact_name: '',
@@ -90,13 +93,14 @@ export function hasPatientDetails(draft: SearchDraft) {
   );
 }
 
-export function hasRequesterDetails(draft: SearchDraft) {
+export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone = '') {
   if (draft.requester_role === 'PATIENT') return true;
+  const requesterPhone = draft.requester_phone.trim() || verifiedRequesterPhone.trim();
   if (draft.requester_role === 'RELATIVE') {
-    return Boolean(draft.requester_name.trim() && draft.requester_relation.trim());
+    return Boolean(draft.requester_name.trim() && requesterPhone && draft.requester_relation.trim());
   }
   if (draft.requester_role !== 'THIRD_PARTY') return false;
-  if (!draft.requester_name.trim() || !draft.contact_owner || !draft.contact_phone.trim()) return false;
+  if (!draft.requester_name.trim() || !requesterPhone || !draft.contact_owner || !draft.contact_phone.trim()) return false;
   if (draft.contact_owner === 'RELATIVE') {
     return Boolean(draft.contact_name.trim() && draft.requester_relation.trim());
   }

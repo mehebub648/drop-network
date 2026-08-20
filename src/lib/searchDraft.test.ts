@@ -19,6 +19,7 @@ const completeDraft = (patch: Partial<SearchDraft> = {}): SearchDraft => ({
   patient_name: 'Patient Name',
   patient_age: '32',
   requester_name: 'Volunteer Name',
+  requester_phone: '01800000000',
   requester_relation: 'Brother',
   contact_owner: 'RELATIVE',
   contact_name: 'Relative Name',
@@ -32,6 +33,8 @@ test('completed patient and requester sections can be skipped when a draft is re
   assert.equal(hasPatientDetails(completeDraft({ patient_name: ' ' })), false);
 
   assert.equal(hasRequesterDetails(completeDraft()), true);
+  assert.equal(hasRequesterDetails(completeDraft({ requester_phone: '' })), false);
+  assert.equal(hasRequesterDetails(completeDraft({ requester_phone: '' }), '01800000000'), true);
   assert.equal(hasRequesterDetails(completeDraft({ contact_name: '' })), false);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT' })), true);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'RELATIVE', requester_relation: '' })), false);
@@ -45,6 +48,7 @@ test('request payload omits stale contact fields after changing to patient', () 
   assert.equal('contact_owner' in payload, false);
   assert.equal('contact_name' in payload, false);
   assert.equal('contact_phone' in payload, false);
+  assert.equal('requester_phone' in payload, false);
 });
 
 test('request payload includes only fields relevant to the selected coordinator role', () => {
@@ -59,6 +63,7 @@ test('request payload includes only fields relevant to the selected coordinator 
   }
   assert.equal(patientContact.contact_owner, 'PATIENT');
   assert.equal(patientContact.contact_phone, '01700000000');
+  assert.equal('requester_phone' in patientContact, false);
   assert.equal('contact_name' in patientContact, false);
   assert.equal('requester_relation' in patientContact, false);
 
@@ -67,4 +72,5 @@ test('request payload includes only fields relevant to the selected coordinator 
   assert.equal(relative.requester_relation, 'Brother');
   assert.equal('contact_owner' in relative, false);
   assert.equal('contact_phone' in relative, false);
+  assert.equal('requester_phone' in relative, false);
 });

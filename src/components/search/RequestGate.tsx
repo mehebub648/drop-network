@@ -60,14 +60,14 @@ export default function RequestGate({
   const [step, setStep] = useState<Step>(() => {
     if (!draft.requester_role) return 'role';
     if (!hasPatientDetails(draft)) return 'patient';
-    if (!hasRequesterDetails(draft)) return 'requester';
+    if (!hasRequesterDetails(draft, user?.phone)) return 'requester';
     return 'review';
   });
   const [roleReturnStep, setRoleReturnStep] = useState<RequestStep>('patient');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(() => draft.requester_phone || user?.phone || '');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => draft.requester_role === 'PATIENT' ? draft.patient_name : draft.requester_name);
   const [token, setToken] = useState('');
   const [accountName, setAccountName] = useState('');
   const [donorGroup, setDonorGroup] = useState('');
@@ -85,6 +85,10 @@ export default function RequestGate({
   useEffect(() => {
     closeRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (user?.phone) setPhone(user.phone);
+  }, [user?.phone]);
 
   const set = (patch: Partial<SearchDraft>) => onDraftChange({ ...draft, ...patch });
 
@@ -115,11 +119,13 @@ export default function RequestGate({
   const submitReview = (event: FormEvent) => {
     event.preventDefault();
     if (!hasPatientDetails(draft)) return setStep('patient');
-    if (!hasRequesterDetails(draft)) return setStep('requester');
+    if (!hasRequesterDetails(draft, user?.phone)) return setStep('requester');
     if (!consent) return setError('Confirm you may share these details before continuing.');
     setError('');
+    if (!name.trim()) setName(role === 'PATIENT' ? draft.patient_name : draft.requester_name);
     // Already signed in: nothing left to verify, publish and reveal.
     if (user) return void run(onReady);
+    setPhone(draft.requester_phone);
     setStep('phone');
   };
 
@@ -127,7 +133,7 @@ export default function RequestGate({
     event.preventDefault();
     if (!draft.requester_role) return setError('Choose how you are helping with this request.');
     setError('');
-    setStep(roleReturnStep === 'review' && !hasRequesterDetails(draft) ? 'requester' : roleReturnStep);
+    setStep(roleReturnStep === 'review' && !hasRequesterDetails(draft, user?.phone) ? 'requester' : roleReturnStep);
   };
 
   const sendCode = (event: FormEvent) => {
@@ -218,13 +224,29 @@ export default function RequestGate({
     : role === 'RELATIVE'
       ? `${draft.requester_name} · ${draft.requester_relation}`
       : draft.contact_owner === 'RELATIVE'
-        ? `${draft.requester_name} · ${draft.contact_name} (${draft.requester_relation})`
-        : `${draft.requester_name} · Patient contact`;
+        ? `${draft.contact_name} · ${draft.requester_relation}`
+        : `${draft.patient_name} · Patient`;
 
   const editRole = (returnStep: RequestStep) => {
     setRoleReturnStep(returnStep);
     setError('');
     setStep('role');
+  };
+
+  const changeRequesterRole = (requesterRole: SearchDraft['requester_role']) => {
+    const next: Partial<SearchDraft> = { requester_role: requesterRole };
+    if (requesterRole === 'PATIENT' && draft.requester_role !== 'PATIENT') {
+      next.requester_phone = '';
+      setPhone(user?.phone || '');
+    } else if (requesterRole !== 'PATIENT' && user?.phone) {
+      setPhone(user.phone);
+    }
+    set(next);
+  };
+
+  const updateVerificationPhone = (value: string) => {
+    setPhone(value);
+    if (!user) set({ requester_phone: value });
   };
 
   return (
@@ -261,7 +283,7 @@ export default function RequestGate({
             <p>Choose the role that best describes you for this request. You can change it again before publishing.</p>
             <RequesterRolePicker
               value={draft.requester_role}
-              onChange={requesterRole => set({ requester_role: requesterRole })}
+              onChange={changeRequesterRole}
               hideLegend
               className="mt-5"
             />
@@ -328,7 +350,7 @@ export default function RequestGate({
         {step === 'requester' && (
           <form onSubmit={submitRequester} className="fade-in">
             <h2 id="request-gate-title">Who is coordinating?</h2>
-            <p>Add only the contact details donors need for this request. Timing and consent come next.</p>
+            <p>Your number is used for your account and verification. The patient-side number is kept separately for donors helping with this request.</p>
 
             <div className="requester-role-summary">
               <span>
@@ -347,6 +369,31 @@ export default function RequestGate({
                 </label>
               )}
 
+              {role !== 'PATIENT' && !user && (
+                <label className="dialog-field sm:col-span-2">
+                  <span>Your contact number</span>
+                  <input
+                    required
+                    type="tel"
+                    inputMode="tel"
+                    placeholder="01XXXXXXXXX"
+                    value={draft.requester_phone}
+                    onChange={event => updateVerificationPhone(event.target.value)}
+                    className="input"
+                  />
+                </label>
+              )}
+
+              {role !== 'PATIENT' && user?.phone && (
+                <div className="request-context-summary sm:col-span-2">
+                  <span>
+                    <small>Your verified account contact</small>
+                    <strong>{user.phone}</strong>
+                    <span>You are already signed in, so we will not ask for this again.</span>
+                  </span>
+                </div>
+              )}
+
               {role === 'RELATIVE' && (
                 <label className="dialog-field sm:col-span-2">
                   <span>Your relationship to the patient</span>
@@ -357,7 +404,7 @@ export default function RequestGate({
               {role === 'THIRD_PARTY' && (
                 <>
                   <label className="dialog-field sm:col-span-2">
-                    <span>Whose number should donors also get?</span>
+                    <span>Whose patient-side number should donors get?</span>
                     <select required value={draft.contact_owner} onChange={event => set({ contact_owner: event.target.value as 'PATIENT' | 'RELATIVE' })} className="input">
                       <option value="">Select</option>
                       <option value="PATIENT">The patient's number</option>
@@ -365,7 +412,7 @@ export default function RequestGate({
                     </select>
                   </label>
                   <label className="dialog-field">
-                    <span>That number</span>
+                    <span>{draft.contact_owner === 'RELATIVE' ? "Relative's contact number" : "Patient's contact number"}</span>
                     <input required type="tel" inputMode="tel" placeholder="01XXXXXXXXX" value={draft.contact_phone} onChange={event => set({ contact_phone: event.target.value })} className="input" />
                   </label>
                   {draft.contact_owner === 'RELATIVE' && (
@@ -412,12 +459,22 @@ export default function RequestGate({
                 <button type="button" onClick={() => setStep('patient')}>Change</button>
               </div>
               <div className="request-review-card">
-                <span><small>Requester</small><strong>{roleLabel}</strong><span>{contactLabel}</span></span>
+                <span><small>Requester</small><strong>{roleLabel}</strong><span>{role === 'PATIENT' ? patientLabel : draft.requester_name}</span></span>
                 <button type="button" onClick={() => editRole('review')}>Change role</button>
               </div>
               {role !== 'PATIENT' && (
                 <div className="request-review-card">
-                  <span><small>Contact details</small><strong>{contactLabel}</strong></span>
+                  <span><small>Your account contact</small><strong>{user?.phone || draft.requester_phone}</strong><span>Used for sign-in and request ownership</span></span>
+                  <button type="button" onClick={() => setStep('requester')}>Change</button>
+                </div>
+              )}
+              {role === 'THIRD_PARTY' && (
+                <div className="request-review-card">
+                  <span>
+                    <small>{draft.contact_owner === 'RELATIVE' ? 'Relative contact' : 'Patient contact'}</small>
+                    <strong>{draft.contact_phone}</strong>
+                    <span>{contactLabel}</span>
+                  </span>
                   <button type="button" onClick={() => setStep('requester')}>Change</button>
                 </div>
               )}
@@ -452,14 +509,14 @@ export default function RequestGate({
 
         {step === 'phone' && (
           <form onSubmit={sendCode}>
-            <h2 id="request-gate-title">Your phone number</h2>
+            <h2 id="request-gate-title">Verify your contact number</h2>
             <p>
-              Donors call this number back. We send a code to confirm it is yours, and sign you in if
-              you already have an account.
+              We use this number for your Drop account and request ownership. It stays separate from
+              the patient-side contact you added for donors.
             </p>
             <label className="dialog-field">
-              <span>Bangladesh mobile number</span>
-              <input required autoFocus type="tel" inputMode="tel" placeholder="01XXXXXXXXX" value={phone} onChange={event => setPhone(event.target.value)} className="input" />
+              <span>Your Bangladesh mobile number</span>
+              <input required autoFocus type="tel" inputMode="tel" placeholder="01XXXXXXXXX" value={phone} onChange={event => updateVerificationPhone(event.target.value)} className="input" />
             </label>
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">

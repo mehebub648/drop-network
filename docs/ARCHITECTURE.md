@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.69`
+Current application version: `0.0.70`
 
 ## Overview
 
@@ -294,7 +294,10 @@ API routes:
 - `POST /api/search/requests` creates and publishes in one step, because the
   flow has a single submit. It requires explicit consent, resolves the district
   server-side rather than trusting client coordinates, and takes the requester's
-  phone from their verified account. A repeat for the same group and upazila
+  phone from their verified account. In the third-party coordinator flow, that
+  verified account number is collected separately from the patient or relative
+  number that donors may use for the request; the private account number is
+  never accepted from the request payload. A repeat for the same group and upazila
   within six hours returns the request already in flight rather than a 409:
   re-searching after a dead-end call is not a mistake to error at.
 - `POST /api/requests/:id/reveals` unmasks one donor's number. It requires a
