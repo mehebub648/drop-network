@@ -2,7 +2,7 @@ FROM node:22-bookworm-slim AS base
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 
 FROM base AS dev
 
@@ -35,12 +35,12 @@ ENV NODE_ENV=production
 ENV LANCEDB_PATH=/data/lancedb
 ENV COMMUNITY_MEDIA_PATH=/data/media/community
 
-COPY package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 
 RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
-COPY server ./server
+COPY --chown=node:node server ./server
 COPY docker-entrypoint.sh ./
 
 # Create the writable data directories for the unprivileged "node" user. The

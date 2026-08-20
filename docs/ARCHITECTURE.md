@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.71`
+Current application version: `0.0.72`
 
 ## Overview
 
@@ -625,7 +625,9 @@ Persistent storage:
 The production process runs as the unprivileged `node` user and owns
 `/data/lancedb` and `/data/media/community`. The application and dependency
 tree remains root-owned and read-only; the image build does not recursively
-rewrite ownership for files the process never needs to modify.
+rewrite ownership for files the process never needs to modify. Package metadata
+and server source are assigned to `node` as they are copied so restrictive
+source-archive modes cannot prevent the unprivileged process from reading them.
 
 Operational endpoints and jobs:
 
