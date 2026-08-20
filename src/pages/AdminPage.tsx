@@ -25,6 +25,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { api, type AdminCommunityPost, type CommunityPostStatus } from '../lib/api';
+import ModalPortal from '../components/ModalPortal';
 
 type Capability =
   | 'DASHBOARD'
@@ -1046,29 +1047,31 @@ function ActionDialog({ state, busy, onClose, onDone }: {
   };
 
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && !busy && onClose()}>
-      <div className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title">
-        <button className="icon-button dialog-close" onClick={onClose} disabled={busy} aria-label="Close dialog"><X className="h-4 w-4" /></button>
-        <span className={`dialog-icon ${state.tone === 'danger' ? 'dialog-icon-danger' : ''}`}>
-          {state.tone === 'danger' ? <XCircle className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
-        </span>
-        <h2 id="action-dialog-title">{state.title}</h2>
-        <p>{state.description}</p>
-        {state.reasonLabel && (
-          <label className="dialog-field">
-            <span>{state.reasonLabel}{state.reasonRequired ? ' *' : ''}</span>
-            <textarea value={reason} onChange={event => setReason(event.target.value)} rows={4} maxLength={500} placeholder="Record the reason for this action" autoFocus />
-          </label>
-        )}
-        {error && <div role="alert" className="dialog-error">{error}</div>}
-        <div className="dialog-actions">
-          <button className="button button-secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button className={`button ${state.tone === 'danger' ? 'button-danger' : 'button-primary'}`} onClick={() => void confirm()} disabled={busy}>
-            {busy ? 'Saving…' : state.confirmLabel}
-          </button>
+    <ModalPortal onClose={busy ? undefined : onClose}>
+      <div className="dialog-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && !busy && onClose()}>
+        <div className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title">
+          <button className="icon-button dialog-close" onClick={onClose} disabled={busy} aria-label="Close dialog"><X className="h-4 w-4" /></button>
+          <span className={`dialog-icon ${state.tone === 'danger' ? 'dialog-icon-danger' : ''}`}>
+            {state.tone === 'danger' ? <XCircle className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
+          </span>
+          <h2 id="action-dialog-title">{state.title}</h2>
+          <p>{state.description}</p>
+          {state.reasonLabel && (
+            <label className="dialog-field">
+              <span>{state.reasonLabel}{state.reasonRequired ? ' *' : ''}</span>
+              <textarea value={reason} onChange={event => setReason(event.target.value)} rows={4} maxLength={500} placeholder="Record the reason for this action" autoFocus />
+            </label>
+          )}
+          {error && <div role="alert" className="dialog-error">{error}</div>}
+          <div className="dialog-actions">
+            <button className="button button-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className={`button ${state.tone === 'danger' ? 'button-danger' : 'button-primary'}`} onClick={() => void confirm()} disabled={busy}>
+              {busy ? 'Saving…' : state.confirmLabel}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }
 

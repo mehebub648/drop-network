@@ -79,8 +79,51 @@ export function clearSearchDraft() {
   }
 }
 
+export function hasPatientDetails(draft: SearchDraft) {
+  const age = Number(draft.patient_age);
+  return Boolean(
+    draft.patient_title &&
+    draft.patient_name.trim() &&
+    Number.isInteger(age) &&
+    age >= 1 &&
+    age <= 120
+  );
+}
+
+export function hasRequesterDetails(draft: SearchDraft) {
+  if (draft.requester_role === 'PATIENT') return true;
+  if (draft.requester_role === 'RELATIVE') {
+    return Boolean(draft.requester_name.trim() && draft.requester_relation.trim());
+  }
+  if (draft.requester_role !== 'THIRD_PARTY') return false;
+  if (!draft.requester_name.trim() || !draft.contact_owner || !draft.contact_phone.trim()) return false;
+  if (draft.contact_owner === 'RELATIVE') {
+    return Boolean(draft.contact_name.trim() && draft.requester_relation.trim());
+  }
+  return true;
+}
+
 /** The body `POST /api/search/requests` expects. */
 export function searchRequestPayload(draft: SearchDraft) {
+  const requesterFields = draft.requester_role === 'RELATIVE'
+    ? {
+        requester_name: draft.requester_name || undefined,
+        requester_relation: draft.requester_relation || undefined
+      }
+    : draft.requester_role === 'THIRD_PARTY'
+      ? {
+          requester_name: draft.requester_name || undefined,
+          contact_owner: draft.contact_owner || undefined,
+          contact_phone: draft.contact_phone || undefined,
+          ...(draft.contact_owner === 'RELATIVE'
+            ? {
+                requester_relation: draft.requester_relation || undefined,
+                contact_name: draft.contact_name || undefined
+              }
+            : {})
+        }
+      : {};
+
   return {
     blood_group: draft.blood_group,
     district: draft.district,
@@ -91,11 +134,7 @@ export function searchRequestPayload(draft: SearchDraft) {
     patient_title: draft.patient_title,
     patient_name: draft.patient_name,
     patient_age: Number(draft.patient_age),
-    requester_name: draft.requester_name || undefined,
-    requester_relation: draft.requester_relation || undefined,
-    contact_owner: draft.contact_owner || undefined,
-    contact_name: draft.contact_name || undefined,
-    contact_phone: draft.contact_phone || undefined,
+    ...requesterFields,
     needed_window: draft.needed_window || undefined
   };
 }

@@ -11,9 +11,17 @@ import {
 } from '../../lib/donation';
 import { getLocationByName } from '../../lib/locations';
 import { getUpazilasForDistrict } from '../../lib/upazilas';
-import type { NeededWindow, SearchDraft } from '../../lib/searchDraft';
+import {
+  hasPatientDetails,
+  hasRequesterDetails,
+  type NeededWindow,
+  type SearchDraft
+} from '../../lib/searchDraft';
+import ModalPortal from '../ModalPortal';
+import RequesterRolePicker from './RequesterRolePicker';
 
-type Step = 'details' | 'phone' | 'code' | 'password' | 'signup';
+type RequestStep = 'patient' | 'requester' | 'review';
+type Step = 'role' | RequestStep | 'phone' | 'code' | 'password' | 'signup' | 'signup-donor';
 
 const NEEDED_WINDOWS: Array<{ value: NeededWindow; label: string }> = [
   { value: 'WITHIN_HOURS', label: 'Within hours' },
@@ -36,6 +44,7 @@ export default function RequestGate({
   onDraftChange,
   user,
   onClose,
+  onEditSearch,
   onReady,
   donorName
 }: {
@@ -43,11 +52,18 @@ export default function RequestGate({
   onDraftChange: (next: SearchDraft) => void;
   user: any;
   onClose: () => void;
+  onEditSearch: () => void;
   /** Called once a session exists and the details are complete. */
   onReady: () => Promise<void>;
   donorName: string;
 }) {
-  const [step, setStep] = useState<Step>('details');
+  const [step, setStep] = useState<Step>(() => {
+    if (!draft.requester_role) return 'role';
+    if (!hasPatientDetails(draft)) return 'patient';
+    if (!hasRequesterDetails(draft)) return 'requester';
+    return 'review';
+  });
+  const [roleReturnStep, setRoleReturnStep] = useState<RequestStep>('patient');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -68,12 +84,7 @@ export default function RequestGate({
 
   useEffect(() => {
     closeRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   const set = (patch: Partial<SearchDraft>) => onDraftChange({ ...draft, ...patch });
 
@@ -89,13 +100,34 @@ export default function RequestGate({
     }
   };
 
-  const submitDetails = (event: FormEvent) => {
+  const submitPatient = (event: FormEvent) => {
     event.preventDefault();
+    setError('');
+    setStep(draft.requester_role === 'PATIENT' ? 'review' : 'requester');
+  };
+
+  const submitRequester = (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+    setStep('review');
+  };
+
+  const submitReview = (event: FormEvent) => {
+    event.preventDefault();
+    if (!hasPatientDetails(draft)) return setStep('patient');
+    if (!hasRequesterDetails(draft)) return setStep('requester');
     if (!consent) return setError('Confirm you may share these details before continuing.');
     setError('');
     // Already signed in: nothing left to verify, publish and reveal.
     if (user) return void run(onReady);
     setStep('phone');
+  };
+
+  const submitRole = (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft.requester_role) return setError('Choose how you are helping with this request.');
+    setError('');
+    setStep(roleReturnStep === 'review' && !hasRequesterDetails(draft) ? 'requester' : roleReturnStep);
   };
 
   const sendCode = (event: FormEvent) => {
@@ -131,8 +163,7 @@ export default function RequestGate({
     });
   };
 
-  const completeSignup = (event: FormEvent) => {
-    event.preventDefault();
+  const registerAccount = () => {
     const donationError = donorGroup ? validateDonationExperience(donationExperience) : null;
     if (donationError) return setError(donationError);
     void run(async () => {
@@ -156,25 +187,116 @@ export default function RequestGate({
     });
   };
 
+  const submitSignup = (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (donorGroup) return setStep('signup-donor');
+    registerAccount();
+  };
+
+  const completeSignup = (event: FormEvent) => {
+    event.preventDefault();
+    registerAccount();
+  };
+
   const role = draft.requester_role;
+  const requestProgressStep: RequestStep | null = step === 'role'
+    ? null
+    : step === 'patient' || step === 'requester' || step === 'review'
+      ? step
+      : null;
+  const progressIndex = requestProgressStep === 'patient' ? 0 : requestProgressStep === 'requester' ? 1 : 2;
+  const roleLabel = role === 'PATIENT'
+    ? "I'm the patient"
+    : role === 'RELATIVE'
+      ? "I'm the patient's relative"
+      : "I'm a third-party volunteer";
+  const patientLabel = `${draft.patient_title === 'MR' ? 'Mr.' : 'Mst.'} ${draft.patient_name}`.trim();
+  const neededWindowLabel = NEEDED_WINDOWS.find(option => option.value === draft.needed_window)?.label || 'As soon as possible';
+  const contactLabel = role === 'PATIENT'
+    ? 'Your verified account contact'
+    : role === 'RELATIVE'
+      ? `${draft.requester_name} · ${draft.requester_relation}`
+      : draft.contact_owner === 'RELATIVE'
+        ? `${draft.requester_name} · ${draft.contact_name} (${draft.requester_relation})`
+        : `${draft.requester_name} · Patient contact`;
+
+  const editRole = (returnStep: RequestStep) => {
+    setRoleReturnStep(returnStep);
+    setError('');
+    setStep('role');
+  };
 
   return (
-    <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="request-gate-title">
-      <div className="action-dialog">
-        <button ref={closeRef} type="button" onClick={onClose} className="icon-button dialog-close" aria-label="Close">
-          <X className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <span className="dialog-icon">
-          {step === 'details' ? <HeartPulse className="h-6 w-6" aria-hidden="true" /> : <ShieldCheck className="h-6 w-6" aria-hidden="true" />}
-        </span>
+    <ModalPortal onClose={onClose}>
+      <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="request-gate-title">
+        <div className="action-dialog request-gate-dialog">
+          <button ref={closeRef} type="button" onClick={onClose} className="icon-button dialog-close" aria-label="Close">
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <span className="dialog-icon">
+            {step === 'role' || requestProgressStep ? <HeartPulse className="h-6 w-6" aria-hidden="true" /> : <ShieldCheck className="h-6 w-6" aria-hidden="true" />}
+          </span>
 
-        {step === 'details' && (
-          <form onSubmit={submitDetails}>
-            <h2 id="request-gate-title">Who needs the blood?</h2>
+        {requestProgressStep && (
+          <ol className="request-gate-progress" aria-label="Request details progress">
+            <li aria-current={progressIndex === 0 ? 'step' : undefined} className={progressIndex === 0 ? 'is-current' : 'is-complete'}>
+              <span>1</span>
+              Patient
+            </li>
+            <li aria-current={progressIndex === 1 ? 'step' : undefined} className={progressIndex === 1 ? 'is-current' : progressIndex > 1 ? 'is-complete' : ''}>
+              <span>2</span>
+              Contact
+            </li>
+            <li aria-current={progressIndex === 2 ? 'step' : undefined} className={progressIndex === 2 ? 'is-current' : ''}>
+              <span>3</span>
+              Review
+            </li>
+          </ol>
+        )}
+
+        {step === 'role' && (
+          <form onSubmit={submitRole} className="fade-in">
+            <h2 id="request-gate-title">How are you helping?</h2>
+            <p>Choose the role that best describes you for this request. You can change it again before publishing.</p>
+            <RequesterRolePicker
+              value={draft.requester_role}
+              onChange={requesterRole => set({ requester_role: requesterRole })}
+              hideLegend
+              className="mt-5"
+            />
+            {error && <p className="dialog-error">{error}</p>}
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setStep(roleReturnStep)} className="button button-secondary">Back</button>
+              <button type="submit" className="button button-primary">Save role</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'patient' && (
+          <form onSubmit={submitPatient} className="fade-in">
+            <h2 id="request-gate-title">About the patient</h2>
             <p>
               {donorName} and the other donors see this as your request. Contact numbers open once
               these details are saved.
             </p>
+
+            <div className="request-context-summary">
+              <span>
+                <small>Already provided</small>
+                <strong>{draft.blood_group} · {draft.upazila}, {draft.district}</strong>
+                <span>{draft.collection_facility}</span>
+              </span>
+              <button type="button" onClick={onEditSearch}>Change search</button>
+            </div>
+
+            <div className="requester-role-summary">
+              <span>
+                <small>Who you are</small>
+                <strong>{roleLabel}</strong>
+              </span>
+              <button type="button" onClick={() => editRole('patient')}>Change</button>
+            </div>
 
             <div className="mt-2 grid gap-x-4 sm:grid-cols-2">
               <label className="dialog-field">
@@ -193,6 +315,30 @@ export default function RequestGate({
                 <span>Patient name</span>
                 <input required value={draft.patient_name} onChange={event => set({ patient_name: event.target.value })} className="input" />
               </label>
+            </div>
+
+            {error && <p className="dialog-error">{error}</p>}
+            <div className="dialog-actions">
+              <button type="button" onClick={onClose} className="button button-secondary">Cancel</button>
+              <button type="submit" className="button button-primary">Continue</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'requester' && (
+          <form onSubmit={submitRequester} className="fade-in">
+            <h2 id="request-gate-title">Who is coordinating?</h2>
+            <p>Add only the contact details donors need for this request. Timing and consent come next.</p>
+
+            <div className="requester-role-summary">
+              <span>
+                <small>Who you are</small>
+                <strong>{roleLabel}</strong>
+              </span>
+              <button type="button" onClick={() => editRole('requester')}>Change</button>
+            </div>
+
+            <div className="grid gap-x-4 sm:grid-cols-2">
 
               {role !== 'PATIENT' && (
                 <label className="dialog-field sm:col-span-2">
@@ -236,15 +382,55 @@ export default function RequestGate({
                   )}
                 </>
               )}
-
-              <label className="dialog-field sm:col-span-2">
-                <span>When is it needed? (optional)</span>
-                <select value={draft.needed_window} onChange={event => set({ needed_window: event.target.value as NeededWindow })} className="input">
-                  <option value="">As soon as possible</option>
-                  {NEEDED_WINDOWS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </label>
             </div>
+
+            {error && <p className="dialog-error">{error}</p>}
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setStep('patient')} className="button button-secondary">Back</button>
+              <button type="submit" className="button button-primary">Continue</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'review' && (
+          <form onSubmit={submitReview} className="fade-in">
+            <h2 id="request-gate-title">Review the request</h2>
+            <p>We kept everything you already provided. Check it, change anything that is wrong, then publish.</p>
+
+            <div className="request-context-summary">
+              <span>
+                <small>Search details</small>
+                <strong>{draft.blood_group} · {draft.upazila}, {draft.district}</strong>
+                <span>{draft.collection_facility}</span>
+              </span>
+              <button type="button" onClick={onEditSearch}>Change</button>
+            </div>
+
+            <div className="request-review-grid">
+              <div className="request-review-card">
+                <span><small>Patient</small><strong>{patientLabel}</strong><span>Age {draft.patient_age}</span></span>
+                <button type="button" onClick={() => setStep('patient')}>Change</button>
+              </div>
+              <div className="request-review-card">
+                <span><small>Requester</small><strong>{roleLabel}</strong><span>{contactLabel}</span></span>
+                <button type="button" onClick={() => editRole('review')}>Change role</button>
+              </div>
+              {role !== 'PATIENT' && (
+                <div className="request-review-card">
+                  <span><small>Contact details</small><strong>{contactLabel}</strong></span>
+                  <button type="button" onClick={() => setStep('requester')}>Change</button>
+                </div>
+              )}
+            </div>
+
+            <label className="dialog-field">
+              <span>When is it needed? (optional)</span>
+              <select value={draft.needed_window} onChange={event => set({ needed_window: event.target.value as NeededWindow })} className="input">
+                <option value="">As soon as possible</option>
+                {NEEDED_WINDOWS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <p className="request-needed-summary">Current timing: <strong>{neededWindowLabel}</strong></p>
 
             <label className="mt-4 flex items-start gap-3 text-sm font-semibold leading-6 text-slate-700">
               <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0" />
@@ -256,9 +442,9 @@ export default function RequestGate({
 
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
-              <button type="button" onClick={onClose} className="button button-secondary">Cancel</button>
+              <button type="button" onClick={() => setStep(role === 'PATIENT' ? 'patient' : 'requester')} className="button button-secondary">Back</button>
               <button type="submit" disabled={busy} className="button button-primary">
-                {busy ? 'Saving...' : user ? 'Publish and get the number' : 'Continue'}
+                {busy ? 'Saving...' : user ? 'Publish and get the number' : 'Continue to verification'}
               </button>
             </div>
           </form>
@@ -277,7 +463,7 @@ export default function RequestGate({
             </label>
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
-              <button type="button" onClick={() => setStep('details')} className="button button-secondary">Back</button>
+              <button type="button" onClick={() => setStep('review')} className="button button-secondary">Back</button>
               <button type="submit" disabled={busy} className="button button-primary">{busy ? 'Sending...' : 'Send code'}</button>
             </div>
           </form>
@@ -319,7 +505,7 @@ export default function RequestGate({
         )}
 
         {step === 'signup' && (
-          <form onSubmit={completeSignup}>
+          <form onSubmit={submitSignup}>
             <h2 id="request-gate-title">Finish your account</h2>
             <p>
               This number is new here. A short account keeps your request together and lets donors
@@ -334,39 +520,13 @@ export default function RequestGate({
                 <span>Password (at least 8 characters)</span>
                 <input required type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} className="input" />
               </label>
-              <label className="dialog-field">
+              <label className="dialog-field sm:col-span-2">
                 <span>Your blood group (optional)</span>
                 <select value={donorGroup} onChange={event => setDonorGroup(event.target.value)} className="input">
                   <option value="">Prefer not to say</option>
                   {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
                 </select>
               </label>
-              {donorGroup && (
-                <>
-                  <label className="dialog-field">
-                    <span>Your upazila (optional)</span>
-                    <select value={donorUpazila} onChange={event => setDonorUpazila(event.target.value)} className="input">
-                      <option value="">Not set</option>
-                      {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="dialog-field">
-                    <span>Your age (optional)</span>
-                    <input type="number" inputMode="numeric" min={16} max={70} value={donorAge} onChange={event => setDonorAge(event.target.value)} className="input" />
-                  </label>
-                  <label className="dialog-field sm:col-span-2">
-                    <span>Your weight in kg (optional)</span>
-                    <input type="number" inputMode="numeric" min={30} max={200} value={donorWeight} onChange={event => setDonorWeight(event.target.value)} className="input" />
-                  </label>
-                  <DonationExperienceFields
-                    idPrefix="request-signup"
-                    value={donationExperience}
-                    onChange={setDonationExperience}
-                    optional
-                    className="mt-4 sm:col-span-2"
-                  />
-                </>
-              )}
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-500">
               Giving your blood group does not put you on the donor list. You stay unlisted until you
@@ -375,11 +535,53 @@ export default function RequestGate({
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
               <button type="button" onClick={() => setStep('phone')} className="button button-secondary">Back</button>
+              <button type="submit" disabled={busy} className="button button-primary">
+                {busy ? 'Creating...' : donorGroup ? 'Continue' : 'Create and continue'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {step === 'signup-donor' && (
+          <form onSubmit={completeSignup}>
+            <h2 id="request-gate-title">Optional donor details</h2>
+            <p>
+              You selected {donorGroup}. These details help complete your private profile, but you stay
+              off the live donor list until you turn availability on.
+            </p>
+            <div className="grid gap-x-4 sm:grid-cols-2">
+              <label className="dialog-field">
+                <span>Your upazila (optional)</span>
+                <select value={donorUpazila} onChange={event => setDonorUpazila(event.target.value)} className="input">
+                  <option value="">Not set</option>
+                  {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="dialog-field">
+                <span>Your age (optional)</span>
+                <input type="number" inputMode="numeric" min={16} max={70} value={donorAge} onChange={event => setDonorAge(event.target.value)} className="input" />
+              </label>
+              <label className="dialog-field sm:col-span-2">
+                <span>Your weight in kg (optional)</span>
+                <input type="number" inputMode="numeric" min={30} max={200} value={donorWeight} onChange={event => setDonorWeight(event.target.value)} className="input" />
+              </label>
+              <DonationExperienceFields
+                idPrefix="request-signup"
+                value={donationExperience}
+                onChange={setDonationExperience}
+                optional
+                className="mt-4 sm:col-span-2"
+              />
+            </div>
+            {error && <p className="dialog-error">{error}</p>}
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setStep('signup')} className="button button-secondary">Back</button>
               <button type="submit" disabled={busy} className="button button-primary">{busy ? 'Creating...' : 'Create and continue'}</button>
             </div>
           </form>
         )}
+        </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }

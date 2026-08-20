@@ -391,6 +391,11 @@ export default function DonorSearchPage({
           user={user}
           donorName={selected.name}
           onClose={() => setGateOpen(false)}
+          onEditSearch={() => {
+            setGateOpen(false);
+            setRefineOpen(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
           onReady={async () => {
             await onLogin();
             await openCall(selected);

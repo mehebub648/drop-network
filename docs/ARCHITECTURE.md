@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.68`
+Current application version: `0.0.69`
 
 ## Overview
 
@@ -60,9 +60,11 @@ Entry points:
   public feed, public article, and authenticated publishing flow.
 - `src/components/community/` renders semantic post cards and Markdown through
   `react-markdown` and GFM without raw HTML or Markdown-provided images.
-- `src/components/search/` holds the one-question-at-a-time criteria form and
-  searchable facility combobox, the donor result card, and `RequestGate`, which
-  carries the patient details and the inline sign-in.
+- `src/components/search/` holds the guided criteria form, combined district
+  and upazila step, searchable facility combobox, shared requester-role picker,
+  donor result card, and `RequestGate`. The gate reuses completed draft answers,
+  summarizes them with explicit Change actions, and splits patient, contact,
+  review, verification, and optional donor details into short stages.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
 - `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
@@ -72,6 +74,8 @@ Entry points:
   error-boundary, metadata, and status UI. `src/components/ui.tsx` supplies the
   reusable page heading, surface, status, notice, metric, and empty-state
   primitives used to keep public, member, and staff screens visually aligned.
+  `ModalPortal.tsx` renders dialogs at the document root above the sticky site
+  header, locks background scrolling, and centralizes Escape handling.
   `BloodBagDoodle.tsx` provides the reusable inline SVG line illustration used
   by the landing and authentication surfaces. Optimized transparent WebP
   doodles under `public/images/doodles/` support the landing sections and the
@@ -102,10 +106,11 @@ Entry points:
 
 Routes:
 
-- `/` is a search-led landing page with the complete blood group, district,
-  upazila, collection-facility, and requester-role flow presented one question
-  at a time. Only the current question, its answer, and Back/Continue controls
-  are visible. It persists that guided draft into `/directory`, alongside
+- `/` is a search-led landing page with the complete blood group, location,
+  collection-facility, and requester-role flow presented in short stages. The
+  location stage keeps district and upazila together, with upazila enabled only
+  after its district is known. Only the current stage, its answers, and
+  Back/Continue controls are visible. It persists that guided draft into `/directory`, alongside
   network context, privacy explanations, request preparation, safety guidance,
   and FAQs elsewhere on the page.
 - `/requests` lists bounded pages of public blood requests with server-side
@@ -120,16 +125,18 @@ Routes:
   request is not a separate form any more: searching for donors is how a request
   is created (see below).
 - `/directory` is the combined search and request flow. It asks for blood group,
-  district, upazila, collection facility, and requester role one question at a
-  time with nothing pre-selected - a wrong default silently searches the wrong
+  district and upazila together, collection facility, and requester role in a
+  guided sequence with nothing pre-selected - a wrong default silently searches the wrong
   place. No stage label or progress indicator surrounds those questions. After
   a search, the page continues with a compact summary of the carried
   criteria and an in-place refine panel instead of repeating the initial hero.
   A shared URL without request context opens that panel automatically before a
   contact can be requested. Results show every number masked. Asking for one
-  number opens the patient-details gate, which also
-  carries the explicit publication consent and the inline sign-in, and
-  publishing the request is what unmasks the number. The keyboard-operable
+  number opens the patient-details gate. Previously completed search, role,
+  patient, and contact answers are summarized rather than requested again and
+  remain editable. Separate patient, contact, and review stages carry explicit
+  publication consent before the inline sign-in; publishing the request is what
+  unmasks the number. The keyboard-operable
   facility combobox preloads and searches only the selected district. The
   generated snapshot includes every DGHS registry function except the two
   `Administration` values, `Administrative`, and `Knowledge Management

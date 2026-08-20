@@ -4,8 +4,7 @@ import {
   Check,
   ChevronDown,
   LoaderCircle,
-  MapPin,
-  UserRound
+  MapPin
 } from 'lucide-react';
 import { BLOOD_GROUPS } from '../../lib/blood';
 import { BD_LOCATION_NAMES } from '../../lib/locations';
@@ -15,6 +14,7 @@ import {
   type RegisteredCollectionFacility
 } from '../../lib/collectionFacilities';
 import type { RequesterRole } from '../../lib/searchDraft';
+import RequesterRolePicker from './RequesterRolePicker';
 
 export type Criteria = {
   blood_group: string;
@@ -24,16 +24,9 @@ export type Criteria = {
   requester_role: RequesterRole | '';
 };
 
-const ROLE_OPTIONS: Array<{ value: RequesterRole; label: string }> = [
-  { value: 'PATIENT', label: "I'm the patient" },
-  { value: 'RELATIVE', label: "I'm the patient's relative" },
-  { value: 'THIRD_PARTY', label: "I'm a third-party volunteer" }
-];
-
 const QUESTIONS = [
   'What blood group is needed?',
-  'Which district?',
-  'Which upazila or thana?',
+  'Where is the blood needed?',
   'Which hospital or blood bank?',
   'Who are you?'
 ] as const;
@@ -128,8 +121,7 @@ export default function SearchCriteriaForm({
   );
   const stepComplete = [
     Boolean(value.blood_group),
-    Boolean(value.district),
-    Boolean(value.upazila),
+    Boolean(value.district && value.upazila),
     Boolean(value.collection_facility.trim()),
     Boolean(value.requester_role)
   ][activeStep];
@@ -210,52 +202,51 @@ export default function SearchCriteriaForm({
         )}
 
         {activeStep === 1 && (
-          <label className="mt-6 block max-w-lg">
-            <span className="sr-only">District</span>
-            <span className="relative block">
-              <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
-              <select
-                required
-                autoFocus
-                value={value.district}
-                onChange={event => onChange({
-                  ...value,
-                  district: event.target.value,
-                  upazila: '',
-                  collection_facility: ''
-                })}
-                className="input appearance-none pl-11 pr-10"
-              >
-                <option value="">Choose a district</option>
-                {BD_LOCATION_NAMES.map(name => <option key={name} value={name}>{name}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-            </span>
-          </label>
+          <div className="mt-5 grid max-w-2xl gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">District</span>
+              <span className="relative block">
+                <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
+                <select
+                  required
+                  autoFocus
+                  value={value.district}
+                  onChange={event => onChange({
+                    ...value,
+                    district: event.target.value,
+                    upazila: '',
+                    collection_facility: ''
+                  })}
+                  className="input appearance-none pl-11 pr-10"
+                >
+                  <option value="">Choose a district</option>
+                  {BD_LOCATION_NAMES.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+              </span>
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Upazila or thana</span>
+              <span className="relative block">
+                <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
+                <select
+                  required
+                  disabled={!value.district}
+                  value={value.upazila}
+                  onChange={event => onChange({ ...value, upazila: event.target.value })}
+                  className="input appearance-none pl-11 pr-10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <option value="">{value.district ? 'Choose an upazila or thana' : 'Choose a district first'}</option>
+                  {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+              </span>
+            </label>
+          </div>
         )}
 
         {activeStep === 2 && (
-          <label className="mt-6 block max-w-lg">
-            <span className="sr-only">Upazila / thana</span>
-            <span className="relative block">
-              <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
-              <select
-                required
-                autoFocus
-                disabled={!value.district}
-                value={value.upazila}
-                onChange={event => onChange({ ...value, upazila: event.target.value })}
-                className="input appearance-none pl-11 pr-10 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <option value="">{value.district ? 'Choose an upazila or thana' : 'Choose a district first'}</option>
-                {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-            </span>
-          </label>
-        )}
-
-        {activeStep === 3 && (
           <div className="mt-6 max-w-2xl">
             <label htmlFor={`${facilityListId}-input`} className="sr-only">
               Hospital or blood bank
@@ -351,31 +342,13 @@ export default function SearchCriteriaForm({
           </div>
         )}
 
-        {activeStep === 4 && (
-          <fieldset className="mt-6 max-w-2xl">
-            <legend className="sr-only">Requester role</legend>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {ROLE_OPTIONS.map(option => {
-                const selected = value.requester_role === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => onChange({ ...value, requester_role: option.value })}
-                    className={`flex min-h-14 items-center justify-center gap-2 rounded-xl border px-3 text-center text-sm font-bold leading-5 transition-colors ${
-                      selected
-                        ? 'border-primary bg-rose-50 text-rose-950 shadow-sm'
-                        : 'border-slate-200 bg-white text-slate-800 hover:border-rose-200 hover:bg-rose-50'
-                    }`}
-                  >
-                    <UserRound className={`h-4 w-4 shrink-0 ${selected ? 'text-primary' : 'text-slate-400'}`} aria-hidden="true" />
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
+        {activeStep === 3 && (
+          <RequesterRolePicker
+            value={value.requester_role}
+            onChange={requesterRole => onChange({ ...value, requester_role: requesterRole })}
+            hideLegend
+            className="mt-5 max-w-lg"
+          />
         )}
       </div>
 

@@ -92,17 +92,17 @@ export default function LandingPage({ user }: { user: any }) {
     <div className="space-y-12 pb-8 sm:space-y-16 lg:space-y-20">
       <div className="space-y-6 sm:space-y-8">
         <section className="landing-hero px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
-          <div className="relative grid items-center gap-8 lg:grid-cols-[minmax(0,1.12fr)_minmax(25rem,0.88fr)] lg:gap-10 xl:gap-14">
-            <div className="landing-hero-copy max-w-xl lg:py-3">
+          <div className="relative grid items-center gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(32rem,0.92fr)] lg:gap-6 xl:gap-8">
+            <div className="landing-hero-copy min-w-0 lg:py-3">
               <div className="cartoon-kicker"><HeartHandshake className="h-4 w-4" aria-hidden="true" /> Neighbours helping neighbours</div>
               <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.02] tracking-[-0.045em] text-slate-950 sm:text-5xl lg:text-[3.65rem]">
                 Find the right donor, <span className="text-primary">one safe step</span> at a time.
               </h1>
-              <p className="mt-5 max-w-lg text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">
+              <p className="mt-5 max-w-2xl text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">
                 Choose the blood group and collection area. Drop keeps every number masked until a genuine request is confirmed.
               </p>
 
-              <BloodBagDoodle className="landing-doodle mt-2 w-full max-w-[25rem]" />
+              <BloodBagDoodle className="landing-doodle mt-2 w-full max-w-[31rem]" />
 
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 <a
@@ -121,7 +121,7 @@ export default function LandingPage({ user }: { user: any }) {
               </div>
             </div>
 
-            <div id="donor-search" className="landing-hero-search w-full scroll-mt-28 lg:max-w-[42rem] lg:justify-self-end">
+            <div id="donor-search" className="landing-hero-search w-full min-w-0 scroll-mt-28">
               <SearchCriteriaForm
                 value={criteria}
                 onChange={updateCriteria}

@@ -1516,10 +1516,13 @@ body {
 
 .dialog-backdrop {
   position: fixed;
-  z-index: 100;
+  z-index: 1000;
   inset: 0;
   display: grid;
-  overflow-y: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: contain;
   place-items: center;
   background: rgba(15, 23, 42, 0.64);
   padding: 1rem;
@@ -1530,12 +1533,19 @@ body {
   position: relative;
   width: min(100%, 32rem);
   max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border: 1px solid #e5e7eb;
   border-radius: 1.4rem;
   background: white;
   padding: 1.5rem;
   box-shadow: 0 30px 80px -24px rgba(15, 23, 42, 0.8);
+}
+
+.request-gate-dialog {
+  width: min(100%, 46rem);
 }
 
 .dialog-close {
@@ -1575,6 +1585,182 @@ body {
   font-size: 0.84rem;
   font-weight: 500;
   line-height: 1.65;
+}
+
+.request-gate-dialog form > p {
+  margin: 0.55rem 0 0;
+  color: #64748b;
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.65;
+}
+
+.request-gate-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 1.1rem 0 0;
+}
+
+.request-gate-progress li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  padding: 0.55rem 0.65rem;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.request-gate-progress li span {
+  display: inline-flex;
+  width: 1.65rem;
+  height: 1.65rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: white;
+  font-size: 0.68rem;
+}
+
+.request-gate-progress li.is-current {
+  background: #fff1f2;
+  color: #9f1239;
+}
+
+.request-gate-progress li.is-current span,
+.request-gate-progress li.is-complete span {
+  border-color: #be123c;
+  background: #be123c;
+  color: white;
+}
+
+.requester-role-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  border: 1px solid #fecdd3;
+  border-radius: 0.9rem;
+  background: #fff7f8;
+  padding: 0.8rem 0.9rem;
+}
+
+.requester-role-summary > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.requester-role-summary small {
+  color: #64748b;
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.requester-role-summary strong {
+  margin-top: 0.15rem;
+  color: #0f172a;
+  font-size: 0.84rem;
+}
+
+.requester-role-summary button {
+  flex: 0 0 auto;
+  border-radius: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  color: #be123c;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.requester-role-summary button:hover {
+  background: #ffe4e6;
+}
+
+.request-context-summary,
+.request-review-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.9rem;
+  background: #f8fafc;
+  padding: 0.8rem 0.9rem;
+}
+
+.request-context-summary {
+  margin-top: 1rem;
+}
+
+.request-context-summary > span,
+.request-review-card > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.request-context-summary small,
+.request-review-card small {
+  color: #64748b;
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.request-context-summary strong,
+.request-review-card strong {
+  margin-top: 0.15rem;
+  color: #0f172a;
+  font-size: 0.84rem;
+}
+
+.request-context-summary > span > span,
+.request-review-card > span > span {
+  margin-top: 0.1rem;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.request-context-summary button,
+.request-review-card button {
+  flex: 0 0 auto;
+  border-radius: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  color: #be123c;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.request-context-summary button:hover,
+.request-review-card button:hover {
+  background: #ffe4e6;
+}
+
+.request-review-grid {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.request-needed-summary {
+  margin-top: 0.45rem !important;
+  color: #64748b;
+  font-size: 0.75rem !important;
 }
 
 .dialog-field {
@@ -1759,9 +1945,15 @@ body {
 
   .action-dialog {
     width: 100%;
-    max-height: calc(100vh - 1rem);
+    max-height: calc(100vh - 0.5rem);
+    max-height: calc(100dvh - 0.5rem);
     border-radius: 1.4rem 1.4rem 0 0;
     padding: 1.25rem;
+  }
+
+  .request-gate-progress li {
+    justify-content: center;
+    padding-inline: 0.4rem;
   }
 
   .dialog-actions {
