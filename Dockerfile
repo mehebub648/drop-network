@@ -39,7 +39,7 @@ COPY --chown=node:node package.json package-lock.json ./
 
 RUN npm ci --omit=dev
 
-COPY --from=build /app/dist ./dist
+COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node server ./server
 COPY docker-entrypoint.sh ./
 
@@ -49,6 +49,8 @@ COPY docker-entrypoint.sh ./
 # runtime isolation.
 RUN mkdir -p /data/lancedb /data/media/community \
     && chown -R node:node /data \
+    && find /app/dist -type d -exec chmod 755 {} + \
+    && find /app/dist -type f -exec chmod 644 {} + \
     && chmod +x docker-entrypoint.sh
 
 EXPOSE 3000

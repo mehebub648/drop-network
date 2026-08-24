@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.72`
+Current application version: `0.0.73`
 
 ## Overview
 
@@ -623,16 +623,21 @@ Persistent storage:
 `./data/` is git-ignored: it is large and holds personal data.
 
 The production process runs as the unprivileged `node` user and owns
-`/data/lancedb` and `/data/media/community`. The application and dependency
-tree remains root-owned and read-only; the image build does not recursively
-rewrite ownership for files the process never needs to modify. Package metadata
-and server source are assigned to `node` as they are copied so restrictive
-source-archive modes cannot prevent the unprivileged process from reading them.
+`/data/lancedb` and `/data/media/community`. The dependency tree remains
+root-owned and read-only; the image build does not recursively rewrite
+ownership for files the process never needs to modify. Package metadata,
+server source, and the compiled `dist` tree are assigned to `node` as they are
+copied. Static directories are normalized to mode `755` and files to `644`, so
+restrictive source-archive modes cannot prevent the runtime from serving them.
 
 Operational endpoints and jobs:
 
-- `/health` reports process liveness, `/ready` reports completed datastore
-  initialization, and `/metrics` exposes low-cardinality Prometheus gauges.
+- `/health` and `/ready` read the critical production shell, service worker,
+  manifest, icon, doodles, and hashed JavaScript/CSS files before reporting
+  healthy. Production startup fails when that asset set is missing, empty, or
+  unreadable, and the Compose health check calls `/health`. `/ready` also
+  requires completed datastore initialization; `/metrics` exposes
+  low-cardinality Prometheus gauges.
 - A five-minute background job expires overdue requests and automatically
   pauses stale donor availability while creating an in-app reconfirmation notice.
 - `.github/workflows/ci.yml` runs Docker-based type checking, tests, bundle

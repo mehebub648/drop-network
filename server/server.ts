@@ -61,6 +61,7 @@ import {
   saveCommunityImage
 } from './communityMedia';
 import { escapeHtml, renderCommunityPostHtml, renderPublicOriginHtml } from './communitySeo';
+import { inspectStaticAssets, type StaticAssetHealth } from './staticAssets';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -82,6 +83,7 @@ const COMMUNITY_EXPORT_PAGE_SIZE = 100;
 const COMMUNITY_IMAGE_QUOTA_PER_MEMBER = 20;
 const COMMUNITY_SITEMAP_CACHE_MS = 5 * 60_000;
 const STARTED_AT = Date.now();
+const PRODUCTION_DIST_PATH = path.join(process.cwd(), 'dist');
 let isReady = false;
 let communitySitemapCache: { origin: string; xml: string; expiresAt: number } | null = null;
 const activeCommunityImageUploads = new Map<string, number>();
@@ -1387,8 +1389,36 @@ app.get('/api/search/donors', async (req, res) => {
   });
 });
 
-app.get('/health', (_req, res) => res.json({ status: 'ok', uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000) }));
-app.get('/ready', (_req, res) => res.status(isReady ? 200 : 503).json({ status: isReady ? 'ready' : 'starting' }));
+async function currentStaticAssetHealth(): Promise<StaticAssetHealth | { status: 'skipped'; checked: string[]; failures: [] }> {
+  if (!IS_PRODUCTION) return { status: 'skipped', checked: [], failures: [] };
+  return inspectStaticAssets(PRODUCTION_DIST_PATH);
+}
+
+app.get('/health', asyncRoute(async (_req, res) => {
+  const staticAssets = await currentStaticAssetHealth();
+  const healthy = staticAssets.status !== 'failed';
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
+    uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000),
+    static_assets: {
+      status: staticAssets.status,
+      checked: staticAssets.checked.length,
+      failures: staticAssets.failures
+    }
+  });
+}));
+app.get('/ready', asyncRoute(async (_req, res) => {
+  const staticAssets = await currentStaticAssetHealth();
+  const ready = isReady && staticAssets.status !== 'failed';
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'ready' : isReady ? 'degraded' : 'starting',
+    static_assets: {
+      status: staticAssets.status,
+      checked: staticAssets.checked.length,
+      failures: staticAssets.failures
+    }
+  });
+}));
 app.get('/metrics', (_req, res) => {
   res.type('text/plain').send([
     '# HELP drop_users_total Registered user records', '# TYPE drop_users_total gauge', `drop_users_total ${users.length}`,
@@ -3924,7 +3954,6 @@ async function startServer() {
   } catch (error) {
     console.error('imported_donors: preparation failed, directory results will be unavailable', error);
   }
-  isReady = true;
   const maintenanceTimer = setInterval(() => {
     void enforceExpiredRequests();
     void enforceStaleAvailability();
@@ -3938,7 +3967,12 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = PRODUCTION_DIST_PATH;
+    const staticAssetHealth = await inspectStaticAssets(distPath);
+    if (staticAssetHealth.status === 'failed') {
+      const failedPaths = staticAssetHealth.failures.map(failure => failure.path).join(', ');
+      throw new Error(`Production static assets are missing, empty, or unreadable: ${failedPaths}`);
+    }
     const indexTemplate = await readFile(path.join(distPath, 'index.html'), 'utf8');
     app.use(express.static(distPath, { index: false }));
     app.get('/community/:slug', async (req, res, next) => {
@@ -3978,6 +4012,7 @@ async function startServer() {
     });
   }
 
+  isReady = true;
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });

@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.72`
+Current version: `0.0.73`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -91,8 +91,9 @@ Refresh the district facility files from the public DGHS registry with:
 - Members can recover passwords by verified SMS, inspect and revoke signed-in
   devices, download a server-side data export, and anonymize their account.
 - Public requests use server-side filters and bounded pagination with URL-based
-  filter state. `/health`, `/ready`, and Prometheus-format `/metrics` support
-  production probes and monitoring.
+  filter state. `/health` and `/ready` verify the critical static files plus the
+  hashed JavaScript/CSS referenced by the production shell, while
+  Prometheus-format `/metrics` supports monitoring.
 - The responsive interface uses a doodle-led cartoon system on a clean white
   canvas, with white surfaces, soft neutral boundaries, deep-red actions,
   semantic availability/success green, rounded typography, lightweight line

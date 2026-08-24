@@ -23,6 +23,16 @@ services:
       # you can back up, copy, or inspect directly on the host.
       - ./data/lancedb:/data/lancedb
       - ./data/media/community:/data/media/community
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
   app-dev:
