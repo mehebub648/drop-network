@@ -34,6 +34,59 @@
 - Open a dev container shell: `docker compose --profile development exec app-dev sh`
 - Stop services: `docker compose --profile development down`
 
+## Production Hosting and MCP Updates
+
+- Production is hosted at
+  `https://site-21000.91.108.104.57.mehebub.com/` on server
+  `91.108.104.57` as CloudPanel site user `site-21000`.
+- The Panelavo system domain is
+  `site-21000.91.108.104.57.mehebub.com`. Use this exact domain with the
+  `panel-91-108-104-57` MCP connection.
+- The application root is
+  `/home/site-21000/htdocs/site-21000.91.108.104.57.mehebub.com`.
+- The rootless Compose app listens through `127.0.0.1:21000`; never use the
+  host root Docker daemon or restart another website.
+- GitHub is the durable source of truth:
+  `git@github.com:mehebub648/drop-network.git`, branch `main`. Production must
+  remain a clean fast-forward-only checkout. Never make the durable code fix
+  directly on the server.
+- Runtime data is not in Git. Preserve `data/lancedb`,
+  `data/media/community`, `.env`, and the private donor source files in
+  `data/scraped` across every deployment. Never commit donor source files or
+  copy them into a public artifact.
+
+For every production code update:
+
+1. Make and verify the change locally, increment the version, add its new
+   changelog, create a focused commit, and push that exact commit to `main`
+   only when the user authorizes a production update.
+2. Use `panelavo_whoami`, `panelavo_get_site`, and
+   `panelavo_get_site_section` (`git`, `actions`, and `backups`) to confirm the
+   live actor, site, clean checkout, ready Compose plan, and backup state.
+3. For data/schema risk, call `panelavo_create_backup`. For LanceDB table
+   changes, inspect with `panelavo_inspect_lancedb` and create a selective
+   `panelavo_create_lancedb_snapshot`; wait for its job to finish before
+   continuing.
+4. Call `panelavo_execute_terminal_command` as `site-21000`, with the
+   application root as `cwd`, to run
+   `git fetch --prune origin main && git pull --ff-only origin main`. Refuse a
+   dirty tree, diverged branch, or unexpected commit instead of overwriting it.
+5. Re-read the `actions` section, then call `panelavo_deploy_site` with the
+   ready `compose` plan and approve its one-use confirmation. Rebuild/recreate
+   only Drop's app service; never run `down --volumes`, prune volumes, or
+   restart host-wide Docker.
+6. Verify the deployed commit/version, container health and restart count,
+   `/`, `/health`, `/ready`, a representative static asset, and the public
+   directory. Confirm `.env`, LanceDB, community media, and donor counts were
+   preserved.
+
+For donor-list refreshes, keep the NDJSON files private in `data/scraped`.
+Use the documented importer with `--dry-run` first and compare its totals, take
+a selective `imported_donors` LanceDB snapshot through MCP, stop only Drop's
+exact Compose app while importing, and always restart and verify the same
+project. Re-importing preserves withdrawals but currently resets claim state;
+review that open `PLAN.md` limitation before replacing a populated table.
+
 ## Validation Policy
 - For minor documentation, copy, or narrowly scoped style changes, do not run non-critical tests after building.
 - For TypeScript or server changes, run `docker compose --profile development run --rm app-dev npm run lint` when practical.
