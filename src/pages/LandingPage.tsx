@@ -91,34 +91,15 @@ export default function LandingPage({ user }: { user: any }) {
   return (
     <div className="space-y-12 pb-8 sm:space-y-16 lg:space-y-20">
       <div className="space-y-6 sm:space-y-8">
-        <section className="landing-hero px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
-          <div className="relative grid items-center gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(32rem,0.92fr)] lg:gap-6 xl:gap-8">
-            <div className="landing-hero-copy min-w-0 lg:py-3">
-              <div className="cartoon-kicker"><HeartHandshake className="h-4 w-4" aria-hidden="true" /> Neighbours helping neighbours</div>
+        <section className="landing-hero px-5 py-7 sm:px-8 sm:py-9 lg:px-10 lg:py-12 xl:px-12">
+          <div className="landing-hero-layout relative">
+            <div className="landing-hero-copy min-w-0">
               <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.02] tracking-[-0.045em] text-slate-950 sm:text-5xl lg:text-[3.65rem]">
-                Find the right donor, <span className="text-primary">one safe step</span> at a time.
+                Find the right blood donor <span className="text-primary">when it matters most.</span>
               </h1>
               <p className="mt-5 max-w-2xl text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">
-                Choose the blood group and collection area. Drop keeps every number masked until a genuine request is confirmed.
+                Search by blood group and collection area. Donor phone numbers stay private until you confirm a genuine request.
               </p>
-
-              <BloodBagDoodle className="landing-doodle mt-2 w-full max-w-[31rem]" />
-
-              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-                <a
-                  href="#donor-search"
-                  className="cartoon-button cartoon-button-primary inline-flex min-h-12 items-center justify-center gap-2 px-6 text-sm font-extrabold"
-                >
-                  Start your search
-                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                </a>
-                <Link
-                  to="/requests"
-                  className="cartoon-button cartoon-button-secondary inline-flex min-h-12 items-center justify-center px-6 text-sm font-extrabold"
-                >
-                  See open requests
-                </Link>
-              </div>
             </div>
 
             <div id="donor-search" className="landing-hero-search w-full min-w-0 scroll-mt-28">
@@ -126,9 +107,13 @@ export default function LandingPage({ user }: { user: any }) {
                 value={criteria}
                 onChange={updateCriteria}
                 onSubmit={search}
+                nextLabel="Search"
+                submitLabel="Search"
                 compact
               />
             </div>
+
+            <BloodBagDoodle className="landing-doodle w-full" />
           </div>
         </section>
 

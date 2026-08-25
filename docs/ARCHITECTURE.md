@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.74`
+Current application version: `0.0.75`
 
 ## Overview
 
@@ -110,7 +110,7 @@ Routes:
   collection-facility, and requester-role flow presented in short stages. The
   location stage keeps district and upazila together, with upazila enabled only
   after its district is known. Only the current stage, its answers, and
-  Back/Continue controls are visible. It persists that guided draft into `/directory`, alongside
+  Back/Search controls are visible. It persists that guided draft into `/directory`, alongside
   network context, privacy explanations, request preparation, safety guidance,
   and FAQs elsewhere on the page.
 - `/requests` lists bounded pages of public blood requests with server-side

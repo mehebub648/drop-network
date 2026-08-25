@@ -46,6 +46,7 @@ export default function SearchCriteriaForm({
   onSubmit,
   submitting,
   submitLabel = 'Find donors',
+  nextLabel = 'Continue',
   compact = false
 }: {
   value: Criteria;
@@ -53,6 +54,7 @@ export default function SearchCriteriaForm({
   onSubmit: () => void;
   submitting?: boolean;
   submitLabel?: string;
+  nextLabel?: string;
   compact?: boolean;
 }) {
   const [activeStep, setActiveStep] = useState(0);
@@ -371,7 +373,7 @@ export default function SearchCriteriaForm({
             ? 'Searching...'
             : activeStep === QUESTIONS.length - 1
               ? submitLabel
-              : 'Continue'}
+              : nextLabel}
         </button>
       </div>
     </form>
