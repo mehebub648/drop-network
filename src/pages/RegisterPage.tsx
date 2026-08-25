@@ -50,7 +50,12 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
       const result = await api.requestOtp(phone, 'REGISTER');
       setDeliveryMode(result.provider || '');
       setCode('');
-      setStep('CODE');
+      if (result.bypass && result.verification_token) {
+        setVerificationToken(result.verification_token);
+        setStep('ACCOUNT');
+      } else {
+        setStep('CODE');
+      }
     });
   };
 

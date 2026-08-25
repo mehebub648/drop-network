@@ -136,11 +136,28 @@ export default function RequestGate({
     setStep(roleReturnStep === 'review' && !hasRequesterDetails(draft, user?.phone) ? 'requester' : roleReturnStep);
   };
 
+  const continueAfterVerification = async (result: any) => {
+    setToken(result.verification_token);
+    setAccountName(result.name || '');
+    if (result.account_exists) {
+      // Signing in with the verified or explicitly bypassed challenge is
+      // enough. Password login remains available when OTP mode is active.
+      await api.otpLogin(phone, result.verification_token);
+      await onReady();
+      return;
+    }
+    setStep('signup');
+  };
+
   const sendCode = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      await api.requestOtp(phone, 'SIGN_IN');
-      setStep('code');
+      const result = await api.requestOtp(phone, 'SIGN_IN');
+      if (result.bypass && result.verification_token) {
+        await continueAfterVerification(result);
+      } else {
+        setStep('code');
+      }
     });
   };
 
@@ -148,16 +165,7 @@ export default function RequestGate({
     event.preventDefault();
     void run(async () => {
       const result = await api.verifyOtp(phone, 'SIGN_IN', code);
-      setToken(result.verification_token);
-      setAccountName(result.name || '');
-      if (result.account_exists) {
-        // Signing in with the code they just entered is enough. The password
-        // is offered as an alternative, not required.
-        await api.otpLogin(phone, result.verification_token);
-        await onReady();
-        return;
-      }
-      setStep('signup');
+      await continueAfterVerification(result);
     });
   };
 

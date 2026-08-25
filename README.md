@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.76`
+Current version: `0.0.77`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -57,8 +57,17 @@ Refresh the district facility files from the public DGHS registry with:
   Story uploads are normalized to metadata-free, bounded WebP files there.
 - Registration requires a verified Bangladesh mobile. Outside production, an
   unconfigured OTP channel prints the code to protected server logs; production
-  requires the complete provider-neutral HTTP SMS gateway settings documented
-  in `.env.example` and never falls back to console delivery.
+  never falls back to console delivery. Set `SMS_PROVIDER=woven`, configure
+  `SMS_API_BASE_URL`, and supply a server-side `SMS_API_TOKEN` with
+  `messages:send` to use Woven's `/api/v1/messages` contract. Woven records each
+  OTP as pending approval, so a signed-in Woven user must approve it before the
+  connected phone sends it. The legacy provider-neutral HTTP adapter remains
+  available through the settings documented in `.env.example`.
+- A superadmin can turn on the persisted **OTP bypass test mode** from
+  **Operations → System**. While active, every phone-protected activity skips
+  code delivery and verification, the whole site shows a warning banner, and
+  enabling or disabling the mode requires a reason and creates an audit event.
+  Keep it off outside controlled testing.
 - The complete donor search starts on `/`: blood group, district, upazila,
   collection facility, and requester role are asked one at a time and carry
   into `/directory`. The interface shows only the current question and answer,

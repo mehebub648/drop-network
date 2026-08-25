@@ -36,6 +36,46 @@ function createHttpProvider(environment: SmsEnvironment): SmsProvider | null {
   };
 }
 
+/**
+ * Woven/Messavo automation transport. The deployment config stores only the
+ * installation base URL; the stable v1 messages path is owned here so an
+ * environment can move between Woven installations without editing code.
+ */
+function createWovenProvider(environment: SmsEnvironment): SmsProvider | null {
+  const configuredBaseUrl = environment.SMS_API_BASE_URL?.trim();
+  const token = environment.SMS_API_TOKEN?.trim();
+  if (!configuredBaseUrl || !token) return null;
+
+  let endpoint: URL;
+  try {
+    endpoint = new URL(configuredBaseUrl);
+  } catch {
+    return null;
+  }
+  if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+    return null;
+  }
+  endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, '')}/api/v1/messages`;
+
+  return {
+    name: 'woven',
+    async sendOtp(phone, code) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          to: phone,
+          message: `Your Drop verification code is ${code}. It expires in 10 minutes.`
+        })
+      });
+      if (response.status !== 202) throw new Error(`Woven SMS API returned ${response.status}`);
+    }
+  };
+}
+
 function createDevelopmentConsoleProvider(environment: SmsEnvironment): SmsProvider | null {
   if (environment.NODE_ENV === 'production') return null;
   return {
@@ -54,6 +94,8 @@ export function getSmsProvider(environment: SmsEnvironment = process.env): SmsPr
   if (!configuredProvider) return createDevelopmentConsoleProvider(environment);
 
   switch (configuredProvider) {
+    case 'woven':
+      return createWovenProvider(environment);
     case 'http':
       // An explicitly selected HTTP provider is never silently downgraded.
       return createHttpProvider(environment);

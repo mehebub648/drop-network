@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.76`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.77`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -85,10 +85,12 @@ delivered.
 
 These cannot be finished by editing code alone.
 
-- [ ] **Production SMS gateway credentials** - point the provider-neutral HTTP
-  adapter at a monitored Bangladesh SMS gateway. Production registration is
-  intentionally unavailable until these values are configured; the automatic
-  console fallback is non-production development behavior only.
+- [ ] **Production transactional SMS credentials** - Woven support is wired,
+  but its API requires a signed-in user to approve every OTP. Configure its
+  base URL and a `messages:send` API key for supervised use, or provision a
+  monitored zero-touch Bangladesh SMS gateway through the legacy HTTP adapter
+  before treating production registration as automatic. Console fallback stays
+  non-production only.
 - [ ] **Geocoding / maps** - Google Maps / Mapbox / OSM-Nominatim key to convert
   districts and GPS into real coordinates and render a map.
 - [ ] **Browser geolocation** - HTTPS origin + permission flow wired into search.

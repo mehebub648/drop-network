@@ -12,6 +12,8 @@ test('staff capabilities follow the three-level hierarchy', () => {
   assert.equal(capabilitiesFor('ADMIN').includes('EDIT_USERS'), true);
   assert.equal(capabilitiesFor('ADMIN').includes('MANAGE_STAFF'), false);
   assert.equal(capabilitiesFor('SUPERADMIN').includes('MANAGE_STAFF'), true);
+  assert.equal(capabilitiesFor('ADMIN').includes('MANAGE_SYSTEM'), false);
+  assert.equal(capabilitiesFor('SUPERADMIN').includes('MANAGE_SYSTEM'), true);
 });
 
 test('moderators and admins can suspend members but cannot affect staff', () => {

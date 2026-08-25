@@ -34,6 +34,17 @@
 - Open a dev container shell: `docker compose --profile development exec app-dev sh`
 - Stop services: `docker compose --profile development down`
 
+## Local Docker Desktop Policy
+
+- Do not start or use Docker Desktop for testing unless the user explicitly
+  asks for Docker Desktop in the current task.
+- Do not treat an unavailable local Docker daemon as permission to start Docker
+  Desktop automatically. Record skipped local checks and use the hosted
+  verification workflow below when a production update is authorized.
+- This restriction is specific to local Docker Desktop. The isolated rootless
+  Docker Compose project on the production host remains the supported deploy
+  runtime and must still be used through the site-scoped workflow.
+
 ## Production Hosting and MCP Updates
 
 - Production is hosted at
@@ -54,6 +65,29 @@
   `data/media/community`, `.env`, and the private donor source files in
   `data/scraped` across every deployment. Never commit donor source files or
   copy them into a public artifact.
+
+### Hosted Testing
+
+- The canonical live test target is
+  `https://site-21000.91.108.104.57.mehebub.com/`. Use that origin for release
+  verification; do not substitute a localhost result for hosted evidence.
+- Prefer the `panel-91-108-104-57` Panelavo MCP connection. When it is not
+  available and the user has authorized server access, SSH to
+  `root@91.108.104.57`, then run site commands as `site-21000` in the exact
+  application root. Never operate Drop through root's Docker daemon.
+- After deployment, verify the exact Git commit and application version, the
+  scoped app container health and restart count, `/`, `/health`, `/ready`, one
+  representative hashed static asset, and the relevant changed API behavior.
+- Use a real browser against the hosted origin for changed user-facing flows.
+  Check the rendered desktop/mobile state, browser console, failed requests,
+  and the exact interaction changed by the release.
+- Keep live tests non-destructive by default. If a changed flow requires test
+  records or a temporary security setting, use clearly labelled test data,
+  record the before state, restore it afterward, and verify cleanup. Never use
+  a real donor, blood request, OTP, or imported-listing withdrawal as test data.
+- A successful live homepage or health response alone does not verify an OTP,
+  admin, privacy, data, or authentication change; test the relevant protected
+  flow or report the exact authentication or credential limitation.
 
 For every production code update:
 
@@ -89,9 +123,14 @@ review that open `PLAN.md` limitation before replacing a populated table.
 
 ## Validation Policy
 - For minor documentation, copy, or narrowly scoped style changes, do not run non-critical tests after building.
-- For TypeScript or server changes, run `docker compose --profile development run --rm app-dev npm run lint` when practical.
-- For frontend behavior changes, run the narrowest useful browser or build check.
-- For dependency, routing, or production-impacting changes, run `docker compose build app` unless the user asks to skip it.
+- Do not start local Docker Desktop for validation unless the user explicitly
+  requests it. The Docker commands above remain available for that case.
+- For an authorized production update, let the scoped rootless production
+  Compose build validate the application image, then test the changed behavior
+  on the canonical hosted origin.
+- For frontend behavior changes, run the narrowest useful live browser check.
+- Report any local lint, unit, or bundle check skipped because local Docker was
+  not explicitly authorized; never replace it with host-side Node/npm commands.
 
 ## Process Cleanup
 - Avoid detached/background processes unless they are required.

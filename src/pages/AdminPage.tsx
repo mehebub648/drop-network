@@ -37,7 +37,8 @@ type Capability =
   | 'MANAGE_SUPPORT'
   | 'MANAGE_ORGANIZATIONS'
   | 'VIEW_AUDIT'
-  | 'MANAGE_STAFF';
+  | 'MANAGE_STAFF'
+  | 'MANAGE_SYSTEM';
 
 type StaffRole = 'MODERATOR' | 'ADMIN' | 'SUPERADMIN';
 
@@ -76,7 +77,7 @@ type DialogState = {
 const roleCapabilities: Record<StaffRole, Capability[]> = {
   MODERATOR: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS'],
   ADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT'],
-  SUPERADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_STAFF']
+  SUPERADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_STAFF', 'MANAGE_SYSTEM']
 };
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capability?: Capability }> = [
@@ -108,7 +109,7 @@ const countLabels: Record<string, string> = {
   pending_directory_claims: 'Profile claims'
 };
 
-export default function AdminPage({ user }: { user: AdminViewer }) {
+export default function AdminPage({ user, onOtpBypassChange }: { user: AdminViewer; onOtpBypassChange: (enabled: boolean) => void }) {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [overview, setOverview] = useState<Overview | null>(null);
   const [members, setMembers] = useState<AdminRecord[]>([]);
@@ -728,6 +729,43 @@ export default function AdminPage({ user }: { user: AdminViewer }) {
                     title="System status"
                     description="Safe runtime and policy information. Secrets, password hashes, OTPs, and session tokens are never shown."
                   />
+                  {can('MANAGE_SYSTEM') && (
+                    <div className="admin-guidance mb-5 flex-wrap border-amber-200 bg-amber-50 sm:flex-nowrap">
+                      <ShieldAlert className="h-6 w-6 text-amber-700" />
+                      <div className="flex-1">
+                        <strong>OTP bypass test mode</strong>
+                        <p>
+                          {overview.system?.otp_bypass_enabled
+                            ? 'Active: phone ownership checks are bypassed across registration, sign-in, recovery, phone changes, and listing removal.'
+                            : 'Off: all phone-protected actions require the configured OTP channel.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className={`button ${overview.system?.otp_bypass_enabled ? 'button-secondary' : 'button-danger'}`}
+                        disabled={busy === 'otp-bypass'}
+                        onClick={() => {
+                          const enabled = !Boolean(overview.system?.otp_bypass_enabled);
+                          openAction({
+                            title: enabled ? 'Enable OTP bypass test mode?' : 'Disable OTP bypass test mode?',
+                            description: enabled
+                              ? 'Anyone can act as any Bangladesh phone number while this is active. Use it only for controlled testing.'
+                              : 'Phone-protected activities will immediately require the configured OTP channel again.',
+                            confirmLabel: enabled ? 'Enable test mode' : 'Disable test mode',
+                            tone: enabled ? 'danger' : 'default',
+                            reasonLabel: 'Reason for this change',
+                            reasonRequired: true,
+                            onConfirm: reason => run('otp-bypass', async () => {
+                              const result = await api.updateOtpBypass(enabled, reason);
+                              onOtpBypassChange(Boolean(result.otp_bypass_enabled));
+                            }, `OTP bypass mode ${enabled ? 'enabled' : 'disabled'}.`)
+                          });
+                        }}
+                      >
+                        {overview.system?.otp_bypass_enabled ? 'Disable bypass' : 'Enable bypass'}
+                      </button>
+                    </div>
+                  )}
                   <div className="system-grid">
                     {Object.entries(overview.system || {}).map(([key, value]) => (
                       <div key={key} className="system-card">

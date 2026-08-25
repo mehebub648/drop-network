@@ -23,7 +23,12 @@ export default function ForgotPasswordPage() {
       if (step === 1) {
         const result = await api.requestOtp(phone, 'RESET_PASSWORD');
         setDeliveryMode(result.provider || '');
-        setStep(2);
+        if (result.bypass && result.verification_token) {
+          setToken(result.verification_token);
+          setStep(3);
+        } else {
+          setStep(2);
+        }
       } else if (step === 2) {
         const result = await api.verifyOtp(phone, 'RESET_PASSWORD', code);
         setToken(result.verification_token);

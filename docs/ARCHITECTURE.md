@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.75`
+Current application version: `0.0.77`
 
 ## Overview
 
@@ -17,9 +17,9 @@ Drop Network is a single Node.js application for urgent blood donation matching.
 - Docker targets for development, build, and production runtime.
 
 The app is currently self-contained. There is no external auth provider or
-hosted database integration. `server/sms.ts` can call a configured
-provider-neutral HTTP SMS gateway; when no channel is configured, non-production
-environments use console delivery while production fails closed.
+hosted database integration. `server/sms.ts` can call Woven's scoped automation
+API or a provider-neutral HTTP SMS gateway; when no channel is configured,
+non-production environments use console delivery while production fails closed.
 
 ## Runtime Flow
 
@@ -207,7 +207,7 @@ Client state:
   A call page carries a revealed number, so those routes are `noindex`.
 - Account and donor-match UI shows phone verification state. Registration and
   recovery display a development-only notice when OTPs use console delivery;
-  production stays closed unless an HTTP SMS gateway is configured.
+  production stays closed unless a complete external SMS provider is configured.
 - A React error boundary displays a fallback if a route render fails.
 - The interface uses consistent English production copy; no translation
   provider or unfinished language control is exposed.
@@ -602,10 +602,25 @@ Environment:
 - `ADMIN_PHONE` bootstraps the first verified administrator by normalized
   Bangladesh phone as `SUPERADMIN`; further staff changes require the
   `MANAGE_STAFF` capability.
-- `SMS_PROVIDER` selects `http` or the development-only `console` transport.
+- `SMS_PROVIDER` selects `woven`, the legacy provider-neutral `http`, or the
+  development-only `console` transport.
   A blank value automatically selects console only outside production.
+- `SMS_API_BASE_URL` and `SMS_API_TOKEN` are both required when
+  `SMS_PROVIDER=woven`. The adapter appends `/api/v1/messages`, sends Woven's
+  `{to, message}` contract, and requires its documented `202` response. Woven
+  places every OTP in `pending_approval`; a signed-in Woven user must approve
+  it before the connected phone sends it.
 - `SMS_HTTP_ENDPOINT` and `SMS_HTTP_TOKEN` are both required when
   `SMS_PROVIDER=http`; an incomplete explicit configuration fails closed.
+- `common_app_settings` persists the superadmin-controlled OTP bypass switch.
+  Bypass mode creates short-lived, purpose-bound bypass challenges without
+  sending or accepting a code; registration, sign-in, password reset, phone
+  changes, and imported-listing removal can then proceed for controlled tests.
+  Bypass challenges become unusable as soon as the switch is disabled and do
+  not revive after a later re-enable. The public config and every rendered page
+  expose the active warning state, and each switch change is reason-gated and
+  audited. Only the `MANAGE_SYSTEM` capability, held by superadmins, can change
+  it.
 
 Persistent storage:
 
@@ -648,9 +663,14 @@ Operational endpoints and jobs:
 
 ## Current Constraints
 
-- Production registration requires `SMS_PROVIDER=http`, `SMS_HTTP_ENDPOINT`,
-  and `SMS_HTTP_TOKEN`. Blank-provider console fallback and an explicit console
-  provider are non-production only.
+- Production registration requires either a complete Woven configuration
+  (`SMS_PROVIDER=woven`, `SMS_API_BASE_URL`, and `SMS_API_TOKEN`) or the legacy
+  complete HTTP configuration. Blank-provider console fallback and an explicit
+  console provider are non-production only. Woven's required manual approval
+  means it is not a zero-touch transactional OTP service.
+- OTP bypass is an explicit persisted test setting, not an automatic fallback.
+  It deliberately removes phone-ownership proof across all OTP-protected
+  activities and must remain disabled outside controlled testing.
 - Notification choices are currently device-local preferences; there is no
   push or email delivery provider.
 - The following fingerprint limitation now applies only to legacy anonymous

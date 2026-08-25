@@ -42,6 +42,7 @@ const CommunityPostPage = lazy(() => import('./pages/CommunityPostPage'));
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [otpBypassEnabled, setOtpBypassEnabled] = useState(false);
 
   const fetchUser = async () => {
     try {
@@ -55,6 +56,9 @@ export default function App() {
 
   useEffect(() => {
     fetchUser();
+    void api.getPublicConfig()
+      .then(config => setOtpBypassEnabled(Boolean(config.otp_bypass_enabled)))
+      .catch(() => setOtpBypassEnabled(false));
   }, []);
 
   const handleLogout = async () => {
@@ -80,7 +84,7 @@ export default function App() {
     <BrowserRouter>
       <ErrorBoundary>
         <RouteMetadata />
-        <Layout user={user} onLogout={handleLogout}>
+        <Layout user={user} onLogout={handleLogout} otpBypassEnabled={otpBypassEnabled}>
           <Routes>
             <Route path="/" element={<LandingPage user={user} />} />
             <Route path="/request/:id" element={<RequestDetailsPage user={user} />} />
@@ -119,7 +123,7 @@ export default function App() {
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/safety" element={<SafetyPage />} />
             <Route path="/partners" element={<PartnersPage user={user} />} />
-            <Route path="/admin" element={loading ? <RouteLoading /> : isStaff ? <AdminPage user={user} /> : <Navigate to="/" replace />} />
+            <Route path="/admin" element={loading ? <RouteLoading /> : isStaff ? <AdminPage user={user} onOtpBypassChange={setOtpBypassEnabled} /> : <Navigate to="/" replace />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Layout>

@@ -332,6 +332,15 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load admin overview');
   },
 
+  async updateOtpBypass(enabled: boolean, reason: string) {
+    const res = await fetch(`${API_BASE}/admin/settings/otp-bypass`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify({ enabled, reason })
+    });
+    return readJsonOrThrow(res, 'Failed to update OTP bypass mode');
+  },
+
   async getAdminUsers(search = '') {
     const res = await fetch(`${API_BASE}/admin/users?search=${encodeURIComponent(search)}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load users');

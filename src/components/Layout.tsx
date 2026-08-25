@@ -28,11 +28,13 @@ const mobileLink = ({ isActive }: { isActive: boolean }) =>
 export default function Layout({
   children,
   user,
-  onLogout
+  onLogout,
+  otpBypassEnabled
 }: {
   children: ReactNode;
   user: any;
   onLogout: () => void;
+  otpBypassEnabled: boolean;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -233,6 +235,12 @@ export default function Layout({
           </div>
         )}
       </header>
+
+      {otpBypassEnabled && (
+        <div role="alert" className="border-y border-amber-300 bg-amber-100 px-4 py-3 text-center text-sm font-extrabold text-amber-950">
+          OTP bypass test mode is active. Phone ownership is not being verified.
+        </div>
+      )}
 
       <main id="main-content" className="site-main mx-auto w-full flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         <div className="site-doodle-layer" aria-hidden="true">

@@ -349,6 +349,14 @@ type OtpChallenge = {
   verified_at?: string;
   verification_token?: string;
   verification_expires_at?: string;
+  bypassed?: boolean;
+};
+
+type OtpBypassSetting = {
+  id: 'otp_bypass';
+  enabled: boolean;
+  updated_at: string;
+  updated_by: string;
 };
 
 const RESPONSE_STATUSES = ['INVITED', 'ACCEPTED', 'DECLINED', 'QUESTION', 'ARRIVED', 'DONATED', 'CANCELLED', 'NO_SHOW'] as const;
@@ -635,6 +643,7 @@ let moderationReports: ModerationReport[] = [];
 let auditEvents: AuditEvent[] = [];
 let supportTickets: SupportTicket[] = [];
 let organizations: Organization[] = [];
+let otpBypassSetting: OtpBypassSetting | undefined;
 
 async function initDbData() {
   users = await getAllFromTable('common_users');
@@ -647,6 +656,8 @@ async function initDbData() {
   auditEvents = await getAllFromTable('common_audit_events');
   supportTickets = await getAllFromTable('common_support_tickets');
   organizations = await getAllFromTable('common_organizations');
+  const appSettings: OtpBypassSetting[] = await getAllFromTable('common_app_settings');
+  otpBypassSetting = appSettings.find(setting => setting.id === 'otp_bypass');
   const legacyStaffTokens = new Set(['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER']);
   for (const user of users) {
     const migratedStaffRole = user.staff_role || legacyStaffRole(user.roles);
@@ -1300,8 +1311,47 @@ function verifiedChallenge(phone: string, purpose: OtpChallenge['purpose'], toke
     challenge.purpose === purpose &&
     challenge.verification_token === token &&
     challenge.verification_expires_at &&
-    new Date(challenge.verification_expires_at).getTime() > Date.now()
+    new Date(challenge.verification_expires_at).getTime() > Date.now() &&
+    (!challenge.bypassed || (
+      otpBypassSetting?.enabled === true &&
+      new Date(challenge.created_at).getTime() >= new Date(otpBypassSetting.updated_at).getTime()
+    ))
   ) || null;
+}
+
+function isOtpBypassEnabled() {
+  return otpBypassSetting?.enabled === true;
+}
+
+async function issueOtpBypass(phone: string, purpose: OtpChallenge['purpose']) {
+  const now = new Date();
+  const challenge: OtpChallenge = {
+    id: uuidv4(),
+    phone,
+    purpose,
+    code_hash: 'otp-bypass',
+    created_at: now.toISOString(),
+    expires_at: new Date(now.getTime() + OTP_TTL_MS).toISOString(),
+    attempts: 0,
+    verified_at: now.toISOString(),
+    verification_token: uuidv4(),
+    verification_expires_at: new Date(now.getTime() + OTP_VERIFICATION_TTL_MS).toISOString(),
+    bypassed: true
+  };
+  await saveToTable('common_otps', challenge);
+  otpChallenges.push(challenge);
+  return challenge;
+}
+
+function otpVerificationPayload(phone: string, purpose: OtpChallenge['purpose'], verificationToken: string) {
+  if (purpose !== 'SIGN_IN') return { verification_token: verificationToken };
+  const existing = users.find(user => user.phone === phone && !user.deleted_at);
+  return {
+    verification_token: verificationToken,
+    account_exists: Boolean(existing),
+    name: existing?.name,
+    has_password: Boolean(existing?.password)
+  };
 }
 
 async function consumeChallenge(challenge: OtpChallenge) {
@@ -1314,6 +1364,7 @@ async function consumeChallenge(challenge: OtpChallenge) {
 app.get('/api/config/public', (_req, res) => {
   res.json({
     sms_configured: isSmsConfigured(),
+    otp_bypass_enabled: isOtpBypassEnabled(),
     donation_interval_days: DONATION_INTERVAL_DAYS,
     availability_ttl_days: AVAILABILITY_TTL_DAYS,
     match_radius_km: MATCH_RADIUS_KM
@@ -1706,7 +1757,7 @@ async function issueOtpChallenge(
     await invalidate();
     return {
       error: 'Verification code delivery failed; please try again',
-      status: provider.name === 'http' ? 502 : 503
+      status: provider.name === 'console' ? 503 : 502
     } as const;
   }
 
@@ -1719,11 +1770,24 @@ app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
   if (!phone || !isOneOf(purpose, OTP_PURPOSES)) {
     return validationError(res, 'Valid Bangladesh phone and purpose are required');
   }
-  const provider = getSmsProvider();
-  if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
   if (purpose === 'REGISTER' && users.some(user => user.phone === phone)) {
     return res.status(409).json({ error: 'Phone already registered' });
   }
+  if (isOtpBypassEnabled()) {
+    try {
+      const challenge = await issueOtpBypass(phone, purpose);
+      return res.json({
+        success: true,
+        provider: 'bypass',
+        bypass: true,
+        ...otpVerificationPayload(phone, purpose, challenge.verification_token!)
+      });
+    } catch {
+      return res.status(503).json({ error: 'Test verification is temporarily unavailable' });
+    }
+  }
+  const provider = getSmsProvider();
+  if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
   if (purpose === 'RESET_PASSWORD' && !users.some(user => user.phone === phone)) {
     // Do not disclose account existence.
     return res.json({ success: true });
@@ -1763,13 +1827,7 @@ app.post('/api/auth/otp/verify', authLimiter, async (req, res) => {
   // it already has an account - so the blood request flow can branch between
   // signing in and registering without ever becoming an enumeration oracle.
   if (purpose === 'SIGN_IN') {
-    const existing = users.find(user => user.phone === phone && !user.deleted_at);
-    return res.json({
-      verification_token: challenge.verification_token,
-      account_exists: Boolean(existing),
-      name: existing?.name,
-      has_password: Boolean(existing?.password)
-    });
+    return res.json(otpVerificationPayload(phone, purpose, challenge.verification_token!));
   }
 
   res.json({ verification_token: challenge.verification_token });
@@ -1788,13 +1846,13 @@ app.post('/api/auth/otp/login', authLimiter, async (req, res) => {
   if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
 
   const challenge = verifiedChallenge(phone, 'SIGN_IN', req.body?.verification_token);
-  if (!challenge) return res.status(403).json({ error: 'Verify this phone before signing in' });
+  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before signing in' });
 
   const user = users.find(item => item.phone === phone && !item.deleted_at);
   if (!user) return res.status(404).json({ error: 'No account exists for this number' });
   if (user.account_status === 'SUSPENDED') return res.status(403).json({ error: 'This account is suspended' });
 
-  await consumeChallenge(challenge);
+  if (challenge) await consumeChallenge(challenge);
   if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
 
   const token = await issueSession(user.id, req);
@@ -1864,7 +1922,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   );
 
   if (!phone || !name || !password) return validationError(res, 'Phone, name, and password are required');
-  if (!challenge) return res.status(403).json({ error: 'Verify this phone before registering' });
+  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before registering' });
   if (password.length < 8) return validationError(res, 'Password must be at least 8 characters');
   if (blood_group !== undefined && !isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (req.body?.location !== undefined && !location) return validationError(res, 'Valid location is required');
@@ -1886,8 +1944,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     phone,
     name,
     password: await bcrypt.hash(password, BCRYPT_ROUNDS),
-    // Registration only reaches this point after a purpose-bound OTP challenge
-    // has verified control of the submitted phone number.
+    // Normal registration reaches this point after a purpose-bound OTP
+    // challenge. Explicit superadmin-controlled test mode can bypass proof.
     is_verified: true,
     phone_verified_at: new Date().toISOString(),
     roles: ['MEMBER'],
@@ -1922,7 +1980,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
 
   const token = await issueSession(user.id, req);
-  await consumeChallenge(challenge);
+  if (challenge) await consumeChallenge(challenge);
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
   res.json({ user: sanitizeUser(user) });
 });
@@ -1938,7 +1996,7 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
   const newPassword = cleanString(req.body?.new_password, 128);
   if (!phone || !newPassword || newPassword.length < 8) return validationError(res, 'Valid phone and password of at least 8 characters are required');
   const challenge = verifiedChallenge(phone, 'RESET_PASSWORD', req.body?.verification_token);
-  if (!challenge) return res.status(403).json({ error: 'Verify the phone before resetting the password' });
+  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify the phone before resetting the password' });
   const user = users.find(item => item.phone === phone && !item.deleted_at);
   if (!user) return validationError(res, 'Password could not be reset');
   user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
@@ -1948,7 +2006,7 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
     session.revoked_at = now;
     await saveToTable('common_sessions', session);
   }
-  await consumeChallenge(challenge);
+  if (challenge) await consumeChallenge(challenge);
   await audit(user.id, 'PASSWORD_RESET', 'USER', user.id);
   res.json({ success: true });
 });
@@ -1980,8 +2038,8 @@ app.patch('/api/me', async (req, res) => {
   const phoneChanged = phone !== auth.user.phone;
   if (phoneChanged) {
     const challenge = verifiedChallenge(phone, 'CHANGE_PHONE', req.body?.verification_token);
-    if (!challenge) return res.status(403).json({ error: 'Verify the new phone before saving it' });
-    await consumeChallenge(challenge);
+    if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify the new phone before saving it' });
+    if (challenge) await consumeChallenge(challenge);
   }
   users[userIndex] = {
     ...users[userIndex], name, phone,
@@ -3089,12 +3147,39 @@ app.get('/api/admin/overview', async (req, res) => {
       environment: IS_PRODUCTION ? 'production' : 'development',
       uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000),
       sms_configured: isSmsConfigured(),
+      otp_bypass_enabled: isOtpBypassEnabled(),
       storage: 'lancedb',
       donation_interval_days: DONATION_INTERVAL_DAYS,
       availability_ttl_days: AVAILABILITY_TTL_DAYS,
       match_radius_km: MATCH_RADIUS_KM
     }
   });
+});
+
+app.patch('/api/admin/settings/otp-bypass', async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_SYSTEM');
+  if (!auth) return;
+  if (typeof req.body?.enabled !== 'boolean') return validationError(res, 'Enabled must be true or false');
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason) return validationError(res, 'A reason is required for this security-sensitive change');
+
+  const previous = isOtpBypassEnabled();
+  const next: OtpBypassSetting = {
+    id: 'otp_bypass',
+    enabled: req.body.enabled,
+    updated_at: new Date().toISOString(),
+    updated_by: auth.user.id
+  };
+  await saveToTable('common_app_settings', next);
+  otpBypassSetting = next;
+  await audit(
+    auth.user.id,
+    next.enabled ? 'OTP_BYPASS_ENABLED' : 'OTP_BYPASS_DISABLED',
+    'SYSTEM_SETTING',
+    next.id,
+    { previous, enabled: next.enabled, reason }
+  );
+  res.json({ otp_bypass_enabled: next.enabled, updated_at: next.updated_at });
 });
 
 app.get('/api/admin/users', (req, res) => {
@@ -3558,7 +3643,7 @@ app.get('/api/directory/:id', async (req, res) => {
  * Deliberately account-free. These people never signed up here, and the only
  * other way off the directory is *claiming* the profile - which means creating
  * an account in order to leave. Proving control of the number by code is the
- * whole check, and it is the same bar the rest of the app uses for a phone.
+ * normal check. The explicit, site-wide test mode can bypass that proof.
  *
  * Whether a number is listed is never disclosed: the request step always
  * answers the same way, exactly like password recovery, so this cannot be used
@@ -3568,15 +3653,23 @@ app.post('/api/directory/removals/request', authLimiter, async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
 
-  const provider = getSmsProvider();
-  if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
-
   let listed = 0;
   try {
     listed = await countImportedDonors({ phone });
   } catch {
     return res.status(503).json({ error: 'The directory is temporarily unavailable' });
   }
+  if (isOtpBypassEnabled()) {
+    try {
+      const challenge = await issueOtpBypass(phone, 'REMOVE_LISTING');
+      return res.json({ success: true, provider: 'bypass', bypass: true, verification_token: challenge.verification_token });
+    } catch {
+      return res.status(503).json({ error: 'Test verification is temporarily unavailable' });
+    }
+  }
+
+  const provider = getSmsProvider();
+  if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
   // Answer identically whether or not anything is listed.
   if (listed === 0) return res.json({ success: true });
 
@@ -3590,7 +3683,7 @@ app.post('/api/directory/removals/confirm', authLimiter, async (req, res) => {
   if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
 
   const challenge = verifiedChallenge(phone, 'REMOVE_LISTING', req.body?.verification_token);
-  if (!challenge) return res.status(403).json({ error: 'Verify this number before removing its listings' });
+  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this number before removing its listings' });
 
   let removed = 0;
   try {
@@ -3598,11 +3691,11 @@ app.post('/api/directory/removals/confirm', authLimiter, async (req, res) => {
   } catch {
     return res.status(503).json({ error: 'The directory is temporarily unavailable' });
   }
-  await consumeChallenge(challenge);
+  if (challenge) await consumeChallenge(challenge);
 
   // Recorded without the number itself: the audit trail should show that a
   // removal happened, not republish the thing being removed.
-  await audit('self-service', 'DIRECTORY_LISTING_REMOVED', 'IMPORTED_DONOR', 'phone-verified', { removed });
+  await audit('self-service', 'DIRECTORY_LISTING_REMOVED', 'IMPORTED_DONOR', isOtpBypassEnabled() ? 'otp-bypassed' : 'phone-verified', { removed });
   res.json({ success: true, removed });
 });
 

@@ -10,7 +10,8 @@ import { PageHeader, StatusBadge, Surface } from '../components/ui';
  *
  * No account, on purpose. The only other route off the directory is claiming
  * the profile, which means signing up in order to leave. Proving control of the
- * number with a code is the entire check.
+ * number with a code is the normal check. Superadmin-controlled test mode can
+ * bypass it and is visibly labelled across the app while active.
  *
  * The page never says whether a number is listed until it has been verified,
  * so it cannot be used to test which numbers are in the directory.
@@ -38,8 +39,14 @@ export default function RemoveListingPage() {
   const sendCode = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      await api.requestListingRemoval(phone);
-      setStep('code');
+      const result = await api.requestListingRemoval(phone);
+      if (result.bypass && result.verification_token) {
+        const confirmed = await api.confirmListingRemoval(phone, result.verification_token);
+        setRemoved(confirmed.removed || 0);
+        setStep('done');
+      } else {
+        setStep('code');
+      }
     });
   };
 
