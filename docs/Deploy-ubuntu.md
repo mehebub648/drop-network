@@ -56,7 +56,7 @@ Build and run the app:
 docker compose up --build
 ```
 
-This builds the `production` Docker target. The frontend is built from source inside Docker with `npm run build`; local `node_modules/` and `dist/` are not required or copied into the image.
+This builds the `production` Docker target. The frontend is built from source inside Docker with `npm run build`; local `node_modules/` and `dist/` are not required or copied into the image. Repository shell launchers are pinned to LF line endings so images built from Windows checkouts remain executable by Linux.
 
 Open:
 
