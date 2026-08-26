@@ -171,15 +171,17 @@ export const api = {
     name: string,
     password: string,
     verificationToken: string,
-    blood_group?: string,
-    location?: { lat: number; lng: number; area_name: string },
+    blood_group: string,
+    location: { lat: number; lng: number; area_name: string },
     donorDetails: {
       upazila?: string;
       age?: number;
       weight_kg?: number;
       last_donation?: LastDonationInput;
       donation_count?: number;
-    } = {}
+      availability_status: 'AVAILABLE' | 'NOT_AVAILABLE';
+      availability_reason?: string;
+    }
   ) {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',

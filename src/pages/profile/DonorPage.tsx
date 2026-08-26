@@ -30,6 +30,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   const [age, setAge] = useState(user.donor_profile?.age ? String(user.donor_profile.age) : '');
   const [weight, setWeight] = useState(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
   const [status, setStatus] = useState<AvailabilityStatus>(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
+  const [availabilityReason, setAvailabilityReason] = useState(user.donor_profile?.availability_reason || '');
   const [donationExperience, setDonationExperience] = useState<DonationExperienceDraft>(() => donationExperienceDraft(
     user.donor_profile?.last_donation,
     user.donor_profile?.last_donation_date,
@@ -45,6 +46,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     setAge(user.donor_profile?.age ? String(user.donor_profile.age) : '');
     setWeight(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
     setStatus(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
+    setAvailabilityReason(user.donor_profile?.availability_reason || '');
     setDonationExperience(donationExperienceDraft(
       user.donor_profile?.last_donation,
       user.donor_profile?.last_donation_date,
@@ -80,6 +82,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
         age: age ? Number(age) : undefined,
         weight_kg: weight ? Number(weight) : undefined,
         availability_status: status,
+        availability_reason: status === 'AVAILABLE' ? undefined : availabilityReason,
         ...donationExperiencePayload(donationExperience)
       }));
       await onUpdate();
@@ -172,6 +175,21 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
               {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </div>
+          {status !== 'AVAILABLE' && (
+            <div className="sm:col-span-2">
+              <label htmlFor="donor-availability-reason" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Reason (optional)</label>
+              <textarea
+                id="donor-availability-reason"
+                maxLength={240}
+                rows={3}
+                value={availabilityReason}
+                onChange={event => setAvailabilityReason(event.target.value)}
+                className="w-full resize-y px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium"
+                placeholder="For example: recovering, traveling, or taking a break"
+              />
+              <p className="mt-2 text-xs text-slate-500">This stays private and is never shown in donor search.</p>
+            </div>
+          )}
         </div>
         {message && <p className={message.type === 'success' ? 'mt-4 text-green-700 font-bold text-sm' : 'mt-4 text-red-600 font-bold text-sm'}>{message.text}</p>}
         <button disabled={saving} className="mt-6 inline-flex items-center gap-2 px-5 py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark disabled:opacity-50"><Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save donor profile'}</button>

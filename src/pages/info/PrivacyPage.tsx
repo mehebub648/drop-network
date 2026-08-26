@@ -6,7 +6,7 @@ export default function PrivacyPage() {
     <InfoPage eyebrow="Legal" title="Privacy Policy" intro="Effective 1 August 2026. This policy explains what Drop currently collects, why it is used, where it is stored, and when another member can see it.">
       <section>
         <h2>Information we collect</h2>
-        <p>When you create or use an account, Drop can store your name, phone number, password hash, blood group, district and approximate district coordinates, availability, verification status, your exact or approximate last-donation declaration, lifetime donation count, and private donation-history entries. Blood requests can include patient and requester names, blood group, district, needed-by date, contact people, comments, status, and creation time. Community posts store the title, Markdown body, post type, author account, publication state and times, and one processed image for a donation story when you choose to upload it.</p>
+        <p>When you create or use an account, Drop can store your name, phone number, password hash, blood group, district and approximate district coordinates, availability, an optional private reason when you are unavailable, verification status, your exact or approximate last-donation declaration, lifetime donation count, and private donation-history entries. Blood requests can include patient and requester names, blood group, district, needed-by date, contact people, comments, status, and creation time. Community posts store the title, Markdown body, post type, author account, publication state and times, and one processed image for a donation story when you choose to upload it.</p>
       </section>
       <section>
         <h2>How we use it</h2>

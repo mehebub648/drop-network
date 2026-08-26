@@ -26,6 +26,8 @@ export type DonorProfileData = {
   age?: number;
   weight_kg?: number;
   availability_status: AvailabilityStatus;
+  /** Private optional context for a non-available status. */
+  availability_reason?: string;
   availability_confirmed_at?: string;
   deferral_status?: 'NONE' | 'TEMPORARY' | 'PERMANENT';
   deferred_until?: string;

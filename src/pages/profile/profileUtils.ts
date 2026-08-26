@@ -6,6 +6,7 @@ export function donorProfilePayload(user: ProfileUser, changes: Partial<DonorPro
   return {
     blood_group: user.donor_profile?.blood_group || 'O+',
     availability_status: user.donor_profile?.availability_status || 'NOT_AVAILABLE',
+    availability_reason: user.donor_profile?.availability_reason,
     location: user.donor_profile?.location || fallbackLocation,
     upazila: user.donor_profile?.upazila,
     age: user.donor_profile?.age,

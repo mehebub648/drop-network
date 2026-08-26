@@ -62,6 +62,7 @@ import {
 } from './communityMedia';
 import { escapeHtml, renderCommunityPostHtml, renderPublicOriginHtml } from './communitySeo';
 import { inspectStaticAssets, type StaticAssetHealth } from './staticAssets';
+import { parseAvailabilityReason, parseRegistrationAvailability } from './donorProfile';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -224,6 +225,8 @@ type DonorProfile = {
   age?: number;
   weight_kg?: number;
   availability_status: 'AVAILABLE' | 'SICK' | 'TRAVELING' | 'NOT_AVAILABLE';
+  /** Private self-reported context for a non-available status. */
+  availability_reason?: string;
   availability_confirmed_at?: string;
   deferral_status?: 'NONE' | 'TEMPORARY' | 'PERMANENT';
   deferred_until?: string;
@@ -1905,6 +1908,10 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
   const blood_group = req.body?.blood_group;
   const location = req.body?.location === undefined ? undefined : parseLocation(req.body.location);
+  const registrationAvailability = parseRegistrationAvailability(
+    req.body?.availability_status,
+    req.body?.availability_reason
+  );
   // A SIGN_IN challenge is accepted too, so the blood request flow can send one
   // code and then branch into signing in or registering depending on what the
   // verification revealed.
@@ -1924,17 +1931,13 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   if (!phone || !name || !password) return validationError(res, 'Phone, name, and password are required');
   if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before registering' });
   if (password.length < 8) return validationError(res, 'Password must be at least 8 characters');
-  if (blood_group !== undefined && !isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
-  if (req.body?.location !== undefined && !location) return validationError(res, 'Valid location is required');
-  if ((blood_group && !location) || (!blood_group && location)) return validationError(res, 'Blood group and location must be provided together');
+  if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
+  if (!location) return validationError(res, 'Valid location is required');
+  if ('error' in registrationAvailability) return validationError(res, registrationAvailability.error);
   if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
   if (age === null) return validationError(res, 'Age must be between 16 and 70');
   if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
   if ('error' in donationDetails) return validationError(res, donationDetails.error);
-  const hasDonationInput = ['last_donation', 'last_donation_date', 'donation_count']
-    .some(field => req.body?.[field] !== undefined && req.body?.[field] !== '');
-  if (hasDonationInput && !blood_group) return validationError(res, 'Donation details require a donor blood group');
-
   if (users.find(u => u.phone === phone)) {
     return res.status(400).json({ error: 'Phone already registered' });
   }
@@ -1952,24 +1955,23 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     created_at: new Date().toISOString(),
   };
 
-  if (blood_group && location) {
-    // A new profile always starts unavailable. Giving a blood group while
-    // arranging blood for someone else is not the same as volunteering to be
-    // called, so the donor opts in separately from /profile/donor.
-    user.donor_profile = {
-      blood_group,
-      location,
-      ...(upazila ? { upazila } : {}),
-      ...(age ? { age } : {}),
-      ...(weight_kg ? { weight_kg } : {}),
-      ...(donationDetails.value.last_donation ? { last_donation: donationDetails.value.last_donation } : {}),
-      ...(donationDetails.value.last_donation_date ? { last_donation_date: donationDetails.value.last_donation_date } : {}),
-      ...(donationDetails.value.donation_count !== undefined ? { donation_count: donationDetails.value.donation_count } : {}),
-      availability_status: 'NOT_AVAILABLE',
-      deferral_status: 'NONE',
-      availability_history: [{ status: 'NOT_AVAILABLE', changed_at: new Date().toISOString() }]
-    };
-  }
+  const registeredAt = new Date().toISOString();
+  const { status: availability_status, reason: availability_reason } = registrationAvailability.value;
+  user.donor_profile = {
+    blood_group,
+    location,
+    ...(upazila ? { upazila } : {}),
+    ...(age ? { age } : {}),
+    ...(weight_kg ? { weight_kg } : {}),
+    ...(donationDetails.value.last_donation ? { last_donation: donationDetails.value.last_donation } : {}),
+    ...(donationDetails.value.last_donation_date ? { last_donation_date: donationDetails.value.last_donation_date } : {}),
+    ...(donationDetails.value.donation_count !== undefined ? { donation_count: donationDetails.value.donation_count } : {}),
+    availability_status,
+    ...(availability_reason ? { availability_reason } : {}),
+    ...(availability_status === 'AVAILABLE' ? { availability_confirmed_at: registeredAt } : {}),
+    deferral_status: 'NONE',
+    availability_history: [{ status: availability_status, changed_at: registeredAt }]
+  };
 
   users.push(user);
   await saveToTable('common_users', user);
@@ -2201,6 +2203,7 @@ app.post('/api/me/donor-profile', async (req, res) => {
 
   const blood_group = req.body?.blood_group;
   const availability_status = req.body?.availability_status;
+  const availability_reason = parseAvailabilityReason(req.body?.availability_reason);
   const location = parseLocation(req.body?.location);
   const donation_history = parseDonationHistory(req.body?.donation_history);
   const deferral_status = req.body?.deferral_status || 'NONE';
@@ -2218,6 +2221,8 @@ app.post('/api/me/donor-profile', async (req, res) => {
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (!isOneOf(availability_status, AVAILABILITY_STATUSES)) return validationError(res, 'Valid availability status is required');
+  if (availability_reason === null) return validationError(res, 'Availability reason must be 240 characters or fewer');
+  if (availability_reason && availability_status === 'AVAILABLE') return validationError(res, 'Availability reason only applies when you are not available');
   if (!location) return validationError(res, 'Valid location is required');
   if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
   if (age === null) return validationError(res, 'Age must be between 16 and 70');
@@ -2242,6 +2247,11 @@ app.post('/api/me/donor-profile', async (req, res) => {
       ...existingProfile,
       blood_group,
       availability_status,
+      availability_reason: availability_status === 'AVAILABLE'
+        ? undefined
+        : req.body?.availability_reason === undefined
+          ? existingProfile?.availability_reason
+          : availability_reason,
       location,
       upazila: upazila ?? keptUpazila,
       age: age ?? existingProfile?.age,

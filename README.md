@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.77`
+Current version: `0.0.78`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -80,6 +80,9 @@ Refresh the district facility files from the public DGHS registry with:
   number of days, months, or years ago, or that they have never donated, plus a
   lifetime donation count. Search cards show that bounded summary when present;
   detailed records and collection-organization names remain private.
+- Every new account creates a donor profile with blood group, location, and an
+  explicit availability choice. Members who choose “I’m not available to
+  donate” stay off live search and may save a private optional reason.
 - Creating a public request requires a verified account, the exact blood
   collection facility and address, patient-reference details, a future required
   time, a verified contact, and explicit review/consent before publication.

@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Eye, EyeOff, Phone, TerminalSquare } from 'lucide-react';
 import AuthShell from '../components/AuthShell';
+import DonorAvailabilityFields, { type RegistrationAvailability } from '../components/DonorAvailabilityFields';
 import { api } from '../lib/api';
 import { BLOOD_GROUPS } from '../lib/blood';
 import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
@@ -26,6 +27,8 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
   const [showPassword, setShowPassword] = useState(false);
   const [bloodGroup, setBloodGroup] = useState('O+');
   const [selectedLocation, setSelectedLocation] = useState('Dhaka');
+  const [availabilityStatus, setAvailabilityStatus] = useState<RegistrationAvailability>('');
+  const [availabilityReason, setAvailabilityReason] = useState('');
   const [step, setStep] = useState<Step>('PHONE');
   const [deliveryMode, setDeliveryMode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -73,7 +76,11 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
     void act(async () => {
       const location = getLocationByName(selectedLocation);
       if (!location) throw new Error('Choose a supported district.');
-      await api.register(phone, name, password, verificationToken, bloodGroup, location);
+      if (!availabilityStatus) throw new Error('Choose whether you are available to donate.');
+      await api.register(phone, name, password, verificationToken, bloodGroup, location, {
+        availability_status: availabilityStatus,
+        availability_reason: availabilityStatus === 'NOT_AVAILABLE' ? availabilityReason : undefined
+      });
       await onLogin();
       navigate(returnTo, { replace: true });
     });
@@ -215,7 +222,14 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
               </select>
             </Field>
           </div>
-          <p className="text-xs leading-5 text-slate-500">Your donor status starts unavailable. Your phone is only shown to signed-in members when you explicitly mark yourself available. Clinical screening still happens at the receiving facility.</p>
+          <DonorAvailabilityFields
+            idPrefix="registration"
+            value={availabilityStatus}
+            onChange={setAvailabilityStatus}
+            reason={availabilityReason}
+            onReasonChange={setAvailabilityReason}
+          />
+          <p className="text-xs leading-5 text-slate-500">Your phone is only shown to signed-in request owners while you are available. Clinical screening still happens at the receiving facility.</p>
           <button disabled={loading} className="primary-button min-h-12">
             {loading ? 'Creating account…' : <>Create verified account <ArrowRight className="h-5 w-5" /></>}
           </button>

@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.77`
+Current application version: `0.0.78`
 
 ## Overview
 
@@ -64,7 +64,9 @@ Entry points:
   and upazila step, searchable facility combobox, shared requester-role picker,
   donor result card, and `RequestGate`. The gate reuses completed draft answers,
   summarizes them with explicit Change actions, and splits patient, contact,
-  review, verification, and optional donor details into short stages.
+  review, verification, required donor-profile basics, and an explicit
+  availability choice into short stages. Age, weight, and donation experience
+  stay in the full donor-profile editor instead of blocking onboarding.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
 - `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
@@ -276,9 +278,11 @@ API routes:
 - `POST /api/auth/otp/login` exchanges a verified `SIGN_IN` challenge for a
   session, so a requester is not blocked by a forgotten password. The password
   path is unchanged and still offered.
-- `POST /api/auth/register` consumes a registration or `SIGN_IN` token, creates
-  a verified user, and starts an optional donor profile as unavailable. Being
-  listed is a separate opt-in from giving a blood group.
+- `POST /api/auth/register` consumes a registration or `SIGN_IN` token and
+  creates a verified user with a donor profile. Blood group, location, and an
+  explicit available/not-available choice are required. An available choice
+  receives a server timestamp and enters donor matching; an unavailable choice
+  may include a private reason that is never projected into donor search.
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `POST /api/auth/reset-password` consumes a verified recovery challenge,
   changes the password, and revokes every existing session.
@@ -335,8 +339,9 @@ API routes:
 - `GET /api/me/requests` returns requests owned by the current user.
 - `POST /api/me/donor-profile` updates donor profile and donation-history data,
   validates exact/approximate/never declarations and lifetime counts, derives a
-  canonical eligibility date on the server, records availability changes, and
-  refreshes donor partitions.
+  canonical eligibility date on the server, stores an optional private reason
+  for non-available states, records availability changes, and refreshes donor
+  partitions.
 - `POST /api/requests` creates a complete private draft for a verified owner;
   `POST /api/requests/:id/publish` records consent and activates it.
 - `POST /api/requests/:id/invitations` privately invites a currently eligible

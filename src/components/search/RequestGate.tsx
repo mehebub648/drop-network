@@ -1,16 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { HeartPulse, ShieldCheck, X } from 'lucide-react';
-import DonationExperienceFields from '../DonationExperienceFields';
+import DonorAvailabilityFields, { type RegistrationAvailability } from '../DonorAvailabilityFields';
 import { api } from '../../lib/api';
 import { BLOOD_GROUPS } from '../../lib/blood';
-import {
-  donationExperienceDraft,
-  donationExperiencePayload,
-  validateDonationExperience,
-  type DonationExperienceDraft
-} from '../../lib/donation';
 import { getLocationByName } from '../../lib/locations';
-import { getUpazilasForDistrict } from '../../lib/upazilas';
 import {
   hasPatientDetails,
   hasRequesterDetails,
@@ -71,16 +64,12 @@ export default function RequestGate({
   const [token, setToken] = useState('');
   const [accountName, setAccountName] = useState('');
   const [donorGroup, setDonorGroup] = useState('');
-  const [donorUpazila, setDonorUpazila] = useState('');
-  const [donationExperience, setDonationExperience] = useState<DonationExperienceDraft>(() => donationExperienceDraft());
-  const [donorAge, setDonorAge] = useState('');
-  const [donorWeight, setDonorWeight] = useState('');
+  const [donorAvailability, setDonorAvailability] = useState<RegistrationAvailability>('');
+  const [availabilityReason, setAvailabilityReason] = useState('');
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const closeRef = useRef<HTMLButtonElement>(null);
-
-  const upazilas = useMemo(() => getUpazilasForDistrict(draft.district), [draft.district]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -178,23 +167,22 @@ export default function RequestGate({
   };
 
   const registerAccount = () => {
-    const donationError = donorGroup ? validateDonationExperience(donationExperience) : null;
-    if (donationError) return setError(donationError);
+    if (!donorGroup) return setError('Choose your blood group to create your donor profile.');
+    if (!donorAvailability) return setError('Choose whether you are available to donate.');
     void run(async () => {
-      const location = donorGroup ? getLocationByName(draft.district) : null;
-      const donationDetails = donorGroup ? donationExperiencePayload(donationExperience) : {};
+      const location = getLocationByName(draft.district);
+      if (!location) throw new Error('Choose a supported district.');
       await api.register(
         phone,
         name,
         password,
         token,
-        donorGroup || undefined,
-        location || undefined,
+        donorGroup,
+        location,
         {
-          upazila: donorGroup && donorUpazila ? donorUpazila : undefined,
-          age: donorGroup && donorAge ? Number(donorAge) : undefined,
-          weight_kg: donorGroup && donorWeight ? Number(donorWeight) : undefined,
-          ...donationDetails
+          upazila: draft.upazila || undefined,
+          availability_status: donorAvailability,
+          availability_reason: donorAvailability === 'NOT_AVAILABLE' ? availabilityReason : undefined
         }
       );
       await onReady();
@@ -204,8 +192,8 @@ export default function RequestGate({
   const submitSignup = (event: FormEvent) => {
     event.preventDefault();
     setError('');
-    if (donorGroup) return setStep('signup-donor');
-    registerAccount();
+    if (!donorGroup) return setError('Choose your blood group to create your donor profile.');
+    setStep('signup-donor');
   };
 
   const completeSignup = (event: FormEvent) => {
@@ -586,22 +574,21 @@ export default function RequestGate({
                 <input required type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} className="input" />
               </label>
               <label className="dialog-field sm:col-span-2">
-                <span>Your blood group (optional)</span>
-                <select value={donorGroup} onChange={event => setDonorGroup(event.target.value)} className="input">
-                  <option value="">Prefer not to say</option>
+                <span>Your blood group</span>
+                <select required value={donorGroup} onChange={event => setDonorGroup(event.target.value)} className="input">
+                  <option value="">Choose blood group</option>
                   {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
                 </select>
               </label>
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-500">
-              Giving your blood group does not put you on the donor list. You stay unlisted until you
-              turn availability on from your profile.
+              Every account includes a donor profile. You decide whether it appears in live donor searches next.
             </p>
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
               <button type="button" onClick={() => setStep('phone')} className="button button-secondary">Back</button>
               <button type="submit" disabled={busy} className="button button-primary">
-                {busy ? 'Creating...' : donorGroup ? 'Continue' : 'Create and continue'}
+                Continue
               </button>
             </div>
           </form>
@@ -609,39 +596,22 @@ export default function RequestGate({
 
         {step === 'signup-donor' && (
           <form onSubmit={completeSignup}>
-            <h2 id="request-gate-title">Optional donor details</h2>
+            <h2 id="request-gate-title">Set your donor availability</h2>
             <p>
-              You selected {donorGroup}. These details help complete your private profile, but you stay
-              off the live donor list until you turn availability on.
+              Your {donorGroup} donor profile will use {draft.upazila ? `${draft.upazila}, ` : ''}{draft.district}
+              from this request. You can add age, weight, and donation history later.
             </p>
-            <div className="grid gap-x-4 sm:grid-cols-2">
-              <label className="dialog-field">
-                <span>Your upazila (optional)</span>
-                <select value={donorUpazila} onChange={event => setDonorUpazila(event.target.value)} className="input">
-                  <option value="">Not set</option>
-                  {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </label>
-              <label className="dialog-field">
-                <span>Your age (optional)</span>
-                <input type="number" inputMode="numeric" min={16} max={70} value={donorAge} onChange={event => setDonorAge(event.target.value)} className="input" />
-              </label>
-              <label className="dialog-field sm:col-span-2">
-                <span>Your weight in kg (optional)</span>
-                <input type="number" inputMode="numeric" min={30} max={200} value={donorWeight} onChange={event => setDonorWeight(event.target.value)} className="input" />
-              </label>
-              <DonationExperienceFields
-                idPrefix="request-signup"
-                value={donationExperience}
-                onChange={setDonationExperience}
-                optional
-                className="mt-4 sm:col-span-2"
-              />
-            </div>
+            <DonorAvailabilityFields
+              idPrefix="request-signup"
+              value={donorAvailability}
+              onChange={setDonorAvailability}
+              reason={availabilityReason}
+              onReasonChange={setAvailabilityReason}
+            />
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
               <button type="button" onClick={() => setStep('signup')} className="button button-secondary">Back</button>
-              <button type="submit" disabled={busy} className="button button-primary">{busy ? 'Creating...' : 'Create and continue'}</button>
+              <button type="submit" disabled={busy} className="button button-primary">{busy ? 'Creating...' : 'Create profile and continue'}</button>
             </div>
           </form>
         )}
