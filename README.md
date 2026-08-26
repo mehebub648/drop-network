@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.78`
+Current version: `0.0.79`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -75,7 +75,11 @@ Refresh the district facility files from the public DGHS registry with:
   Registered, opted-in donors are ranked first and explicitly labelled before
   attributed public listings. Every result stays masked until the protected
   request and one-at-a-time reveal workflow opens a contact; requesters can
-  refine the same answers without leaving the result page.
+  refine the same answers without leaving the result page. Results are paged
+  in groups of 24. Each account and IP may use at most three districts, three
+  blood groups, and nine unique searches per Dhaka day; paging an unchanged
+  search does not consume another unique search, while the standard API rate
+  limit still applies.
 - Registered donors can self-report an exact last-donation date, an approximate
   number of days, months, or years ago, or that they have never donated, plus a
   lifetime donation count. Search cards show that bounded summary when present;
@@ -124,7 +128,7 @@ Refresh the district facility files from the public DGHS registry with:
 
 The datastore starts empty in every environment; no demo data is generated.
 
-## Imported Donor Directory
+## Imported Donor Records
 
 Donor listings published openly by other Bangladesh organisations can be
 imported as claimable stubs. Scraping and importing are two separate scripts,
@@ -144,15 +148,15 @@ A valid Bangladesh mobile number is mandatory for an imported listing. Records
 without one are rejected by the importer, and any stored before that rule are
 deleted the first time the directory table is opened.
 
-Imported people never registered here, so browsing `/directory/imported` always
-serves their phone numbers masked, including to signed-in members. The only way
-a listing's number is served in full is the one-at-a-time reveal behind a
-published blood request in that person's own upazila, which is recorded and
-refuses to open another number until the last call is reported. Detail and claim
-screens use `/directory/imported/:id` with opaque public IDs that contain no
-phone or source key. A successful claim verifies ownership but starts the
-registered donor profile unavailable; the owner must separately opt in before
-appearing in live search.
+Imported people never registered here, so Drop provides no browsable donor
+directory. Their masked records can appear only inside a blood-group, district,
+and upazila search. The only way a listing's number is served in full is the
+one-at-a-time reveal behind a published blood request in that person's own
+upazila, which is recorded and refuses to open another number until the last
+call is reported. Detail and claim screens use `/directory/imported/:id` with
+opaque public IDs that contain no phone or source key. A successful claim
+verifies ownership but starts the registered donor profile unavailable; the
+owner must separately opt in before appearing in live search.
 
 Anyone listed can take their own number off at `/directory/remove` **without
 creating an account** — the alternative would be signing up in order to leave.

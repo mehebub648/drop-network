@@ -7,8 +7,7 @@ const columns = [
     links: [
       { label: 'Find live donors', to: '/directory' },
       { label: 'Live blood requests', to: '/requests' },
-      { label: 'Find blood', to: '/directory' },
-      { label: 'Imported listings', to: '/directory/imported' }
+      { label: 'Find blood', to: '/directory' }
     ]
   },
   {

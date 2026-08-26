@@ -512,8 +512,13 @@ export const api = {
   // everyone; unmasking one is a separate, recorded action that needs a
   // published request behind it.
 
-  async searchDonorsByUpazila(params: { blood_group: string; district: string; upazila: string }) {
-    const query = new URLSearchParams(params);
+  async searchDonorsByUpazila(params: { blood_group: string; district: string; upazila: string; page?: number }) {
+    const query = new URLSearchParams({
+      blood_group: params.blood_group,
+      district: params.district,
+      upazila: params.upazila
+    });
+    if (params.page && params.page > 1) query.set('page', String(params.page));
     const res = await fetch(`${API_BASE}/search/donors?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to search donors');
   },
@@ -556,20 +561,6 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to send your response');
   },
 
-  // Imported archive listings. Numbers stay masked while browsing; the one
-  // place a listing's number is served in full is the reveal above, which
-  // requires a published request in that person's own upazila and is recorded.
-  async getDirectory(params: { blood_group?: string; district?: string; source?: string; q?: string; page?: number } = {}) {
-    const query = new URLSearchParams();
-    if (params.blood_group) query.set('blood_group', params.blood_group);
-    if (params.district) query.set('district', params.district);
-    if (params.source) query.set('source', params.source);
-    if (params.q) query.set('q', params.q);
-    if (params.page) query.set('page', String(params.page));
-    const res = await fetch(`${API_BASE}/directory?${query}`, { headers: getHeaders() });
-    return readJsonOrThrow(res, 'Failed to load the donor directory');
-  },
-
   // Taking your own scraped listing down. No account involved: requiring one
   // would mean signing up in order to leave.
   async requestListingRemoval(phone: string) {
@@ -586,11 +577,8 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to remove your listing');
   },
 
-  async getDirectorySources() {
-    const res = await fetch(`${API_BASE}/directory/sources`, { headers: getHeaders() });
-    return readJsonOrThrow(res, 'Failed to load directory sources');
-  },
-
+  // Opaque profile links remain for owners who need to claim an imported
+  // record. There is intentionally no API client for browsing the collection.
   async getDirectoryProfile(id: string) {
     const res = await fetch(`${API_BASE}/directory/${encodeURIComponent(id)}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load that profile');

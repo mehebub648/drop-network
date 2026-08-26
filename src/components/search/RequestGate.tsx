@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { HeartPulse, ShieldCheck, X } from 'lucide-react';
 import DonorAvailabilityFields, { type RegistrationAvailability } from '../DonorAvailabilityFields';
 import { api } from '../../lib/api';
 import { BLOOD_GROUPS } from '../../lib/blood';
-import { getLocationByName } from '../../lib/locations';
+import { BD_LOCATION_NAMES, getLocationByName } from '../../lib/locations';
+import { getUpazilasForDistrict } from '../../lib/upazilas';
 import {
   hasPatientDetails,
   hasRequesterDetails,
@@ -64,12 +65,15 @@ export default function RequestGate({
   const [token, setToken] = useState('');
   const [accountName, setAccountName] = useState('');
   const [donorGroup, setDonorGroup] = useState('');
+  const [donorDistrict, setDonorDistrict] = useState(() => draft.district);
+  const [donorUpazila, setDonorUpazila] = useState(() => draft.upazila);
   const [donorAvailability, setDonorAvailability] = useState<RegistrationAvailability>('');
   const [availabilityReason, setAvailabilityReason] = useState('');
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const closeRef = useRef<HTMLButtonElement>(null);
+  const donorUpazilas = useMemo(() => getUpazilasForDistrict(donorDistrict), [donorDistrict]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -168,9 +172,11 @@ export default function RequestGate({
 
   const registerAccount = () => {
     if (!donorGroup) return setError('Choose your blood group to create your donor profile.');
+    if (!donorDistrict) return setError('Choose the district where you live.');
+    if (!donorUpazila || !donorUpazilas.some(item => item.value === donorUpazila)) return setError('Choose your home upazila.');
     if (!donorAvailability) return setError('Choose whether you are available to donate.');
     void run(async () => {
-      const location = getLocationByName(draft.district);
+      const location = getLocationByName(donorDistrict);
       if (!location) throw new Error('Choose a supported district.');
       await api.register(
         phone,
@@ -180,7 +186,7 @@ export default function RequestGate({
         donorGroup,
         location,
         {
-          upazila: draft.upazila || undefined,
+          upazila: donorUpazila,
           availability_status: donorAvailability,
           availability_reason: donorAvailability === 'NOT_AVAILABLE' ? availabilityReason : undefined
         }
@@ -598,9 +604,33 @@ export default function RequestGate({
           <form onSubmit={completeSignup}>
             <h2 id="request-gate-title">Set your donor availability</h2>
             <p>
-              Your {donorGroup} donor profile will use {draft.upazila ? `${draft.upazila}, ` : ''}{draft.district}
-              from this request. You can add age, weight, and donation history later.
+              We filled these from your search. Change them if the patient's treatment area is not where you live.
             </p>
+            <div className="grid gap-x-4 sm:grid-cols-2">
+              <label className="dialog-field">
+                <span>Your home district</span>
+                <select
+                  required
+                  value={donorDistrict}
+                  onChange={event => {
+                    const nextDistrict = event.target.value;
+                    setDonorDistrict(nextDistrict);
+                    setDonorUpazila(getUpazilasForDistrict(nextDistrict)[0]?.value || '');
+                  }}
+                  className="input"
+                >
+                  <option value="">Choose district</option>
+                  {BD_LOCATION_NAMES.map(district => <option key={district} value={district}>{district}</option>)}
+                </select>
+              </label>
+              <label className="dialog-field">
+                <span>Your home upazila</span>
+                <select required value={donorUpazila} onChange={event => setDonorUpazila(event.target.value)} className="input">
+                  <option value="">Choose upazila</option>
+                  {donorUpazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+            </div>
             <DonorAvailabilityFields
               idPrefix="request-signup"
               value={donorAvailability}

@@ -30,7 +30,7 @@ const metadata: Record<string, [string, string]> = {
   '/privacy': ['Privacy Policy — Drop Network', 'How Drop protects donor, requester, account, and contact information.'],
   '/terms': ['Terms of Use — Drop Network', 'Rules and safety expectations for using Drop responsibly.'],
   '/directory': ['Find blood donors near you — Drop Network', 'Search donors by blood group, district and upazila. Numbers stay masked until you say who needs blood.'],
-  '/directory/imported': ['Imported donor archive — Drop Network', 'Browse donor entries published by other Bangladesh organisations. Contact details remain masked for everyone.'],
+  '/directory/imported': ['Claim an imported donor profile — Drop Network', 'Verify ownership of an imported donor record and bring it under your control.'],
   '/directory/call': ['Call a donor — Drop Network', 'Contact one donor for your published blood request and record how the call went.'],
   '/directory/remove': ['Remove your number from the directory — Drop Network', 'Take a publicly imported donor listing off Drop by verifying the number. No account needed.'],
   '/profile': ['My Drop account', 'Manage your donor profile, requests, invitations, history, security, and privacy settings.'],
@@ -48,7 +48,7 @@ export default function RouteMetadata() {
         : pathname.startsWith('/request/')
           ? '/requests'
           // The call page carries a revealed contact number, so it gets its own
-          // title rather than inheriting the archive's.
+          // title rather than inheriting the claim page's.
           : pathname.startsWith('/directory/call/')
             ? '/directory/call'
           : pathname === '/directory/remove'
@@ -80,7 +80,7 @@ export default function RouteMetadata() {
     let robots = document.querySelector('meta[name="robots"]');
     if (!robots) { robots = document.createElement('meta'); robots.setAttribute('name', 'robots'); document.head.appendChild(robots); }
     // A call page carries a revealed contact number, so it must never be indexed.
-    const privatePage = pathname === '/community/new' || pathname.startsWith('/profile') || pathname.startsWith('/admin') || pathname.startsWith('/directory/call/');
+    const privatePage = pathname === '/community/new' || pathname.startsWith('/profile') || pathname.startsWith('/admin') || pathname.startsWith('/directory/call/') || pathname.startsWith('/directory/imported/');
     robots.setAttribute('content', privatePage ? 'noindex, nofollow' : 'index, follow');
     let canonical = document.querySelector('link[rel="canonical"]');
     if (!canonical) { canonical = document.createElement('link'); canonical.setAttribute('rel', 'canonical'); document.head.appendChild(canonical); }

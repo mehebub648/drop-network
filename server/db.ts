@@ -368,8 +368,8 @@ export async function queryImportedDonors(query: ImportedDonorQuery) {
   const offset = Math.max(0, query.offset ?? 0);
   const filter = buildImportedFilter(query);
 
-  // LanceDB has no OFFSET, so over-fetch by the offset and slice. Directory
-  // paging is shallow, which keeps this cheap.
+  // LanceDB has no OFFSET, so over-fetch by the offset and slice. Scoped donor
+  // search is expected to stay shallow, which keeps this cheap.
   let builder = table.query().limit(offset + limit);
   if (filter) builder = builder.where(filter);
   const results = await builder.toArray();
@@ -385,7 +385,7 @@ export async function countImportedDonors(query: ImportedDonorQuery = {}) {
 }
 
 /**
- * Directory listings that can back a district+upazila blood request.
+ * Imported listings that can back a district+upazila blood request.
  *
  * Claimed rows are excluded: they now belong to a registered account, which the
  * live donor search already covers, so including them would list the same

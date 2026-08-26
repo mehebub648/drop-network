@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.78`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.79`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -50,7 +50,7 @@ delivered.
   (e.g. `sbmcu.com`) were unreachable while 0.0.44 was built; Badhan's directory
   is behind a login. Revisit and add sources to `IMPORT_SOURCES` when they are
   reachable and genuinely public.
-- [ ] **Directory paging is offset-by-overfetch.** `queryImportedDonors()` in
+- [ ] **Imported search paging is offset-by-overfetch.** `queryImportedDonors()` in
   `server/db.ts` fetches `offset + limit` rows and slices, because LanceDB has
   no OFFSET. Fine for shallow paging; revisit if deep paging is needed.
 - [ ] **A re-import resets claim state.** `scripts/import-donors.ts` replaces
@@ -77,7 +77,8 @@ delivered.
 - [ ] **In-memory rate limits / runtime cache reset on restart** and are
   per-process; move to a shared store (Redis or the datastore) once a real
   multi-instance deployment exists. Covers the auth/API limiters added in
-  0.0.31 and the anonymous comment limiter.
+  0.0.31, the anonymous comment limiter, and the per-account/per-IP daily
+  search budget added in 0.0.79.
 
 ---
 

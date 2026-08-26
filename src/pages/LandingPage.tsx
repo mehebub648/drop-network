@@ -38,7 +38,7 @@ const steps = [
   {
     icon: Search,
     title: 'Search the right place',
-    body: 'Choose a blood group, district and upazila to see registered donors and attributed public listings. No account is needed to browse.'
+    body: 'Choose a blood group, district and upazila to see registered donors and attributed public listings. No account is needed to search.'
   },
   {
     icon: LockKeyhole,
@@ -187,10 +187,10 @@ export default function LandingPage({ user }: { user: any }) {
                   Review privacy
                 </Link>
                 <Link
-                  to="/directory/imported"
+                  to="/directory"
                   className="inline-flex min-h-12 items-center justify-center rounded-xl border border-rose-200 bg-white px-5 text-sm font-extrabold text-slate-800 hover:bg-rose-50"
                 >
-                  View imported listings
+                  Search donors
                 </Link>
               </div>
             </div>

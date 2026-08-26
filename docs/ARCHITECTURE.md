@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.78`
+Current application version: `0.0.79`
 
 ## Overview
 
@@ -66,7 +66,9 @@ Entry points:
   summarizes them with explicit Change actions, and splits patient, contact,
   review, verification, required donor-profile basics, and an explicit
   availability choice into short stages. Age, weight, and donation experience
-  stay in the full donor-profile editor instead of blocking onboarding.
+  stay in the full donor-profile editor instead of blocking onboarding. When
+  onboarding begins from search, the donor's district and upazila are prefilled
+  from the patient search but remain editable as the donor's home location.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
 - `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
@@ -172,8 +174,8 @@ Routes:
 - `/profile/settings` stores device-local preferences, downloads the complete
   server-side account export, and starts password-confirmed anonymization.
 - `/forgot-password` resets a password after registered-phone OTP verification.
-- `/directory/imported` browses the separately labelled archive of third-party
-  public listings. Browsing never shows a number; see the reveal rules below.
+- `/directory/imported` redirects to search; there is no browsable donor
+  directory.
 - `/directory/imported/:id` shows and claims one imported record by opaque
   public ID. `/directory/:id` remains a compatibility alias.
 - `/community` lists bounded pages of published donation stories and health
@@ -233,6 +235,12 @@ Security middleware:
 - `express-rate-limit` applies a general `/api` limiter (300 requests / 15 min
   per IP) and a strict limiter on login and register (10 / 15 min per IP).
   `trust proxy` is set to 1 for deployment behind a reverse proxy.
+- `DailySearchBudget` additionally limits donor discovery by both authenticated
+  account and IP address to three districts, three blood groups, and nine unique
+  blood-group/district/upazila searches per Dhaka day. Its fingerprint excludes
+  `page`, so every page of an unchanged search is a continuation. This budget
+  is in memory and per process; the general API limiter still applies to every
+  page request.
 - Passwords are hashed with bcrypt (10 rounds). Legacy plaintext records are
   transparently re-hashed on the next successful login.
 - Sessions are opaque UUID tokens delivered in an httpOnly, `SameSite=Lax`
@@ -286,11 +294,12 @@ API routes:
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `POST /api/auth/reset-password` consumes a verified recovery challenge,
   changes the password, and revokes every existing session.
-- `GET /api/search/donors?blood_group&district&upazila` is the search behind the
+- `GET /api/search/donors?blood_group&district&upazila&page` is the search behind the
   blood request flow. It is open to everyone and **masked for everyone**,
   including signed-in members. It returns `{ query, registered, directory,
-  totals, contact_access: 'masked' }`: registered members who opted in, then
-  public directory listings to fill the page. Compatible blood groups are
+  totals, pagination, contact_access: 'masked' }` in pages of 24: registered
+  members who opted in, then attributed imported listings to fill the page.
+  Compatible blood groups are
   included, with the patient's exact group ranked first and registered members
   ranked above listings. Result cards explicitly identify registered donors;
   imported cards retain their source attribution and state that they are not
@@ -382,9 +391,8 @@ API routes:
 - `POST /api/requests/:id/comments` adds a comment with anonymous rate limits.
 - `DELETE /api/requests/:id/comments/:commentId` lets the request owner delete comments.
 - `PATCH /api/requests/:id/status` lets the request owner update request status.
-- `GET /api/directory` lists unclaimed imported donor stubs with masked phone
-  numbers, filtered by blood group, district, source, and name.
-  `GET /api/directory/sources` returns per-source attribution and counts, and
+- `GET /api/directory` and `GET /api/directory/sources` return 404 so imported
+  records cannot be enumerated outside scoped donor search.
   `GET /api/directory/:id` addresses one record by opaque `public_id` and always
   masks its phone. Claimed or pending records are readable only by the claimant
   or active staff.
@@ -449,7 +457,8 @@ Important helpers:
 - `ensureImportedDonorTable()`, `addImportedDonors()`, public/storage-specific
   deletion helpers, `queryImportedDonors()`, `queryImportedDonorsForRequest()`,
   `countImportedDonors()`, `getImportedDonor()`, and `replaceImportedDonor()`
-  serve the imported archive without loading it into memory.
+  serve scoped search, ownership, removal, and moderation without loading the
+  imported collection into memory.
 - `ensureCallReportTable()`, `addCallReports()`, `queryCallReports()`, and
   `countCallReports()` do the same for reveal and call-outcome records.
 - `buildImportedFilter()` and `buildCallReportFilter()` are exported so the
@@ -481,7 +490,7 @@ Regenerate with:
 docker compose --profile development run --rm app-dev npm run generate-upazilas
 ```
 
-## Imported Donor Directory
+## Imported Donor Records
 
 Several Bangladesh organisations publish open donor listings. `scripts/scrape/`
 reads those listings and `scripts/import-donors.ts` loads them into
@@ -507,7 +516,8 @@ account:
 
 - Phone numbers are served masked (`+88017••••••78`) everywhere except the
   phone-reveal route, which `toRevealedImportedDonor()` exists solely to serve.
-  Browsing the directory never reveals a number.
+  There is no browsable donor directory; records are returned only by scoped
+  search or an opaque ownership link.
 - That reveal is the one place a scraped number is served in full, and it is
   narrow on purpose: a verified account, an active request the caller owns, a
   donor still in that request's own district and upazila, no unreported previous

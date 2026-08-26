@@ -11,7 +11,7 @@ import { randomInt } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, replaceImportedDonor, withdrawImportedDonorsByPhone, addCallReports, queryCallReports } from './db';
-import { evaluateClaim, maskPhone, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, IMPORT_SOURCES, type ImportedDonor } from './importedDonors';
+import { evaluateClaim, maskPhone, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor } from './importedDonors';
 import { getLocationByName } from './locations';
 import { getSmsProvider, isSmsConfigured } from './sms';
 import { getUpazilaByName, getUpazilaVariants } from './upazilas';
@@ -63,6 +63,7 @@ import {
 import { escapeHtml, renderCommunityPostHtml, renderPublicOriginHtml } from './communitySeo';
 import { inspectStaticAssets, type StaticAssetHealth } from './staticAssets';
 import { parseAvailabilityReason, parseRegistrationAvailability } from './donorProfile';
+import { DAILY_UNIQUE_SEARCH_LIMIT, DailySearchBudget } from './searchBudget';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -85,6 +86,7 @@ const COMMUNITY_IMAGE_QUOTA_PER_MEMBER = 20;
 const COMMUNITY_SITEMAP_CACHE_MS = 5 * 60_000;
 const STARTED_AT = Date.now();
 const PRODUCTION_DIST_PATH = path.join(process.cwd(), 'dist');
+const dailySearchBudget = new DailySearchBudget();
 let isReady = false;
 let communitySitemapCache: { origin: string; xml: string; expiresAt: number } | null = null;
 const activeCommunityImageUploads = new Map<string, number>();
@@ -994,9 +996,9 @@ async function findDonorMatches(
 //
 // The search a requester actually runs. It answers with masked numbers only:
 // unmasking is a separate, recorded action that requires a published request,
-// so browsing can never harvest contact details.
+// so masked search can never harvest contact details.
 
-const SEARCH_RESULT_LIMIT = 24;
+const SEARCH_PAGE_SIZE = 24;
 
 type DonorCard = {
   /** `reg:<user_id>` or `imp:<public_id>` - the token used to ask for a reveal. */
@@ -1079,49 +1081,79 @@ async function findRequestDonors(params: {
   district: string;
   upazila: string;
   excludeUserId?: string;
-  limit?: number;
+  page?: number;
+  pageSize?: number;
 }) {
   const compatibleGroups = COMPATIBLE_DONORS[params.bloodGroup] || [params.bloodGroup];
   const upazilas = getUpazilaVariants(params.district, params.upazila);
-  const limit = params.limit ?? SEARCH_RESULT_LIMIT;
+  const pageSize = params.pageSize ?? SEARCH_PAGE_SIZE;
   const requester = params.excludeUserId ? users.find(user => user.id === params.excludeUserId) : undefined;
 
-  const registered = rankDonorResults(
+  const allRegistered = rankDonorResults(
     users
-      .filter(user => user.id !== params.excludeUserId)
-      .filter(user => user.account_status !== 'SUSPENDED' && !user.deleted_at && user.is_verified)
-      .filter(user => !params.excludeUserId || !user.blocked_user_ids?.includes(params.excludeUserId))
-      .filter(user => !requester?.blocked_user_ids?.includes(user.id))
-      .filter(user => matchesUpazilaSearch(user.donor_profile, {
+      .filter(user => registeredMatchesRequestSearch(user, {
         compatibleGroups,
         district: params.district,
-        upazilas
-      }))
+        upazilas,
+        excludeUserId: params.excludeUserId
+      }, requester))
       .map(user => registeredDonorCard(user, params.bloodGroup)),
     params.bloodGroup
   );
 
+  let directoryTotal = 0;
+  try {
+    directoryTotal = await countImportedDonors({
+      district: params.district,
+      upazilas,
+      bloodGroups: compatibleGroups,
+      claimStatus: 'UNCLAIMED'
+    });
+  } catch {
+    // Imported records supplement registered donors. A storage problem must
+    // not hide registered matches.
+    directoryTotal = 0;
+  }
+
+  const total = allRegistered.length + directoryTotal;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(1, params.page || 1), totalPages);
+  const offset = (page - 1) * pageSize;
+  const registered = allRegistered.slice(offset, offset + pageSize);
+  const directorySlots = Math.max(0, pageSize - registered.length);
   let directory: DonorCard[] = [];
-  if (registered.length < limit) {
+
+  if (directorySlots > 0 && offset + registered.length >= allRegistered.length) {
     try {
       const listings = await queryImportedDonorsForRequest({
         district: params.district,
         upazilas,
         bloodGroups: compatibleGroups,
-        limit: limit - registered.length
+        limit: directorySlots,
+        offset: Math.max(0, offset - allRegistered.length)
       });
       directory = rankDonorResults(
         listings.map(listing => importedDonorCard(listing, params.bloodGroup)),
         params.bloodGroup
       );
     } catch {
-      // The directory is a supplement. If it is unavailable the registered
-      // results are still worth showing.
       directory = [];
     }
   }
 
-  return { registered, directory, compatibleGroups, upazilas };
+  return {
+    registered,
+    directory,
+    compatibleGroups,
+    upazilas,
+    totals: { registered: allRegistered.length, directory: directoryTotal },
+    pagination: {
+      page,
+      page_size: pageSize,
+      total,
+      total_pages: totalPages
+    }
+  };
 }
 
 /** Shared by the search route and the reveal route's membership check. */
@@ -1357,6 +1389,31 @@ function otpVerificationPayload(phone: string, purpose: OtpChallenge['purpose'],
   };
 }
 
+function registeredMatchesRequestSearch(
+  user: User,
+  params: { compatibleGroups: string[]; district: string; upazilas: string[]; excludeUserId?: string },
+  requester?: User
+) {
+  return user.id !== params.excludeUserId &&
+    user.account_status !== 'SUSPENDED' &&
+    !user.deleted_at &&
+    user.is_verified &&
+    (!params.excludeUserId || !user.blocked_user_ids?.includes(params.excludeUserId)) &&
+    !requester?.blocked_user_ids?.includes(user.id) &&
+    matchesUpazilaSearch(user.donor_profile, params);
+}
+
+function importedMatchesRequestSearch(
+  donor: ImportedDonor,
+  params: { compatibleGroups: string[]; district: string; upazilas: string[] }
+) {
+  const sameText = (left: string, right: string) => left.trim().toLocaleLowerCase('en-US') === right.trim().toLocaleLowerCase('en-US');
+  return donor.claim_status === 'UNCLAIMED' &&
+    params.compatibleGroups.includes(donor.blood_group) &&
+    sameText(donor.district, params.district) &&
+    params.upazilas.some(upazila => sameText(donor.upazila, upazila));
+}
+
 async function consumeChallenge(challenge: OtpChallenge) {
   challenge.verification_expires_at = new Date(0).toISOString();
   await saveToTable('common_otps', challenge);
@@ -1417,16 +1474,30 @@ app.get('/api/donors/search', async (req, res) => {
  * requires a published request and is recorded.
  */
 app.get('/api/search/donors', async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   const parsed = parseUpazilaSearch(req.query as Record<string, unknown>);
   if ('error' in parsed) return validationError(res, parsed.error);
 
   const auth = getCurrentAuth(req);
   const { bloodGroup, location, upazila } = parsed.value;
-  const { registered, directory, compatibleGroups } = await findRequestDonors({
+  const requestedPage = Math.max(1, Math.min(10_000, Math.floor(Number(req.query.page) || 1)));
+  const budget = dailySearchBudget.consume({
+    identities: [auth ? `user:${auth.user.id}` : '', `ip:${req.ip || req.socket.remoteAddress || 'unknown'}`],
+    bloodGroup,
+    district: location.area_name,
+    upazila
+  });
+  res.setHeader('X-Daily-Search-Limit', String(DAILY_UNIQUE_SEARCH_LIMIT));
+  res.setHeader('X-Daily-Search-Remaining', String(budget.remaining));
+  res.setHeader('X-Daily-Search-Reset', budget.resetAt);
+  if (!budget.allowed) return res.status(429).json({ error: budget.error, reset_at: budget.resetAt });
+
+  const { registered, directory, compatibleGroups, totals, pagination } = await findRequestDonors({
     bloodGroup,
     district: location.area_name,
     upazila,
-    excludeUserId: auth?.user.id
+    excludeUserId: auth?.user.id,
+    page: requestedPage
   });
 
   res.json({
@@ -1438,7 +1509,8 @@ app.get('/api/search/donors', async (req, res) => {
     },
     registered,
     directory,
-    totals: { registered: registered.length, directory: directory.length },
+    totals,
+    pagination,
     contact_access: 'masked'
   });
 });
@@ -1484,7 +1556,7 @@ app.get('/metrics', (_req, res) => {
 
 app.get('/robots.txt', (req, res) => {
   const origin = publicOrigin(req);
-  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nDisallow: /community/new\nDisallow: /directory/call/\nSitemap: ${origin}/sitemap.xml\n`);
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nDisallow: /community/new\nDisallow: /directory/call/\nDisallow: /directory/imported/\nSitemap: ${origin}/sitemap.xml\n`);
 });
 
 app.get('/sitemap.xml', asyncRoute(async (req, res) => {
@@ -2482,8 +2554,6 @@ const revealLimiter = rateLimit({
   message: { error: 'Too many contact reveals, please try again later' }
 });
 
-/** How wide the membership re-check looks; a superset of one result page. */
-const REVEAL_MATCH_LIMIT = 200;
 /** A reveal is only "unreported" once the caller has had time to dial. */
 async function requestCallReports(requestId: string, actorId?: string) {
   return await queryCallReports<CallReport>({ requestId, actorId, limit: 1_000 });
@@ -2556,14 +2626,29 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
   // requester would then be blocked by a reveal they can no longer report on.
   const openForDonor = unansweredReveals(reports).find(report => report.donor_ref === donorRef);
 
-  const { registered, directory } = await findRequestDonors({
-    bloodGroup: request.blood_group as BloodGroup,
-    district: request.location.area_name,
-    upazila: request.upazila,
-    excludeUserId: auth.user.id,
-    limit: REVEAL_MATCH_LIMIT
-  });
-  const card = [...registered, ...directory].find(item => item.donor_ref === donorRef);
+  const compatibleGroups = COMPATIBLE_DONORS[request.blood_group as BloodGroup] || [request.blood_group];
+  const upazilas = getUpazilaVariants(request.location.area_name, request.upazila);
+  let card: DonorCard | undefined;
+  if (reference.kind === 'REGISTERED') {
+    const donor = users.find(user => user.id === reference.id);
+    if (donor && registeredMatchesRequestSearch(donor, {
+      compatibleGroups,
+      district: request.location.area_name,
+      upazilas,
+      excludeUserId: auth.user.id
+    }, auth.user)) {
+      card = registeredDonorCard(donor, request.blood_group);
+    }
+  } else {
+    const donor = await getImportedDonor(reference.id);
+    if (donor && importedMatchesRequestSearch(donor, {
+      compatibleGroups,
+      district: request.location.area_name,
+      upazilas
+    })) {
+      card = importedDonorCard(donor, request.blood_group);
+    }
+  }
   if (!card) return res.status(409).json({ error: 'That donor is no longer among this request\'s matches' });
 
   let phone = '';
@@ -3569,67 +3654,24 @@ app.post('/api/organizations/:id/campaigns', async (req, res) => {
   res.status(201).json(campaign);
 });
 
-// --- Imported donor directory -------------------------------------------
+// --- Imported donor ownership -------------------------------------------
 //
 // Profiles imported from other organisations' public donor listings. These
-// people never registered here, so the directory is intentionally weaker than
-// the live donor index: contact numbers are always masked, entries are never
-// matched to requests automatically, and a record only becomes a usable donor
-// profile once its owner claims it.
-
-const DIRECTORY_PAGE_SIZE = 24;
+// people never registered here. They can appear only inside a scoped donor
+// search, while opaque profile URLs remain available for ownership claims and
+// self-service removal.
 
 async function loadImportedDonor(id: string): Promise<ImportedDonor | null> {
   const value = cleanString(id, 200);
   return value ? await getImportedDonor(value) : null;
 }
 
-app.get('/api/directory', async (req, res) => {
-  const group = typeof req.query.blood_group === 'string' && BLOOD_GROUPS.includes(req.query.blood_group as BloodGroup)
-    ? req.query.blood_group
-    : '';
-  const district = cleanString(req.query.district, 100) || '';
-  const sourceId = cleanString(req.query.source, 60) || '';
-  const search = cleanString(req.query.q, 60) || '';
-  const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
-  // Only unclaimed rows are browsable: once a profile is claimed its owner
-  // shows up in the real donor index instead.
-  const query = {
-    bloodGroups: group ? [group] : undefined,
-    district: district || undefined,
-    sourceId: sourceId || undefined,
-    claimStatus: 'UNCLAIMED',
-    search: search || undefined,
-    limit: DIRECTORY_PAGE_SIZE,
-    offset: (page - 1) * DIRECTORY_PAGE_SIZE
-  };
-
-  try {
-    const [donors, total] = await Promise.all([queryImportedDonors(query), countImportedDonors(query)]);
-    res.json({
-      donors: donors.map(toPublicImportedDonor),
-      total,
-      page,
-      page_size: DIRECTORY_PAGE_SIZE
-    });
-  } catch {
-    res.status(503).json({ error: 'Directory is unavailable' });
-  }
+app.get('/api/directory', (_req, res) => {
+  res.status(404).json({ error: 'Directory browsing is not available. Search for donors by blood group, district, and upazila.' });
 });
 
-// Attribution for every listing that has been imported, so a donor can see
-// where their details were published and go back to the original.
-app.get('/api/directory/sources', async (_req, res) => {
-  try {
-    const summaries = await Promise.all(IMPORT_SOURCES.map(async source => ({
-      ...source,
-      total: await countImportedDonors({ sourceId: source.id }),
-      unclaimed: await countImportedDonors({ sourceId: source.id, claimStatus: 'UNCLAIMED' })
-    })));
-    res.json({ sources: summaries.filter(source => source.total > 0) });
-  } catch {
-    res.status(503).json({ error: 'Directory is unavailable' });
-  }
+app.get('/api/directory/sources', (_req, res) => {
+  res.status(404).json({ error: 'Directory source browsing is not available.' });
 });
 
 app.get('/api/directory/:id', async (req, res) => {

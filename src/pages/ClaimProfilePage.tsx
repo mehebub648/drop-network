@@ -76,7 +76,7 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
     return (
       <div className="max-w-xl mx-auto theme-card p-12 text-center border border-slate-100 shadow-sm">
         <p className="text-slate-600 font-bold">{error || 'Profile not found.'}</p>
-        <Link to="/directory/imported" className="text-primary font-bold hover:underline mt-4 inline-block">Back to the imported archive</Link>
+        <Link to="/directory" className="text-primary font-bold hover:underline mt-4 inline-block">Back to donor search</Link>
       </div>
     );
   }
@@ -97,8 +97,8 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
             ? 'Your donor profile has been filled in. You are still marked unavailable until you choose to turn availability on.'
             : 'We could not verify ownership automatically, so a moderator will check this claim before the profile becomes yours.'}
         </p>
-        <button onClick={() => navigate(approved ? '/profile/donor' : '/directory/imported')} className="theme-button px-6 py-3 font-bold">
-          {approved ? 'Go to my donor profile' : 'Back to the imported archive'}
+        <button onClick={() => navigate(approved ? '/profile/donor' : '/directory')} className="theme-button px-6 py-3 font-bold">
+          {approved ? 'Go to my donor profile' : 'Back to donor search'}
         </button>
       </div>
     );

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Archive,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   MapPin,
   PhoneCall,
   RefreshCw,
+  ShieldCheck,
   SlidersHorizontal,
   UserRound,
   UserRoundSearch
@@ -27,6 +29,7 @@ type SearchResponse = {
   registered: SearchDonorCard[];
   directory: SearchDonorCard[];
   totals: { registered: number; directory: number };
+  pagination: { page: number; page_size: number; total: number; total_pages: number };
 };
 
 /**
@@ -70,6 +73,7 @@ export default function DonorSearchPage({
   const bloodGroup = searchParams.get('blood_group') || '';
   const district = searchParams.get('district') || '';
   const upazila = searchParams.get('upazila') || '';
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
   const hasQuery = Boolean(bloodGroup && district && upazila);
   const contextComplete = Boolean(draft.collection_facility.trim() && draft.requester_role);
   const draftRef = useRef(draft);
@@ -88,7 +92,7 @@ export default function DonorSearchPage({
     let cancelled = false;
     setLoading(true);
     setError('');
-    api.searchDonorsByUpazila({ blood_group: bloodGroup, district, upazila })
+    api.searchDonorsByUpazila({ blood_group: bloodGroup, district, upazila, page })
       .then(response => {
         if (!cancelled) setResults(response);
       })
@@ -104,7 +108,7 @@ export default function DonorSearchPage({
     return () => {
       cancelled = true;
     };
-  }, [bloodGroup, district, upazila, hasQuery, reloadKey]);
+  }, [bloodGroup, district, upazila, page, hasQuery, reloadKey]);
 
   useEffect(() => {
     if (!hasQuery || !contextComplete) setRefineOpen(true);
@@ -136,6 +140,14 @@ export default function DonorSearchPage({
       upazila: draft.upazila
     });
     setRefineOpen(false);
+  };
+
+  const goToPage = (nextPage: number) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextPage <= 1) next.delete('page');
+    else next.set('page', String(nextPage));
+    setSearchParams(next);
+    document.getElementById('search-results-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   /** Publishes the request if needed, unmasks the number, opens the call page. */
@@ -254,7 +266,7 @@ export default function DonorSearchPage({
 
               <p className="mt-5 max-w-3xl text-sm font-medium leading-6 text-slate-600">
                 Your home-page search is still here. Choose a match below, or refine these details without
-                leaving the directory.
+                losing the request information you already added.
               </p>
 
               {!contextComplete && (
@@ -302,7 +314,7 @@ export default function DonorSearchPage({
             </div>
             {!loading && results && (
               <span className="inline-flex min-h-9 items-center self-start rounded-full border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-800 sm:self-auto">
-                {donors.length} match{donors.length === 1 ? '' : 'es'}
+                {results.pagination.total} match{results.pagination.total === 1 ? '' : 'es'}
               </span>
             )}
           </div>
@@ -350,37 +362,59 @@ export default function DonorSearchPage({
               action={<button type="button" onClick={() => setReloadKey(value => value + 1)} className="theme-button"><RefreshCw className="h-4 w-4" aria-hidden="true" />Search again</button>}
             />
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {donors.map(donor => (
-                <DonorResultCard
-                  key={donor.donor_ref}
-                  donor={donor}
-                  onSelect={selectDonor}
-                  busy={busyRef === donor.donor_ref}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                {donors.map(donor => (
+                  <DonorResultCard
+                    key={donor.donor_ref}
+                    donor={donor}
+                    onSelect={selectDonor}
+                    busy={busyRef === donor.donor_ref}
+                  />
+                ))}
+              </div>
+              {results && results.pagination.total_pages > 1 && (
+                <nav className="mt-6 flex items-center justify-center gap-3" aria-label="Donor result pages">
+                  <button
+                    type="button"
+                    disabled={results.pagination.page <= 1 || loading}
+                    onClick={() => goToPage(results.pagination.page - 1)}
+                    className="button button-secondary"
+                  >
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                    Previous
+                  </button>
+                  <span className="text-sm font-bold text-slate-700">
+                    Page {results.pagination.page} of {results.pagination.total_pages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={results.pagination.page >= results.pagination.total_pages || loading}
+                    onClick={() => goToPage(results.pagination.page + 1)}
+                    className="button button-secondary"
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </nav>
+              )}
+            </>
           )}
         </section>
       )}
 
       <aside className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-              <Archive className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div>
-              <h2 className="font-extrabold text-slate-950">Browsing rather than searching?</h2>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-                The imported archive lists donors published by other organisations. Numbers there stay
-                masked while you browse; they open only through a request like the one above.
-              </p>
-            </div>
+        <div className="flex gap-4">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="font-extrabold text-slate-950">Search-only donor access</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+              Drop has no browsable donor directory. Search is limited daily by account and IP to three districts,
+              three blood groups, and nine unique searches. Moving between pages of the same search does not use another search.
+            </p>
           </div>
-          <Link to="/directory/imported" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-extrabold text-slate-800 hover:bg-slate-50">
-            Browse imported listings
-          </Link>
         </div>
       </aside>
 

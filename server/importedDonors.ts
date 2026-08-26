@@ -10,8 +10,8 @@
 // The single exception is `toRevealedImportedDonor`, used by the phone-reveal
 // route: a verified account that has published a blood request for this
 // person's own district and upazila may read the number in order to call them
-// once. Every reveal is recorded. Browsing the directory never reveals
-// anything, and a revealed number is not a licence to redistribute it.
+// once. Every reveal is recorded. There is no browsable directory, and a
+// revealed number is not a licence to redistribute it.
 //
 // A claim is auto-approved only when the claimant's own verified phone number
 // matches the number the source published. Everything else - records with no
@@ -45,8 +45,8 @@ export type ImportSourceDescriptor = {
 
 /**
  * The registry of listings this project imports from. It is the single source
- * of truth: `scripts/scrape/sources/*` build on these descriptors and the
- * directory renders them as attribution.
+ * of truth: `scripts/scrape/sources/*` build on these descriptors and scoped
+ * search results render them as attribution.
  */
 export const IMPORT_SOURCES: ImportSourceDescriptor[] = [
   {

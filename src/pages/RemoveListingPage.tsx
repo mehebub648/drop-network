@@ -8,8 +8,8 @@ import { PageHeader, StatusBadge, Surface } from '../components/ui';
  * Self-service removal for people whose number was scraped from someone else's
  * public listing.
  *
- * No account, on purpose. The only other route off the directory is claiming
- * the profile, which means signing up in order to leave. Proving control of the
+ * No account, on purpose. Claiming the imported profile would otherwise mean
+ * signing up in order to remove it. Proving control of the
  * number with a code is the normal check. Superadmin-controlled test mode can
  * bypass it and is visibly labelled across the app while active.
  *
