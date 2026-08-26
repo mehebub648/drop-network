@@ -31,7 +31,7 @@ test('legacy imported rows gain an opaque public id without changing their stora
     upazila: 'Adabor'
   }, '2026-07-29T00:00:00.000Z');
   const legacyStorageId = 'imp_deadbeef_i_phone%3A%2B8801961161996';
-  const { public_id: _publicId, ...legacyDocument } = donor;
+  const { public_id: _publicId, claim_slug: _claimSlug, ...legacyDocument } = donor;
   const storedDocument = {
     ...legacyDocument,
     id: legacyStorageId,
@@ -58,11 +58,14 @@ test('legacy imported rows gain an opaque public id without changing their stora
   // The legacy row was written before either filterable column existed, so
   // this also covers the upazila backfill promoting the value out of `doc`.
   assert.equal(schema.fields.some(field => field.name === 'upazila'), true);
+  assert.equal(schema.fields.some(field => field.name === 'claim_slug'), true);
+  assert.equal(schema.fields.some(field => field.name === 'publication_state'), true);
 
   const hydrated = await database.getImportedDonor(donor.public_id);
   assert.ok(hydrated);
   assert.equal(hydrated.id, legacyStorageId);
   assert.equal(hydrated.public_id, donor.public_id);
+  assert.match(hydrated.claim_slug, /^[A-Za-z0-9_-]{12}$/);
   assert.equal(hydrated.claim_status, 'PENDING_REVIEW');
   assert.equal(hydrated.claimed_by, 'member-1');
   assert.equal(await database.getImportedDonor(legacyStorageId), null);
@@ -86,6 +89,35 @@ test('legacy imported rows gain an opaque public id without changing their stora
 
   await database.deleteImportedDonorsByPublicIds([donor.public_id]);
   assert.equal(await database.countImportedDonors(), 0);
+});
+
+test('private contributions are claimable by slug but absent from public reads', async () => {
+  const donor = toImportedDonor({
+    source_id: 'community-contribution',
+    source_organization: 'Community contribution',
+    source_url: '/contribute',
+    scraped_at: '2026-07-29T00:00:00.000Z',
+    source_ref: 'suggestion-1',
+    name: 'Private suggestion',
+    phone: '+8801811000033',
+    blood_group: 'AB+',
+    district: 'Khulna',
+    upazila: 'Khulna Sadar'
+  }, '2026-07-29T00:00:00.000Z');
+  donor.publication_state = 'PRIVATE_PENDING';
+  donor.contribution_expires_at = '2099-01-01T00:00:00.000Z';
+  await database.addImportedDonors([toImportedDonorRow(donor)]);
+
+  assert.equal(await database.getImportedDonor(donor.public_id), null);
+  assert.equal((await database.queryImportedDonors({ phone: donor.phone })).length, 0);
+  assert.equal(await database.countImportedDonors({ phone: donor.phone }), 0);
+
+  const claimable = await database.getImportedDonorByClaimSlug(donor.claim_slug);
+  assert.equal(claimable?.public_id, donor.public_id);
+  assert.equal(claimable?.publication_state, 'PRIVATE_PENDING');
+  assert.equal((await database.queryImportedDonors({ phone: donor.phone, includePrivate: true })).length, 1);
+
+  await database.deleteImportedDonorsByPublicIds([donor.public_id]);
 });
 
 test('unclaimed listings are reachable by any stored spelling of their upazila', async () => {
@@ -176,17 +208,18 @@ test('filters escape quoted values instead of breaking the predicate', () => {
   // `includeRemoved` here only so the escaping is compared against an exact
   // string; the listing-state clause is asserted separately below.
   assert.equal(
-    database.buildImportedFilter({ upazilas: ["Cox's Bazar Sadar"], includeRemoved: true }),
+    database.buildImportedFilter({ upazilas: ["Cox's Bazar Sadar"], includeRemoved: true, includePrivate: true }),
     `upazila IN ('Cox''s Bazar Sadar')`
   );
   assert.equal(
-    database.buildImportedFilter({ district: 'Dhaka', bloodGroups: ['A+', 'O-'], includeRemoved: true }),
+    database.buildImportedFilter({ district: 'Dhaka', bloodGroups: ['A+', 'O-'], includeRemoved: true, includePrivate: true }),
     `blood_group IN ('A+', 'O-') AND district = 'Dhaka'`
   );
   // Removed listings are excluded unless a caller opts in, so a new query
   // cannot expose them by forgetting to say so.
   assert.match(database.buildImportedFilter({}), /listing_state/);
-  assert.equal(database.buildImportedFilter({ includeRemoved: true }), '');
+  assert.match(database.buildImportedFilter({}), /publication_state/);
+  assert.equal(database.buildImportedFilter({ includeRemoved: true, includePrivate: true }), '');
 });
 
 test('call reports are queryable per request without loading the table', async () => {

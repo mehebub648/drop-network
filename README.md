@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.85`
+Current version: `0.0.86`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -166,10 +166,20 @@ directory. Their masked records can appear only inside a blood-group, district,
 and upazila search. The only way a listing's number is served in full is the
 one-at-a-time reveal behind a published blood request in that person's own
 upazila, which is recorded and refuses to open another number until the last
-call is reported. Detail and claim screens use `/directory/imported/:id` with
-opaque public IDs that contain no phone or source key. A successful claim
-verifies ownership but starts the registered donor profile unavailable; the
-owner must separately opt in before appearing in live search.
+call is reported. Each record has a collision-checked 12-character owner link
+at `/c/:slug`; older `/directory/imported/:id` and `/directory/:id` links
+redirect to it. The owner can change the phone before requesting a purpose-
+bound Messavo code, then must confirm name, blood group, district, upazila,
+availability, and consent with no preselected defaults. A matching phone claims
+the stub. A different unique phone creates or updates that person's own
+passwordless profile and leaves the original listing unclaimed.
+
+Anyone can use `/contribute` to create a private donor suggestion. It remains
+unsearchable, sends no unsolicited SMS, and expires after 30 days unless the
+phone owner opens the returned claim link, verifies, and consents. Intake uses
+honeypot, IP, browser-fingerprint, and phone duplicate controls with neutral
+responses. Import dry runs report preserved ownership state; real imports keep
+claim links, claims, withdrawals, and contribution state by stable public ID.
 
 Anyone listed can take their own number off at `/directory/remove` **without
 creating an account** — the alternative would be signing up in order to leave.

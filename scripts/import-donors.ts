@@ -10,12 +10,18 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { getLocationByName } from '../src/lib/locations';
-import { addImportedDonors, deleteImportedDonorsByPublicIds, ensureImportedDonorTable, findRemovedListings } from '../server/db';
+import {
+  addImportedDonors,
+  deleteImportedDonorsByPublicIds,
+  ensureImportedClaimSlugUniqueness,
+  ensureImportedDonorTable,
+  findImportedDonorsByPublicIds
+} from '../server/db';
 import {
   dedupeKey,
   toImportedDonor,
   toImportedDonorRow,
-  withdrawImportedDonor,
+  withCollisionCheckedClaimSlugs,
   type ImportedDonor,
   type ScrapedRecordInput
 } from '../server/importedDonors';
@@ -136,33 +142,52 @@ async function main() {
     `  ${placed} with both a district and a blood group`
   );
 
+  await ensureImportedDonorTable();
+  const previousById = await findImportedDonorsByPublicIds(donors.map(donor => donor.public_id));
+  const merged = withCollisionCheckedClaimSlugs(donors.map(donor => {
+    const previous = previousById.get(donor.public_id);
+    if (!previous) return donor;
+    return {
+      ...donor,
+      claim_slug: previous.claim_slug,
+      claim_status: previous.claim_status,
+      claimed_by: previous.claimed_by,
+      claimed_at: previous.claimed_at,
+      claim_note: previous.claim_note,
+      listing_state: previous.listing_state,
+      removed_at: previous.removed_at,
+      publication_state: previous.publication_state,
+      contributed_at: previous.contributed_at,
+      contribution_expires_at: previous.contribution_expires_at,
+      contribution_fingerprint_hash: previous.contribution_fingerprint_hash,
+      imported_at: previous.imported_at
+    };
+  }));
+  const preserved = merged.filter(donor => previousById.has(donor.public_id)).length;
+  const preservedClaims = merged.filter(donor => donor.claim_status !== 'UNCLAIMED').length;
+  const preservedRemovals = merged.filter(donor => donor.listing_state === 'REMOVED').length;
+  const preservedContributions = merged.filter(donor => donor.publication_state === 'PRIVATE_PENDING').length;
+
+  console.log(
+    `  ${preserved} existing row(s) retain stable state: ` +
+    `${preservedClaims} claim(s), ${preservedRemovals} removal(s), ` +
+    `${preservedContributions} private contribution(s)`
+  );
   if (dryRun) {
     console.log('\n--dry-run: nothing written.');
     return;
   }
 
-  await ensureImportedDonorTable();
-  let preserved = 0;
-  for (let index = 0; index < donors.length; index += BATCH_SIZE) {
-    const batch = donors.slice(index, index + BATCH_SIZE);
-    // Someone who asked to be taken off the directory stays off it. The source
-    // still publishes them, so without carrying the withdrawal forward this
-    // import would undo their request.
-    const removed = await findRemovedListings(batch.map(donor => donor.public_id));
-    preserved += removed.size;
+  for (let index = 0; index < merged.length; index += BATCH_SIZE) {
+    const batch = merged.slice(index, index + BATCH_SIZE);
     // Public ids remain stable across the legacy and opaque storage-id formats,
     // so reimports replace old rows instead of leaving duplicates behind.
     await deleteImportedDonorsByPublicIds(batch.map(donor => donor.public_id));
-    await addImportedDonors(batch.map(donor => {
-      const removedAt = removed.get(donor.public_id);
-      return toImportedDonorRow(removedAt ? withdrawImportedDonor(donor, removedAt) : donor);
-    }));
-    console.log(`imported ${Math.min(index + BATCH_SIZE, donors.length)}/${donors.length}`);
+    await addImportedDonors(batch.map(toImportedDonorRow));
+    console.log(`imported ${Math.min(index + BATCH_SIZE, merged.length)}/${merged.length}`);
   }
-  console.log(
-    `\nImport complete.` +
-    (preserved > 0 ? `\n  ${preserved} withdrawn listing(s) kept off the directory.` : '')
-  );
+  await ensureImportedClaimSlugUniqueness();
+  console.log('\nImport complete. Claim slugs, claims, removals, and contribution state were preserved.');
 }
 
 main().catch(error => {

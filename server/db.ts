@@ -5,6 +5,7 @@ import {
   IMPORTED_ROW_VERSION,
   toImportedDonorRow,
   withImportedDonorIdentity,
+  withCollisionCheckedClaimSlugs,
   withdrawImportedDonor,
   type ImportedDonor
 } from './importedDonors';
@@ -158,7 +159,10 @@ export type ImportedDonorRow = {
   id: string;
   row_version: string;
   listing_state: string;
+  publication_state: string;
   public_id: string;
+  claim_slug: string;
+  contribution_expires_at: string;
   blood_group: string;
   district: string;
   upazila: string;
@@ -196,7 +200,7 @@ function importedDonorFromRow(row: Record<string, unknown>): ImportedDonor {
 async function backfillImportedDonorColumns(table: lancedb.Table) {
   const stalePredicate = `row_version IS NULL OR row_version <> ${stringLiteral(IMPORTED_ROW_VERSION)}`;
   const total = await table.countRows(stalePredicate);
-  if (total === 0) return;
+  if (total === 0) return false;
 
   // A full-table rewrite is slow enough that a silent boot would look like a
   // hang. /ready stays 503 until it finishes.
@@ -220,6 +224,22 @@ async function backfillImportedDonorColumns(table: lancedb.Table) {
     console.log(`imported_donors: migrated ${done}/${total}`);
   }
   console.log('imported_donors: migration complete');
+  return true;
+}
+
+async function resolveImportedClaimSlugCollisions(table: lancedb.Table) {
+  const rows = await table.query().toArray();
+  const donors = (rows as unknown as Array<Record<string, unknown>>).map(importedDonorFromRow);
+  const resolved = withCollisionCheckedClaimSlugs(donors);
+  const changed = resolved.filter((donor, index) => donor.claim_slug !== donors[index]?.claim_slug);
+  if (changed.length > 0) {
+    await table.mergeInsert('id').whenMatchedUpdateAll().execute(changed.map(toImportedDonorRow));
+  }
+}
+
+/** Full-table uniqueness pass used after a bulk import or schema backfill. */
+export async function ensureImportedClaimSlugUniqueness() {
+  await resolveImportedClaimSlugCollisions(await ensureImportedDonorTable());
 }
 
 /**
@@ -247,9 +267,12 @@ async function prepareImportedDonorTable() {
     // bump `row_version`, because nothing needs rewriting from `doc`.
     const defaults: Record<string, string> = {
       public_id: "''",
+      claim_slug: "''",
       upazila: "''",
       row_version: "''",
-      listing_state: "'ACTIVE'"
+      listing_state: "'ACTIVE'",
+      publication_state: "'PUBLIC'",
+      contribution_expires_at: "''"
     };
     const missing = Object.keys(defaults)
       .filter(name => !schema.fields.some(field => field.name === name));
@@ -257,7 +280,9 @@ async function prepareImportedDonorTable() {
       await table.addColumns(missing.map(name => ({ name, valueSql: defaults[name] })));
     }
     await deleteContactlessImportedDonors(table);
-    await backfillImportedDonorColumns(table);
+    if (await backfillImportedDonorColumns(table)) {
+      await resolveImportedClaimSlugCollisions(table);
+    }
     return table;
   }
 
@@ -266,7 +291,10 @@ async function prepareImportedDonorTable() {
     id: 'dummy',
     row_version: IMPORTED_ROW_VERSION,
     listing_state: 'ACTIVE',
+    publication_state: 'PUBLIC',
     public_id: '',
+    claim_slug: '',
+    contribution_expires_at: '',
     blood_group: '',
     district: '',
     upazila: '',
@@ -330,6 +358,8 @@ export type ImportedDonorQuery = {
   upazilas?: string[];
   sourceId?: string;
   claimStatus?: string;
+  claimSlug?: string;
+  publicationState?: string;
   /** Exact E.164 match, used by the self-service removal flow. */
   phone?: string;
   /** Case-insensitive substring match against name/district/upazila. */
@@ -340,6 +370,8 @@ export type ImportedDonorQuery = {
    * that set it are the withdrawal itself and staff tooling.
    */
   includeRemoved?: boolean;
+  /** Include owner-unverified anonymous suggestions. Off by default. */
+  includePrivate?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -354,6 +386,9 @@ export function buildImportedFilter(query: ImportedDonorQuery) {
     // visible, and `x <> 'REMOVED'` is not true for NULL.
     clauses.push(`(listing_state IS NULL OR listing_state <> ${stringLiteral('REMOVED')})`);
   }
+  if (!query.includePrivate) {
+    clauses.push(`(publication_state IS NULL OR publication_state = ${stringLiteral('PUBLIC')})`);
+  }
   if (query.bloodGroups?.length) {
     clauses.push(`blood_group IN (${query.bloodGroups.map(stringLiteral).join(', ')})`);
   }
@@ -363,6 +398,8 @@ export function buildImportedFilter(query: ImportedDonorQuery) {
   }
   if (query.sourceId) clauses.push(`source_id = ${stringLiteral(query.sourceId)}`);
   if (query.claimStatus) clauses.push(`claim_status = ${stringLiteral(query.claimStatus)}`);
+  if (query.claimSlug) clauses.push(`claim_slug = ${stringLiteral(query.claimSlug)}`);
+  if (query.publicationState) clauses.push(`publication_state = ${stringLiteral(query.publicationState)}`);
   if (query.phone) clauses.push(`phone = ${stringLiteral(query.phone)}`);
   if (query.search) {
     clauses.push(`search_text LIKE ${stringLiteral(`%${query.search.toLowerCase()}%`)}`);
@@ -424,6 +461,7 @@ export async function queryImportedDonorsForRequest(params: {
 export async function getImportedDonor(publicId: string, options: { includeRemoved?: boolean } = {}) {
   const table = await readable(await ensureImportedDonorTable());
   const clauses = [`public_id = ${stringLiteral(publicId)}`];
+  clauses.push(`(publication_state IS NULL OR publication_state = ${stringLiteral('PUBLIC')})`);
   if (!options.includeRemoved) {
     clauses.push(`(listing_state IS NULL OR listing_state <> ${stringLiteral('REMOVED')})`);
   }
@@ -431,6 +469,39 @@ export async function getImportedDonor(publicId: string, options: { includeRemov
   return results.length > 0
     ? importedDonorFromRow(results[0] as unknown as Record<string, unknown>)
     : null;
+}
+
+/** Owner-facing claim lookup, including still-private anonymous suggestions. */
+export async function getImportedDonorByClaimSlug(claimSlug: string, options: { includeRemoved?: boolean } = {}) {
+  const donors = await queryImportedDonors({
+    claimSlug,
+    includePrivate: true,
+    includeRemoved: options.includeRemoved,
+    limit: 1
+  });
+  return donors[0] || null;
+}
+
+/**
+ * State that must survive a source refresh. Returning hydrated documents keeps
+ * claim, contribution, removal, and later moderation fields together.
+ */
+export async function findImportedDonorsByPublicIds(publicIds: string[]) {
+  const found = new Map<string, ImportedDonor>();
+  if (publicIds.length === 0) return found;
+  const table = await readable(await ensureImportedDonorTable());
+  for (let index = 0; index < publicIds.length; index += 500) {
+    const chunk = publicIds.slice(index, index + 500);
+    const rows = await table.query()
+      .where(`public_id IN (${chunk.map(stringLiteral).join(', ')})`)
+      .limit(chunk.length)
+      .toArray();
+    for (const row of rows as unknown as Array<Record<string, unknown>>) {
+      const donor = importedDonorFromRow(row);
+      found.set(donor.public_id, donor);
+    }
+  }
+  return found;
 }
 
 /**

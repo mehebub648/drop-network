@@ -26,8 +26,9 @@ import SettingsPage from './pages/profile/SettingsPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import RouteMetadata from './components/RouteMetadata';
 import PartnersPage from './pages/PartnersPage';
-import ClaimProfilePage from './pages/ClaimProfilePage';
+import ClaimProfilePage, { LegacyClaimRedirect } from './pages/ClaimProfilePage';
 import RemoveListingPage from './pages/RemoveListingPage';
+import ContributeDonorPage from './pages/ContributeDonorPage';
 import DonorSearchPage from './pages/DonorSearchPage';
 import CallOutcomeGate from './components/CallOutcomeGate';
 import { getSafeReturnTo } from './lib/navigation';
@@ -100,8 +101,10 @@ export default function App() {
             {/* Deliberately account-free: removal must not require somebody to
                 claim a profile and sign up just to take imported data down. */}
             <Route path="/directory/remove" element={<RemoveListingPage />} />
-            <Route path="/directory/imported/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
-            <Route path="/directory/:id" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
+            <Route path="/directory/imported/:id" element={<LegacyClaimRedirect />} />
+            <Route path="/directory/:id" element={<LegacyClaimRedirect />} />
+            <Route path="/c/:slug" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
+            <Route path="/contribute" element={<ContributeDonorPage />} />
             <Route path="/login" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile"><LoginPage onLogin={fetchUser} /></GuestOnlyRoute>} />
             <Route path="/register" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile/donor"><RegisterPage onLogin={fetchUser} /></GuestOnlyRoute>} />
             <Route path="/forgot-password" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile/security"><ForgotPasswordPage /></GuestOnlyRoute>} />

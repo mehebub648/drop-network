@@ -38,7 +38,7 @@ async function readJsonOrThrow(res: Response, fallbackMessage: string) {
   return result;
 }
 
-export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN' | 'REMOVE_LISTING';
+export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN' | 'REMOVE_LISTING' | 'CLAIM_PROFILE';
 export type OtpDeliveryStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'canceled' | 'bypassed';
 export type OtpDelivery = {
   challenge_id: string;
@@ -596,6 +596,45 @@ export const api = {
   async getDirectoryProfile(id: string) {
     const res = await fetch(`${API_BASE}/directory/${encodeURIComponent(id)}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load that profile');
+  },
+
+  async getClaimProfile(slug: string) {
+    const res = await fetch(`${API_BASE}/claims/${encodeURIComponent(slug)}`, {
+      headers: getHeaders(),
+      cache: 'no-store'
+    });
+    return readJsonOrThrow(res, 'Failed to load that claim profile');
+  },
+
+  async completeClaimProfile(slug: string, body: {
+    phone: string;
+    verification_token: string;
+    name: string;
+    blood_group: string;
+    district: string;
+    upazila: string;
+    availability_status: 'AVAILABLE' | 'NOT_AVAILABLE';
+    availability_reason?: string;
+    availability_consent: true;
+  }) {
+    const res = await fetch(`${API_BASE}/claims/${encodeURIComponent(slug)}/complete`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to complete that claim');
+  },
+
+  async contributeDonor(body: {
+    name: string;
+    phone: string;
+    blood_group?: string;
+    district?: string;
+    upazila?: string;
+    website?: string;
+  }) {
+    const res = await fetch(`${API_BASE}/contributions`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to create a private donor suggestion');
   },
 
   async claimDirectoryProfile(id: string, body: { name?: string; blood_group?: string; location?: { lat: number; lng: number; area_name: string } }) {

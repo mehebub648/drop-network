@@ -7,11 +7,11 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
-import { randomInt } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { v4 as uuidv4 } from 'uuid';
-import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, replaceImportedDonor, withdrawImportedDonorsByPhone, addCallReports, queryCallReports } from './db';
-import { evaluateClaim, maskPhone, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor } from './importedDonors';
+import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports } from './db';
+import { claimSlugForPublicId, evaluateClaim, maskPhone, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
 import { getLocationByName } from './locations';
 import { getSmsProvider, isSmsConfigured, type SmsDeliveryStatus } from './sms';
 import { getUpazilaByName, getUpazilaVariants } from './upazilas';
@@ -91,6 +91,7 @@ const dailySearchBudget = new DailySearchBudget();
 let isReady = false;
 let communitySitemapCache: { origin: string; xml: string; expiresAt: number } | null = null;
 const activeCommunityImageUploads = new Map<string, number>();
+const contributionFingerprintAttempts = new Map<string, number[]>();
 const REQUEST_STATUSES = ['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'] as const;
 const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
 const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
@@ -103,7 +104,7 @@ const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
 // REMOVE_LISTING lets someone who never signed up take their scraped number off
 // the directory. It needs no account, which is the point: requiring one would
 // mean opting in to opt out.
-const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'SIGN_IN', 'REMOVE_LISTING'] as const;
+const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'SIGN_IN', 'REMOVE_LISTING', 'CLAIM_PROFILE'] as const;
 const allowedCorsOrigins = new Set(
   (process.env.CORS_ORIGIN || process.env.APP_URL || '')
     .split(',')
@@ -1546,6 +1547,14 @@ app.get('/api/search/donors', async (req, res) => {
     pagination,
     contact_access: 'masked'
   });
+});
+
+const contributionLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many donor suggestions; try again tomorrow' }
 });
 
 async function currentStaticAssetHealth(): Promise<StaticAssetHealth | { status: 'skipped'; checked: string[]; failures: [] }> {
@@ -3822,6 +3831,119 @@ app.post('/api/organizations/:id/campaigns', async (req, res) => {
   res.status(201).json(campaign);
 });
 
+const CONTRIBUTION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function contributionFingerprintAllowed(fingerprint: string) {
+  if (!fingerprint) return false;
+  const cutoff = Date.now() - CONTRIBUTION_TTL_MS;
+  const recent = (contributionFingerprintAttempts.get(fingerprint) || [])
+    .filter(timestamp => timestamp > cutoff);
+  if (recent.length >= 6) return false;
+  recent.push(Date.now());
+  contributionFingerprintAttempts.set(fingerprint, recent);
+  return true;
+}
+
+function fingerprintDigest(fingerprint: string) {
+  return createHash('sha256')
+    .update(`drop:contribution-fingerprint:v1\0${fingerprint}`, 'utf8')
+    .digest('hex');
+}
+
+function neutralContributionResponse(claimSlug?: string) {
+  const slug = claimSlug || createHash('sha256').update(uuidv4()).digest('base64url').slice(0, 12);
+  return {
+    success: true,
+    claim_path: `/c/${slug}`,
+    expires_at: new Date(Date.now() + CONTRIBUTION_TTL_MS).toISOString(),
+    message: 'Share this private link with the donor. Nothing is published until they verify and consent.'
+  };
+}
+
+async function expireAnonymousContributions() {
+  const now = Date.now();
+  const expired: ImportedDonor[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const batch = await queryImportedDonors({
+      publicationState: 'PRIVATE_PENDING',
+      includePrivate: true,
+      includeRemoved: true,
+      limit: 500,
+      offset
+    });
+    for (const donor of batch) {
+      if (donor.contribution_expires_at && new Date(donor.contribution_expires_at).getTime() <= now) {
+        expired.push(donor);
+      }
+    }
+    if (batch.length < 500) break;
+  }
+  for (const donor of expired) {
+    if (!donor.contribution_expires_at || new Date(donor.contribution_expires_at).getTime() > now) continue;
+    donor.publication_state = 'EXPIRED';
+    await replaceImportedDonor(toImportedDonorRow(donor));
+  }
+}
+
+/** Anonymous intake never sends SMS and never publishes the submitted phone. */
+app.post('/api/contributions', contributionLimiter, asyncRoute(async (req, res) => {
+  const fingerprint = getFingerprint(req);
+  const honeypot = optionalCleanString(req.body?.website, 200);
+  if (honeypot || !contributionFingerprintAllowed(fingerprint)) {
+    return res.status(202).json(neutralContributionResponse());
+  }
+
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const name = cleanString(req.body?.name, 100);
+  const bloodGroup = optionalCleanString(req.body?.blood_group, 3) || '';
+  const district = optionalCleanString(req.body?.district, 80) || '';
+  const upazila = optionalCleanString(req.body?.upazila, 80) || '';
+  if (!phone || !name) return validationError(res, 'A valid donor name and Bangladesh mobile are required');
+  if (bloodGroup && !isOneOf(bloodGroup, BLOOD_GROUPS)) return validationError(res, 'Choose a valid blood group');
+  const location = district ? getLocationByName(district) : null;
+  if (district && !location) return validationError(res, 'Choose a supported district');
+  if (upazila && (!district || parseUpazila(district, upazila) === null)) {
+    return validationError(res, 'Choose an upazila that belongs to the selected district');
+  }
+
+  const duplicate = (await queryImportedDonors({
+    phone,
+    includePrivate: true,
+    includeRemoved: true,
+    limit: 1
+  }))[0];
+  if (duplicate) return res.status(202).json(neutralContributionResponse(duplicate.claim_slug));
+
+  const now = new Date();
+  const record: ScrapedRecordInput = {
+    source_id: 'community-contribution',
+    source_organization: 'Community suggestion',
+    source_url: `${publicOrigin(req)}/contribute`,
+    scraped_at: now.toISOString(),
+    source_ref: uuidv4(),
+    name,
+    phone,
+    blood_group: bloodGroup,
+    district,
+    upazila
+  };
+  const donor = toImportedDonor(record, now.toISOString(), getLocationByName);
+  donor.publication_state = 'PRIVATE_PENDING';
+  donor.contributed_at = now.toISOString();
+  donor.contribution_expires_at = new Date(now.getTime() + CONTRIBUTION_TTL_MS).toISOString();
+  donor.contribution_fingerprint_hash = fingerprintDigest(fingerprint);
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    donor.claim_slug = claimSlugForPublicId(donor.public_id, attempt);
+    const collision = await getImportedDonorByClaimSlug(donor.claim_slug, { includeRemoved: true });
+    if (!collision || collision.public_id === donor.public_id) break;
+    if (attempt === 99) throw new Error('Unable to allocate a claim link');
+  }
+  await addImportedDonors([toImportedDonorRow(donor)]);
+  await audit('anonymous', 'DONOR_CONTRIBUTION_CREATED', 'IMPORTED_DONOR', donor.id);
+  res.status(202).json(neutralContributionResponse(donor.claim_slug));
+}));
+
 // --- Imported donor ownership -------------------------------------------
 //
 // Profiles imported from other organisations' public donor listings. These
@@ -3833,6 +3955,157 @@ async function loadImportedDonor(id: string): Promise<ImportedDonor | null> {
   const value = cleanString(id, 200);
   return value ? await getImportedDonor(value) : null;
 }
+
+async function loadClaimDonor(slug: string): Promise<ImportedDonor | null> {
+  const value = cleanString(slug, 12);
+  if (!value || !/^[A-Za-z0-9_-]{12}$/.test(value)) return null;
+  const donor = await getImportedDonorByClaimSlug(value);
+  if (!donor) return null;
+  if (
+    donor.publication_state === 'PRIVATE_PENDING' &&
+    donor.contribution_expires_at &&
+    new Date(donor.contribution_expires_at).getTime() <= Date.now()
+  ) {
+    donor.publication_state = 'EXPIRED';
+    await replaceImportedDonor(toImportedDonorRow(donor));
+    return null;
+  }
+  return donor.publication_state === 'EXPIRED' ? null : donor;
+}
+
+app.get('/api/claims/:slug', asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  const donor = await loadClaimDonor(req.params.slug);
+  if (!donor || donor.claim_status === 'CLAIMED') {
+    return res.status(404).json({ error: 'Claim profile not found' });
+  }
+  res.json(toPublicImportedDonor(donor));
+}));
+
+async function writeVerifiedClaimProfile(
+  user: User,
+  input: {
+    name: string;
+    bloodGroup: BloodGroup;
+    location: { lat: number; lng: number; area_name: string };
+    upazila: string;
+    availabilityStatus: 'AVAILABLE' | 'NOT_AVAILABLE';
+    availabilityReason?: string;
+  }
+) {
+  const now = new Date().toISOString();
+  const existing = user.donor_profile;
+  const history = [...(existing?.availability_history || [])];
+  if (!existing || existing.availability_status !== input.availabilityStatus) {
+    history.push({ status: input.availabilityStatus, changed_at: now });
+  }
+  user.name = input.name;
+  user.is_verified = true;
+  user.phone_verified_at = now;
+  user.account_status = user.account_status || 'ACTIVE';
+  user.roles = user.roles?.length ? user.roles : ['MEMBER'];
+  user.donor_profile = {
+    ...existing,
+    blood_group: input.bloodGroup,
+    location: input.location,
+    upazila: input.upazila,
+    availability_status: input.availabilityStatus,
+    availability_reason: input.availabilityStatus === 'NOT_AVAILABLE' ? input.availabilityReason : undefined,
+    availability_confirmed_at: input.availabilityStatus === 'AVAILABLE' ? now : existing?.availability_confirmed_at,
+    deferral_status: existing?.deferral_status || 'NONE',
+    availability_history: history
+  };
+  await saveToTable('common_users', user);
+  if (input.availabilityStatus === 'AVAILABLE') await syncDonorToPartition(user);
+  else await removeDonorFromAllPartitions(user.id);
+}
+
+app.post('/api/claims/:slug/complete', authLimiter, asyncRoute(async (req, res) => {
+  const donor = await loadClaimDonor(req.params.slug);
+  if (!donor || donor.claim_status === 'CLAIMED') {
+    return res.status(404).json({ error: 'Claim profile not found' });
+  }
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const challenge = phone
+    ? verifiedChallenge(phone, 'CLAIM_PROFILE', req.body?.verification_token)
+    : null;
+  if (!phone || (!challenge && !isOtpBypassEnabled())) {
+    return res.status(403).json({ error: 'Verify the selected phone before continuing' });
+  }
+
+  const name = cleanString(req.body?.name, 100);
+  const bloodGroup = req.body?.blood_group;
+  const district = cleanString(req.body?.district, 80);
+  const location = district ? getLocationByName(district) : null;
+  const upazila = district ? parseUpazila(district, req.body?.upazila) : null;
+  const availability = parseRegistrationAvailability(
+    req.body?.availability_status,
+    req.body?.availability_reason
+  );
+  if (!name || !isOneOf(bloodGroup, BLOOD_GROUPS) || !district || !location) {
+    return validationError(res, 'Confirm a valid name, blood group, and district');
+  }
+  if (!upazila) return validationError(res, 'Choose an upazila that belongs to the selected district');
+  if (req.body?.availability_consent !== true) {
+    return validationError(res, 'Confirm that you control this donor profile and choose its availability');
+  }
+  if ('error' in availability) return validationError(res, availability.error);
+
+  let user = users.find(item => item.phone === phone && !item.deleted_at);
+  const accountCreated = !user;
+  if (user?.account_status === 'SUSPENDED') return res.status(403).json({ error: 'This account is suspended' });
+  if (!user) {
+    user = {
+      id: uuidv4(),
+      phone,
+      name,
+      is_verified: true,
+      phone_verified_at: new Date().toISOString(),
+      roles: ['MEMBER'],
+      account_status: 'ACTIVE',
+      created_at: new Date().toISOString()
+    };
+    users.push(user);
+  }
+  await writeVerifiedClaimProfile(user, {
+    name,
+    bloodGroup,
+    location,
+    upazila,
+    availabilityStatus: availability.value.status,
+    availabilityReason: availability.value.reason
+  });
+
+  const matchedImportedPhone = donor.phone === phone;
+  if (matchedImportedPhone) {
+    donor.claim_status = 'CLAIMED';
+    donor.claimed_by = user.id;
+    donor.claimed_at = new Date().toISOString();
+    donor.claim_note = 'Verified phone matches the submitted listing';
+    donor.name = name;
+    donor.blood_group = bloodGroup;
+    donor.district = district;
+    donor.upazila = upazila;
+    donor.location = location;
+    await replaceImportedDonor(toImportedDonorRow(donor));
+  }
+
+  const fingerprint = getFingerprint(req);
+  if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
+  const sessionToken = await issueSession(user.id, req);
+  if (challenge) await consumeChallenge(challenge);
+  res.cookie(SESSION_COOKIE, sessionToken, sessionCookieOptions());
+  await audit(user.id, matchedImportedPhone ? 'DIRECTORY_CLAIM_APPROVED' : 'CLAIM_CREATED_SEPARATE_PROFILE', 'IMPORTED_DONOR', donor.id, {
+    matched_imported_phone: matchedImportedPhone,
+    account_created: accountCreated
+  });
+  res.json({
+    success: true,
+    result: matchedImportedPhone ? 'CLAIMED' : 'SEPARATE_PROFILE_CREATED',
+    account_created: accountCreated,
+    user: sanitizeUser(user)
+  });
+}));
 
 app.get('/api/directory', (_req, res) => {
   res.status(404).json({ error: 'Directory browsing is not available. Search for donors by blood group, district, and upazila.' });
@@ -4262,6 +4535,7 @@ async function startServer() {
   // held hostage to it.
   try {
     await ensureImportedDonorTable();
+    await expireAnonymousContributions();
   } catch (error) {
     console.error('imported_donors: preparation failed, directory results will be unavailable', error);
   }
@@ -4269,6 +4543,9 @@ async function startServer() {
     void enforceExpiredRequests();
     void enforceStaleAvailability();
     void expireOtpChallenges();
+    void expireAnonymousContributions().catch(error => {
+      console.error('anonymous contribution expiry failed', error);
+    });
   }, 5 * 60_000);
   maintenanceTimer.unref();
 

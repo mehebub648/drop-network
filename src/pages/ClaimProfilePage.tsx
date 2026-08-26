@@ -1,207 +1,232 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { CheckCircle2, Clock, ExternalLink, ShieldCheck } from 'lucide-react';
-import { api } from '../lib/api';
+import { ArrowLeft, CheckCircle2, ExternalLink, KeyRound, Phone, ShieldCheck, UserRoundPlus } from 'lucide-react';
+import DonorAvailabilityFields, { type RegistrationAvailability } from '../components/DonorAvailabilityFields';
+import OtpDeliveryStatus from '../components/OtpDeliveryStatus';
+import { PageHeader, StatusBadge, Surface } from '../components/ui';
+import { api, type OtpDelivery } from '../lib/api';
 import { BLOOD_GROUPS } from '../lib/blood';
-import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
+import { BD_LOCATION_NAMES } from '../lib/locations';
+import { getUpazilasForDistrict } from '../lib/upazilas';
 
 type DirectoryProfile = {
   id: string;
+  claim_path: string;
   name: string;
   blood_group: string;
   district: string;
   upazila: string;
   phone_masked: string;
   has_phone: boolean;
-  claim_status: string;
   missing_fields: string[];
   source: { organization: string; url: string; scraped_at: string };
 };
 
-export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpdate: () => void }) {
-  const { id = '' } = useParams();
-  const navigate = useNavigate();
-  const [profile, setProfile] = useState<DirectoryProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [outcome, setOutcome] = useState<{ status: string; reason: string } | null>(null);
+type Step = 'phone' | 'code' | 'details' | 'done';
 
+export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpdate: () => void }) {
+  const { slug = '' } = useParams();
+  const [profile, setProfile] = useState<DirectoryProfile | null>(null);
+  const [step, setStep] = useState<Step>('phone');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [code, setCode] = useState('');
+  const [verificationToken, setVerificationToken] = useState('');
+  const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [name, setName] = useState('');
   const [bloodGroup, setBloodGroup] = useState('');
   const [district, setDistrict] = useState('');
+  const [upazila, setUpazila] = useState('');
+  const [availability, setAvailability] = useState<RegistrationAvailability>('');
+  const [availabilityReason, setAvailabilityReason] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [result, setResult] = useState<'CLAIMED' | 'SEPARATE_PROFILE_CREATED' | ''>('');
+  const upazilas = useMemo(() => getUpazilasForDistrict(district), [district]);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const data: DirectoryProfile = await api.getDirectoryProfile(id);
+    let active = true;
+    void api.getClaimProfile(slug)
+      .then((data: DirectoryProfile) => {
+        if (!active) return;
         setProfile(data);
-        setName(data.name);
-        setBloodGroup(data.blood_group);
-        setDistrict(data.district);
-      } catch (e: any) {
-        setError(e.message || 'Failed to load that profile');
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [id]);
+        setName(data.name || '');
+        setBloodGroup(data.blood_group || '');
+        setDistrict(data.district || '');
+        setUpazila(data.upazila || '');
+      })
+      .catch((cause: any) => active && setError(cause.message || 'This claim link is unavailable.'))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [slug]);
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setSubmitting(true);
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
     setError('');
     try {
-      const location = getLocationByName(district);
-      const result = await api.claimDirectoryProfile(id, {
-        name: name.trim() || undefined,
-        blood_group: bloodGroup || undefined,
-        location: location || undefined
-      });
-      setOutcome({ status: result.status, reason: result.reason });
-      if (result.status === 'CLAIMED') onUpdate();
-    } catch (e: any) {
-      setError(e.message || 'Failed to claim that profile');
+      await action();
+    } catch (cause: any) {
+      setError(cause.message || 'The claim could not be completed.');
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   };
 
-  if (loading) {
-    return <div className="max-w-xl mx-auto theme-card p-12 animate-pulse h-48" />;
-  }
+  const requestCode = (event?: FormEvent) => {
+    event?.preventDefault();
+    void run(async () => {
+      const response = await api.requestOtp(phone, 'CLAIM_PROFILE');
+      setDelivery(response);
+      setCode('');
+      if (response.bypass && response.verification_token) {
+        setVerificationToken(response.verification_token);
+        setStep('details');
+      } else {
+        setStep('code');
+      }
+    });
+  };
 
+  const verifyCode = (event: FormEvent) => {
+    event.preventDefault();
+    void run(async () => {
+      const response = await api.verifyOtp(phone, 'CLAIM_PROFILE', code);
+      setVerificationToken(response.verification_token);
+      setStep('details');
+    });
+  };
+
+  const complete = (event: FormEvent) => {
+    event.preventDefault();
+    if (!consent) return setError('Confirm that these details and availability choice are yours.');
+    void run(async () => {
+      const response = await api.completeClaimProfile(slug, {
+        phone,
+        verification_token: verificationToken,
+        name,
+        blood_group: bloodGroup,
+        district,
+        upazila,
+        availability_status: availability as 'AVAILABLE' | 'NOT_AVAILABLE',
+        availability_reason: availability === 'NOT_AVAILABLE' ? availabilityReason : undefined,
+        availability_consent: true
+      });
+      setResult(response.result);
+      setStep('done');
+      onUpdate();
+    });
+  };
+
+  if (loading) return <div className="surface mx-auto h-64 max-w-2xl animate-pulse" aria-label="Loading claim profile" />;
   if (!profile) {
     return (
-      <div className="max-w-xl mx-auto theme-card p-12 text-center border border-slate-100 shadow-sm">
-        <p className="text-slate-600 font-bold">{error || 'Profile not found.'}</p>
-        <Link to="/directory" className="text-primary font-bold hover:underline mt-4 inline-block">Back to donor search</Link>
-      </div>
+      <Surface className="mx-auto max-w-2xl p-8 text-center">
+        <ShieldCheck className="mx-auto h-12 w-12 text-slate-300" aria-hidden="true" />
+        <h1 className="mt-4 text-2xl font-extrabold text-slate-950">Claim link unavailable</h1>
+        <p role="alert" className="mt-3 text-sm leading-6 text-slate-600">{error || 'This link is invalid, expired, removed, or already claimed.'}</p>
+        <Link to="/directory" className="primary-button mt-6">Search for donors</Link>
+      </Surface>
     );
   }
 
-  if (outcome) {
-    const approved = outcome.status === 'CLAIMED';
+  if (step === 'done') {
+    const claimed = result === 'CLAIMED';
     return (
-      <div className="max-w-xl mx-auto theme-card p-10 text-center border border-slate-100 shadow-sm space-y-4 fade-in">
-        {approved
-          ? <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto" />
-          : <Clock className="w-12 h-12 text-amber-500 mx-auto" />}
-        <h1 className="text-2xl font-extrabold text-slate-900">
-          {approved ? 'Profile claimed' : 'Claim sent for review'}
-        </h1>
-        <p className="text-slate-500 font-medium">{outcome.reason}</p>
-        <p className="text-slate-500 font-medium">
-          {approved
-            ? 'Your donor profile has been filled in. You are still marked unavailable until you choose to turn availability on.'
-            : 'We could not verify ownership automatically, so a moderator will check this claim before the profile becomes yours.'}
+      <Surface className="mx-auto max-w-2xl border-green-200 bg-green-50/60 p-8 text-center">
+        <CheckCircle2 className="mx-auto h-12 w-12 text-green-700" aria-hidden="true" />
+        <h1 className="mt-4 text-2xl font-extrabold text-slate-950">{claimed ? 'Profile claimed' : 'Your verified profile is ready'}</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          {claimed
+            ? 'The verified number matched this listing, so it now belongs to your Drop account.'
+            : 'This number belongs to a different person, so we created or updated your own profile and left the original listing unclaimed.'}
         </p>
-        <button onClick={() => navigate(approved ? '/profile/donor' : '/directory')} className="theme-button px-6 py-3 font-bold">
-          {approved ? 'Go to my donor profile' : 'Back to donor search'}
-        </button>
-      </div>
+        <Link to="/profile/donor" className="primary-button mt-6">Open my donor profile</Link>
+      </Surface>
     );
   }
-
-  if (!user) {
-    return (
-      <div className="max-w-xl mx-auto theme-card p-10 text-center border border-slate-100 shadow-sm space-y-4">
-        <ShieldCheck className="w-12 h-12 text-slate-300 mx-auto" />
-        <h1 className="text-2xl font-extrabold text-slate-900">Sign in to claim this profile</h1>
-        <p className="text-slate-500 font-medium">
-          Claiming needs a verified phone number, so we know the profile is going to the right person.
-        </p>
-        <Link to="/login" className="theme-button px-6 py-3 font-bold inline-block">Sign in</Link>
-      </div>
-    );
-  }
-
-  const missing = new Set(profile.missing_fields);
 
   return (
-    <div className="max-w-xl mx-auto space-y-6 fade-in">
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mb-2">Claim this profile</h1>
-        <p className="text-slate-500 font-medium">
-          Listed as <span className="font-bold text-slate-700">{profile.name}</span> by{' '}
-          <a href={profile.source.url} target="_blank" rel="noreferrer noopener" className="text-primary font-bold hover:underline inline-flex items-center gap-1">
-            {profile.source.organization} <ExternalLink className="w-3.5 h-3.5" />
+    <div className="mx-auto max-w-3xl space-y-7 pb-12">
+      <PageHeader
+        eyebrow="Private owner verification"
+        title="Claim or create your donor profile"
+        description="First verify the phone you control. You can change it before requesting the code; knowing this link alone never proves ownership."
+        icon={UserRoundPlus}
+      />
+
+      <Surface className="p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <StatusBadge tone="brand" icon={ShieldCheck}>Masked listing</StatusBadge>
+          <span className="font-mono text-sm font-bold text-slate-700">{profile.phone_masked || 'No phone shown'}</span>
+        </div>
+        <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+          <div><dt className="font-bold text-slate-500">Listed name</dt><dd className="mt-1 font-extrabold text-slate-950">{profile.name || 'Not provided'}</dd></div>
+          <div><dt className="font-bold text-slate-500">Blood group</dt><dd className="mt-1 font-extrabold text-slate-950">{profile.blood_group || 'Not provided'}</dd></div>
+          <div><dt className="font-bold text-slate-500">District</dt><dd className="mt-1 font-extrabold text-slate-950">{profile.district || 'Not provided'}</dd></div>
+          <div><dt className="font-bold text-slate-500">Upazila</dt><dd className="mt-1 font-extrabold text-slate-950">{profile.upazila || 'Not provided'}</dd></div>
+        </dl>
+        {profile.source.url && (
+          <a href={profile.source.url} target="_blank" rel="noreferrer noopener" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-primary underline">
+            Source: {profile.source.organization} <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </a>
-        </p>
-      </div>
-
-      <div className="theme-card p-5 border border-slate-100 shadow-sm text-sm font-medium text-slate-500 space-y-1">
-        {profile.has_phone ? (
-          <p>
-            The listing publishes the number <span className="font-mono text-slate-700">{profile.phone_masked}</span>.
-            If that is your number and it matches the phone on your account, the claim is approved immediately.
-            Otherwise a moderator reviews it.
-          </p>
-        ) : (
-          <p>
-            This listing has no phone number to check against, so the claim goes to a moderator for review.
-          </p>
         )}
-      </div>
+      </Surface>
 
-      {missing.size > 0 && (
-        <p className="text-sm font-bold text-amber-600">
-          This listing is missing {profile.missing_fields.join(', ')}. Fill it in below to finish the profile.
-        </p>
+      {error && <div role="alert" className="alert alert-error">{error}</div>}
+
+      {step === 'phone' && (
+        <form onSubmit={requestCode} className="surface p-6 sm:p-8">
+          <StatusBadge tone="brand" icon={Phone}>Step 1 of 3</StatusBadge>
+          <h2 className="mt-4 text-xl font-extrabold text-slate-950">Which number do you control?</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Change the number freely here. A different unique number creates your own profile and leaves this listing unclaimed.</p>
+          <label className="mt-5 block"><span className="mb-2 block text-sm font-bold text-slate-700">Your Bangladesh mobile</span><input required autoFocus type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={event => { setPhone(event.target.value); setDelivery(null); }} placeholder="01XXXXXXXXX" className="input" /></label>
+          <button disabled={busy} className="primary-button mt-6">{busy ? 'Sending…' : 'Send verification code'}</button>
+        </form>
       )}
 
-      <form onSubmit={submit} className="theme-card p-6 border border-slate-100 shadow-sm space-y-5">
-        <div>
-          <label htmlFor="claim-name" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Full name</label>
-          <input
-            id="claim-name"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            required
-            maxLength={100}
-            className="w-full px-4 py-3 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary font-semibold text-slate-700 outline-none"
-          />
-        </div>
+      {step === 'code' && (
+        <form onSubmit={verifyCode} className="surface space-y-5 p-6 sm:p-8">
+          <StatusBadge tone="brand" icon={KeyRound}>Step 2 of 3</StatusBadge>
+          <h2 className="text-xl font-extrabold text-slate-950">Enter the code</h2>
+          <p className="text-sm leading-6 text-slate-600">We sent a purpose-bound code to {phone}.</p>
+          <OtpDeliveryStatus delivery={delivery} onDeliveryChange={setDelivery} busy={busy} onResend={() => requestCode()} />
+          <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Six-digit code</span><input required autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} className="input min-h-14 text-center text-2xl font-extrabold tracking-[0.4em]" /></label>
+          <div className="flex flex-col gap-3 sm:flex-row"><button disabled={busy || code.length !== 6} className="primary-button">{busy ? 'Checking…' : 'Verify phone'}</button><button type="button" onClick={() => { setDelivery(null); setCode(''); setStep('phone'); }} className="theme-button"><ArrowLeft className="h-4 w-4" />Change number</button></div>
+        </form>
+      )}
 
-        <div>
-          <label htmlFor="claim-group" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Blood group</label>
-          <select
-            id="claim-group"
-            value={bloodGroup}
-            onChange={e => setBloodGroup(e.target.value)}
-            required
-            className="w-full px-4 py-3 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary font-semibold text-slate-700 outline-none"
-          >
-            <option value="">Select your blood group</option>
-            {BLOOD_GROUPS.map(bg => <option key={bg} value={bg}>{bg}</option>)}
-          </select>
-        </div>
+      {step === 'details' && (
+        <form onSubmit={complete} className="surface space-y-5 p-6 sm:p-8">
+          <StatusBadge tone="success" icon={CheckCircle2}>Phone verified · Step 3 of 3</StatusBadge>
+          <h2 className="text-xl font-extrabold text-slate-950">Confirm your details and consent</h2>
+          <p className="text-sm leading-6 text-slate-600">Nothing is guessed. Check every field and explicitly choose whether you are available.</p>
+          <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Full name</span><input required maxLength={100} value={name} onChange={event => setName(event.target.value)} className="input" /></label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label><span className="mb-2 block text-sm font-bold text-slate-700">Blood group</span><select required value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input"><option value="">Choose blood group</option>{BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}</select></label>
+            <label><span className="mb-2 block text-sm font-bold text-slate-700">District</span><select required value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input"><option value="">Choose district</option>{BD_LOCATION_NAMES.map(item => <option key={item}>{item}</option>)}</select></label>
+            <label className="sm:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Upazila</span><select required value={upazila} onChange={event => setUpazila(event.target.value)} className="input"><option value="">Choose upazila</option>{upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          </div>
+          <DonorAvailabilityFields idPrefix="claim" value={availability} onChange={setAvailability} reason={availabilityReason} onReasonChange={setAvailabilityReason} />
+          <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-700"><input required type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0" /><span>I control the verified number, these details describe me, and I consent to this availability choice on Drop.</span></label>
+          <button disabled={busy || !availability || !consent} className="primary-button">{busy ? 'Saving…' : 'Save my verified profile'}</button>
+        </form>
+      )}
 
-        <div>
-          <label htmlFor="claim-district" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">District</label>
-          <select
-            id="claim-district"
-            value={district}
-            onChange={e => setDistrict(e.target.value)}
-            required
-            className="w-full px-4 py-3 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary font-semibold text-slate-700 outline-none"
-          >
-            <option value="">Select your district</option>
-            {BD_LOCATION_NAMES.map(loc => <option key={loc} value={loc}>{loc}</option>)}
-          </select>
-        </div>
-
-        {error && <p className="text-sm font-bold text-primary">{error}</p>}
-
-        <button type="submit" disabled={submitting} className="theme-button w-full py-3 font-bold disabled:opacity-60">
-          {submitting ? 'Submitting…' : 'Claim this profile'}
-        </button>
-        <p className="text-xs text-slate-400 font-medium">
-          Claiming links the listing to your account and fills in your donor profile. You stay marked unavailable
-          until you turn availability on yourself.
-        </p>
-      </form>
+      <p className="text-center text-sm text-slate-500">Adding someone else? <Link to="/contribute" className="font-bold text-primary underline">Create a private suggestion instead</Link>.</p>
     </div>
   );
+}
+
+export function LegacyClaimRedirect() {
+  const { id = '' } = useParams();
+  const navigate = useNavigate();
+  const [error, setError] = useState('');
+  useEffect(() => {
+    void api.getDirectoryProfile(id)
+      .then((profile: DirectoryProfile) => navigate(profile.claim_path, { replace: true }))
+      .catch((cause: any) => setError(cause.message || 'Profile not found'));
+  }, [id, navigate]);
+  if (error) return <Surface className="mx-auto max-w-xl p-8 text-center"><p role="alert">{error}</p><Link to="/directory" className="primary-button mt-5">Back to search</Link></Surface>;
+  return <div className="surface mx-auto h-48 max-w-xl animate-pulse" aria-label="Opening short claim link" />;
 }

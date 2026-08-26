@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.85`
+Current application version: `0.0.86`
 
 ## Overview
 
@@ -30,7 +30,7 @@ written to application logs.
    roles to the staff hierarchy. High-growth call reports and audit events are
    queried only when their protected interfaces request them.
 3. The first imported-directory access ensures the filterable columns exist
-   (`public_id`, `upazila`, `row_version`), deletes any imported row without a
+   (`public_id`, `claim_slug`, `publication_state`, `upazila`, `row_version`), deletes any imported row without a
    phone number, and non-destructively backfills the remaining legacy rows in
    batches, preserving row identity and claim state. On a store that predates
    these columns this rewrites every row; progress is logged, `/ready` reports
@@ -135,7 +135,8 @@ Routes:
 - `/request/:id` shows one request, its collection facility and address, donor
   matches, patient/contact details, and comments. Owners can correct the
   collection location while a request is active.
-- `/login` logs in an existing user.
+- `/login` logs in an existing user by password or a purpose-bound Messavo
+  verification code, including passwordless accounts created by a claim.
 - `/register` verifies a Bangladesh mobile by OTP before creating an account.
 - `/request/new` no longer exists and redirects to `/directory`. Posting a blood
   request is not a separate form any more: searching for donors is how a request
@@ -190,8 +191,14 @@ Routes:
 - `/forgot-password` resets a password after registered-phone OTP verification.
 - `/directory/imported` redirects to search; there is no browsable donor
   directory.
-- `/directory/imported/:id` shows and claims one imported record by opaque
-  public ID. `/directory/:id` remains a compatibility alias.
+- `/c/:slug` is the short, masked, no-index owner claim flow. The owner may
+  change the phone before OTP; a matching phone claims the imported stub while
+  a different unique phone creates or updates a separate passwordless donor
+  profile and leaves the stub unclaimed. `/directory/imported/:id` and
+  `/directory/:id` redirect old opaque-ID links to the short route.
+- `/contribute` accepts a private donor suggestion from any visitor and returns
+  a 30-day claim link. It sends no SMS and the entry remains unsearchable until
+  its phone owner verifies, reviews every field, and consents.
 - `/community` lists bounded pages of published donation stories and health
   suggestions. `/community/:slug` is a stable public article URL.
 - `/community/new` lets an authenticated member publish a Markdown donation
@@ -418,9 +425,15 @@ API routes:
   `GET /api/directory/:id` addresses one record by opaque `public_id` and always
   masks its phone. Claimed or pending records are readable only by the claimant
   or active staff.
-- `POST /api/directory/:id/claim` claims an imported profile for the
-  authenticated, phone-verified caller. `GET`/`PATCH /api/admin/directory/claims`
-  let operators approve or release claims that could not be auto-verified.
+- `GET /api/claims/:slug` returns one masked claim stub and
+  `POST /api/claims/:slug/complete` accepts only a `CLAIM_PROFILE` verification
+  token for the submitted phone. Knowing the slug is never authorization.
+- `POST /api/contributions` stores an owner-unverified suggestion privately,
+  collapses duplicate phones, and returns the same neutral response shape.
+  Honeypot, IP, browser-fingerprint, and phone controls limit intake; it never
+  sends an unsolicited message.
+- The legacy authenticated `POST /api/directory/:id/claim` and staff claim
+  review routes remain compatible for one release.
 
 ## Data Storage
 
@@ -446,14 +459,16 @@ Tables:
 - `imported_donors` stores claimable donor stubs imported from other
   organisations' public listings. Unlike every other table it is never loaded
   into the runtime cache, because it is orders of magnitude larger than the
-  account tables. Its filter columns (`public_id`, `blood_group`, `district`,
+  account tables. Its filter columns (`public_id`, `claim_slug`,
+  `publication_state`, `contribution_expires_at`, `blood_group`, `district`,
   `upazila`, `phone`, `claim_status`, `source_id`, `search_text`) are stored as real
   columns so LanceDB can push predicates down; the full record still travels in
   `doc`. Internal row IDs are never exposed through the API. Every row carries a
   phone number; rows imported before that rule are deleted when the table is
   first opened. Existing tables receive new filter columns through schema
   evolution and a batched, non-destructive backfill that preserves row identity
-  and claim state. The backfill tracks the rows it has rewritten, because a
+  and claim state. Stable claim slugs are collision-checked across the table.
+  The backfill tracks the rows it has rewritten, because a
   value can legitimately stay empty afterwards (a source that publishes no
   upazila) and would otherwise be re-selected forever.
 - `common_call_reports` records every revealed contact and every reported call
@@ -522,8 +537,9 @@ reads those listings and `scripts/import-donors.ts` loads them into
 server never scrapes anything at runtime.
 
 - `server/importedDonors.ts` holds the shared registry (`IMPORT_SOURCES`), the
-  record shape, dedupe keys, opaque SHA-256 public/storage identities, phone
-  masking, and claim decision logic. Public IDs contain neither raw nor
+  record shape, dedupe keys, opaque SHA-256 public/storage identities, stable
+  collision-checked 12-character claim slugs, publication state, phone masking,
+  and claim decision logic. Public IDs and claim slugs contain neither raw nor
   URI-encoded phone or source keys. The helpers are unit-tested.
 - `scripts/scrape/sources/*.ts` implement one listing each and stream
   `ScrapedDonor` records; `scripts/scrape/index.ts` writes NDJSON per source to
@@ -534,6 +550,10 @@ server never scrapes anything at runtime.
   call is not a usable donor, and the number is the dedupe key, so rows without
   one are rejected. Unrecognised blood groups and districts are blanked rather
   than guessed, which turns them into fields a claimant has to complete.
+  A dry run reads existing rows and reports preserved claims, withdrawals, and
+  private contributions without writing. A real import merges all ownership,
+  removal, publication, and contribution fields by stable public ID before
+  replacing rows, so refreshes do not undo owner actions.
 
 These people never registered here, so an imported record is a stub, not an
 account:
@@ -572,13 +592,17 @@ account:
   detail page, the claim flow, and the phone reveal all stop finding it.
 - Imported records never enter the donor match partitions and are never
   invited to a request.
-- A record becomes a real donor profile only through
-  `POST /api/directory/:id/claim`. The claim is auto-approved only when the
-  claimant's own verified phone equals the number the source published;
-  everything else becomes `PENDING_REVIEW` for an operator, because nothing
-  else in the imported data proves ownership.
-- A claimed profile starts as `NOT_AVAILABLE`. Being listed by another
-  organisation is not consent to be contacted here, so the donor has to opt in.
+- A record becomes a real donor profile through `/c/:slug`. The claimant first
+  chooses and verifies a phone through Messavo, then confirms name, blood group,
+  district, upazila, availability, and explicit consent with no guessed default.
+  If the number matches the imported phone the stub is claimed automatically.
+  If it differs, Drop creates or updates the verified number's own profile and
+  leaves the original stub unclaimed.
+- `/contribute` writes a `PRIVATE_PENDING` stub with a 30-day expiry. It never
+  enters search and never triggers SMS at intake. Only the phone owner's
+  verified claim and availability consent create a searchable registered donor.
+- The legacy 21-account datastore is deliberately not mounted or migrated; it
+  remains restricted recovery evidence and cannot enter current search.
 
 Commands:
 

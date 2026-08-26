@@ -28,6 +28,9 @@ export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
 export const LISTING_STATES = ['ACTIVE', 'REMOVED'] as const;
 export type ListingState = (typeof LISTING_STATES)[number];
 
+export const PUBLICATION_STATES = ['PUBLIC', 'PRIVATE_PENDING', 'EXPIRED'] as const;
+export type PublicationState = (typeof PUBLICATION_STATES)[number];
+
 export type ImportedDonorSource = {
   id: string;
   organization: string;
@@ -68,6 +71,8 @@ export type ImportedDonor = {
   id: string;
   /** Stable opaque id used by directory URLs and API lookups. */
   public_id: string;
+  /** Stable 12-character owner-facing claim route identifier. */
+  claim_slug: string;
   source: ImportedDonorSource;
   source_ref: string;
   name: string;
@@ -95,6 +100,11 @@ export type ImportedDonor = {
    */
   listing_state?: ListingState;
   removed_at?: string;
+  /** Anonymous suggestions stay private until the phone owner verifies. */
+  publication_state?: PublicationState;
+  contributed_at?: string;
+  contribution_expires_at?: string;
+  contribution_fingerprint_hash?: string;
   imported_at: string;
 };
 
@@ -143,7 +153,43 @@ export function importedDonorStorageId(key: string) {
   return `imp_row_${sha256Identity('storage', key)}`;
 }
 
-type StoredImportedDonor = Omit<ImportedDonor, 'public_id'> & { public_id?: string };
+/**
+ * Stable, URL-safe 12-character claim slug. `attempt` is used only if the
+ * datastore collision check finds the extraordinarily unlikely same prefix.
+ */
+export function claimSlugForPublicId(publicId: string, attempt = 0) {
+  return createHash('sha256')
+    .update(`drop:claim-slug:v1\0${publicId}\0${attempt}`, 'utf8')
+    .digest('base64url')
+    .slice(0, 12);
+}
+
+/** Deterministically resolves any 12-character collision in a complete set. */
+export function withCollisionCheckedClaimSlugs(donors: ImportedDonor[]) {
+  const used = new Set<string>();
+  const resolved = new Map<string, string>();
+  for (const donor of [...donors].sort((left, right) =>
+    left.imported_at.localeCompare(right.imported_at) || left.public_id.localeCompare(right.public_id)
+  )) {
+    let slug = donor.claim_slug || claimSlugForPublicId(donor.public_id);
+    let attempt = 0;
+    while (used.has(slug)) {
+      attempt += 1;
+      slug = claimSlugForPublicId(donor.public_id, attempt);
+    }
+    used.add(slug);
+    resolved.set(donor.public_id, slug);
+  }
+  return donors.map(donor => {
+    const slug = resolved.get(donor.public_id)!;
+    return slug === donor.claim_slug ? donor : { ...donor, claim_slug: slug };
+  });
+}
+
+type StoredImportedDonor = Omit<ImportedDonor, 'public_id' | 'claim_slug'> & {
+  public_id?: string;
+  claim_slug?: string;
+};
 
 export function publicIdForImportedDonor(
   donor: Pick<StoredImportedDonor, 'phone' | 'source' | 'source_ref' | 'public_id'>
@@ -161,10 +207,14 @@ export function publicIdForImportedDonor(
  * old claims remain readable while the datastore gains a separate public id.
  */
 export function withImportedDonorIdentity(donor: StoredImportedDonor, storageId = donor.id): ImportedDonor {
+  const publicId = publicIdForImportedDonor(donor);
   return {
     ...donor,
     id: storageId,
-    public_id: publicIdForImportedDonor(donor)
+    public_id: publicId,
+    claim_slug: donor.claim_slug && /^[A-Za-z0-9_-]{12}$/.test(donor.claim_slug)
+      ? donor.claim_slug
+      : claimSlugForPublicId(publicId)
   };
 }
 
@@ -175,9 +225,11 @@ export function toImportedDonor(
 ): ImportedDonor {
   const key = dedupeKey(record);
   const location = record.district && resolveLocation ? resolveLocation(record.district) : null;
+  const publicId = importedDonorId(key);
   return {
     id: importedDonorStorageId(key),
-    public_id: importedDonorId(key),
+    public_id: publicId,
+    claim_slug: claimSlugForPublicId(publicId),
     source: {
       id: record.source_id,
       organization: record.source_organization,
@@ -193,6 +245,7 @@ export function toImportedDonor(
     ...(location ? { location } : {}),
     ...(record.extra && Object.keys(record.extra).length > 0 ? { extra: record.extra } : {}),
     claim_status: 'UNCLAIMED',
+    publication_state: 'PUBLIC',
     imported_at: importedAt
   };
 }
@@ -210,6 +263,7 @@ export function maskPhone(phone: string) {
 
 export type PublicImportedDonor = {
   id: string;
+  claim_path: string;
   name: string;
   blood_group: string;
   district: string;
@@ -229,6 +283,7 @@ export function missingFields(donor: Pick<ImportedDonor, 'name' | 'phone' | 'blo
 export function toPublicImportedDonor(donor: ImportedDonor): PublicImportedDonor {
   return {
     id: publicIdForImportedDonor(donor),
+    claim_path: `/c/${donor.claim_slug}`,
     name: donor.name,
     blood_group: donor.blood_group,
     district: donor.district,
@@ -281,8 +336,9 @@ export function toRevealedImportedDonor(donor: ImportedDonor): RevealedImportedD
  *
  *   1  id, public_id, blood_group, district, phone, claim_status, source_id
  *   2  adds upazila
+ *   3  adds claim slug and anonymous-contribution publication state
  */
-export const IMPORTED_ROW_VERSION = '2';
+export const IMPORTED_ROW_VERSION = '3';
 
 /**
  * Projection stored in LanceDB: filterable columns plus the whole record as
@@ -296,7 +352,10 @@ export function toImportedDonorRow(donor: ImportedDonor) {
     id: storedDonor.id,
     row_version: IMPORTED_ROW_VERSION,
     listing_state: storedDonor.listing_state || 'ACTIVE',
+    publication_state: storedDonor.publication_state || 'PUBLIC',
     public_id: storedDonor.public_id,
+    claim_slug: storedDonor.claim_slug,
+    contribution_expires_at: storedDonor.contribution_expires_at || '',
     blood_group: storedDonor.blood_group,
     district: storedDonor.district,
     upazila: storedDonor.upazila,

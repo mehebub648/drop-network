@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  claimSlugForPublicId,
   dedupeKey,
   evaluateClaim,
   importedDonorId,
@@ -11,6 +12,7 @@ import {
   toImportedDonorRow,
   toPublicImportedDonor,
   toRevealedImportedDonor,
+  withCollisionCheckedClaimSlugs,
   withImportedDonorIdentity,
   type ImportedDonor
 } from './importedDonors';
@@ -54,6 +56,8 @@ test('imported donors start unclaimed and never expose a raw phone publicly', ()
   assert.equal(publicView.phone_masked, '+88019••••••96');
   assert.deepEqual(publicView.missing_fields, []);
   assert.equal(publicView.id, donor.public_id);
+  assert.match(donor.claim_slug, /^[A-Za-z0-9_-]{12}$/);
+  assert.equal(publicView.claim_path, `/c/${donor.claim_slug}`);
   assert.notEqual(publicView.id, donor.id);
   assert.equal(serialized.includes(scraped.phone), false);
   assert.equal(serialized.includes(encodeURIComponent(scraped.phone)), false);
@@ -66,10 +70,32 @@ test('storage rows keep separate internal and public identities', () => {
   const row = toImportedDonorRow(donor);
   assert.equal(row.id, donor.id);
   assert.equal(row.public_id, donor.public_id);
+  assert.equal(row.claim_slug, donor.claim_slug);
+  assert.equal(row.publication_state, 'PUBLIC');
   assert.equal(JSON.parse(row.doc).public_id, donor.public_id);
   // Upazila is a filterable column, not only a `doc` field, so a district and
   // upazila search can push the predicate down.
   assert.equal(row.upazila, scraped.upazila);
+});
+
+test('claim slugs are stable and deterministic collisions are resolved', () => {
+  const first = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
+  const second = toImportedDonor(
+    { ...scraped, source_ref: 'AA1584', phone: '+8801712345678' },
+    '2026-07-29T00:00:00.000Z'
+  );
+  second.claim_slug = first.claim_slug;
+
+  const resolved = withCollisionCheckedClaimSlugs([second, first]);
+  const winner = [first, second].sort((left, right) =>
+    left.imported_at.localeCompare(right.imported_at) || left.public_id.localeCompare(right.public_id)
+  )[0];
+  const loser = winner.public_id === first.public_id ? second : first;
+  const winnerResult = resolved.find(donor => donor.public_id === winner.public_id)!;
+  const loserResult = resolved.find(donor => donor.public_id === loser.public_id)!;
+  assert.equal(winnerResult.claim_slug, first.claim_slug);
+  assert.equal(loserResult.claim_slug, claimSlugForPublicId(loser.public_id, 1));
+  assert.notEqual(resolved[0].claim_slug, resolved[1].claim_slug);
 });
 
 test('the reveal projection adds the raw phone and keeps the masked one', () => {
