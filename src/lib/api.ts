@@ -62,6 +62,8 @@ export type SearchDonorCard = {
   source?: { organization: string; url: string };
   contact_issues?: Partial<Record<'WRONG_NUMBER' | 'UNREACHABLE' | 'DECLINED' | 'RECENTLY_DONATED' | 'TOO_FAR' | 'HEALTH', number>>;
   claim_path?: string;
+  preference_match_reasons?: string[];
+  donation_total?: number;
 };
 
 export type CommunityPostType = 'DONATION_STORY' | 'HEALTH_SUGGESTION';
@@ -528,13 +530,28 @@ export const api = {
   // everyone; unmasking one is a separate, recorded action that needs a
   // published request behind it.
 
-  async searchDonorsByUpazila(params: { blood_group: string; district: string; upazila: string; page?: number }) {
+  async searchDonorsByUpazila(params: {
+    blood_group: string;
+    district: string;
+    upazila: string;
+    page?: number;
+    sort?: 'recommended' | 'recently_confirmed' | 'best_location' | 'most_donations' | 'fewest_contact_issues' | 'name';
+    exact_group?: boolean;
+    phone_verified_only?: boolean;
+    collection_facility?: string;
+    collection_facility_code?: string;
+  }) {
     const query = new URLSearchParams({
       blood_group: params.blood_group,
       district: params.district,
       upazila: params.upazila
     });
     if (params.page && params.page > 1) query.set('page', String(params.page));
+    if (params.sort && params.sort !== 'recommended') query.set('sort', params.sort);
+    if (params.exact_group) query.set('exact_group', 'true');
+    if (params.phone_verified_only) query.set('phone_verified_only', 'true');
+    if (params.collection_facility) query.set('collection_facility', params.collection_facility);
+    if (params.collection_facility_code) query.set('collection_facility_code', params.collection_facility_code);
     const res = await fetch(`${API_BASE}/search/donors?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to search donors');
   },

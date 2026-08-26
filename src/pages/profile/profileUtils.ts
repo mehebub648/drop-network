@@ -20,6 +20,11 @@ export function donorProfilePayload(user: ProfileUser, changes: Partial<DonorPro
     deferred_until: user.donor_profile?.deferred_until,
     donation_history: user.donor_profile?.donation_history || [],
     availability_history: user.donor_profile?.availability_history || [],
+    preferred_areas: user.donor_profile?.preferred_areas || [],
+    preferred_facilities: user.donor_profile?.preferred_facilities || [],
+    travel_willingness: user.donor_profile?.travel_willingness || 'HOME_ONLY',
+    contact_windows: user.donor_profile?.contact_windows || [],
+    private_coordination_note: user.donor_profile?.private_coordination_note,
     ...changes
   };
 }

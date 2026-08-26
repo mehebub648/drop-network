@@ -66,6 +66,7 @@ export default function LandingPage({ user }: { user: any }) {
     district: draft.district,
     upazila: draft.upazila,
     collection_facility: draft.collection_facility,
+    collection_facility_code: draft.collection_facility_code,
     requester_role: draft.requester_role as RequesterRole | ''
   };
 

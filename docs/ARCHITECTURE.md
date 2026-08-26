@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.87`
+Current application version: `0.0.88`
 
 ## Overview
 
@@ -72,6 +72,9 @@ Entry points:
   stay in the full donor-profile editor instead of blocking onboarding. When
   onboarding begins from search, the donor's district and upazila are prefilled
   from the patient search but remain editable as the donor's home location.
+- `src/components/DonorPreferencesFields.tsx` manages bounded preferred areas,
+  facilities, travel willingness, and recurring Asia/Dhaka windows. The
+  facility picker uses the same generated DGHS snapshot as request search.
 - `src/pages/profile/` contains the shared member-area layout plus account,
   donor, request, donation-history, security, and settings screens.
 - `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
@@ -282,7 +285,9 @@ Main data types:
 
 - `User`
 - `DonorProfile`, including a structured last-donation declaration, lifetime
-  donation count, private detailed donation history, and availability history
+  donation count, private detailed donation history, availability history,
+  preferred areas/facilities, travel willingness, recurring windows, and a
+  private coordination note
 - `RecipientProfile`
 - `BloodRequest`
 - `Comment`
@@ -322,16 +327,19 @@ API routes:
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `POST /api/auth/reset-password` consumes a verified recovery challenge,
   changes the password, and revokes every existing session.
-- `GET /api/search/donors?blood_group&district&upazila&page` is the search behind the
+- `GET /api/search/donors?blood_group&district&upazila&page&sort&exact_group&phone_verified_only`
+  is the search behind the
   blood request flow. It is open to everyone and **masked for everyone**,
   including signed-in members. It returns `{ query, registered, directory,
   totals, pagination, contact_access: 'masked' }` in pages of 24: registered
-  members who opted in, then attributed imported listings to fill the page.
-  Compatible blood groups are
-  included, with the patient's exact group ranked first and registered members
-  ranked above listings. Result cards explicitly identify registered donors;
-  imported cards retain their source attribution and state that they are not
-  registered with Drop.
+  members who opted in, then attributed imported listings. Compatible blood
+  groups are included. The recommended order is deterministic: phone-verified
+  registered profiles, exact group, area/facility/current-time preference fit,
+  recent availability confirmation, fewer active contact issues, then name.
+  Alternative sorts retain the verified-member tier. Optional collection
+  facility context adds a safe match reason without returning raw preferences.
+  Result cards include a clear phone-verification badge, public donation total,
+  active contact summary, and short claim route for unclaimed imports.
 - `POST /api/search/requests` creates and publishes in one step, because the
   flow has a single submit. It requires explicit consent, resolves the district
   server-side rather than trusting client coordinates, and takes the requester's
@@ -385,7 +393,9 @@ API routes:
   validates exact/approximate/never declarations and lifetime counts, derives a
   canonical eligibility date on the server, stores an optional private reason
   for non-available states, records availability changes, and refreshes donor
-  partitions.
+  partitions. It also validates up to 10 canonical preferred areas, 8 facility
+  codes against the generated DGHS registry, 3 recurring Asia/Dhaka windows,
+  travel willingness, and a 500-character private coordination note.
 - `POST /api/requests` creates a complete private draft for a verified owner;
   `POST /api/requests/:id/publish` records consent and activates it.
 - `POST /api/requests/:id/invitations` privately invites a currently eligible
@@ -501,8 +511,13 @@ Important helpers:
 - `ensureTable()` creates a table with a temporary schema row if missing.
 - `getPartitionName()` builds donor partition table names.
 - `syncDonorToPartition()` inserts or replaces an available donor in the correct
-  partition while omitting password and private medical-condition fields from
-  the search copy; `common_users` remains the authoritative account record.
+  partition while omitting password, private medical/coordination fields, raw
+  preferred areas/facilities, and contact windows from the search copy;
+  `common_users` remains the authoritative account record.
+- `server/donorPreferences.ts` validates canonical areas, facility registry
+  membership, schedule bounds, travel willingness, and private note length.
+  `server/donorSearch.ts` owns preference-aware place eligibility, safe match
+  reasons, and every deterministic result sort.
 - `removeDonorFromAllPartitions()` clears stale donor rows before profile resync.
 - `getAllFromTable()` loads saved JSON documents.
 - `saveToTable()` replaces a document by `id` using escaped ID filters.

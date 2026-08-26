@@ -4,6 +4,8 @@ import { CAN_DONATE_TO, COMPATIBLE_DONORS } from './blood';
 import {
   donorCanSeeRequest,
   donorEligibility,
+  donorPreferenceMatch,
+  matchesPreferenceSearch,
   matchesUpazilaSearch,
   rankDonorResults,
   type SearchableDonorProfile
@@ -86,4 +88,46 @@ test('results put registered members first and the exact group above a compatibl
     'Imported exact',
     'Imported compatible'
   ]);
+});
+
+test('preferred areas and district-wide travel expand matching without guessing a location', () => {
+  assert.equal(matchesPreferenceSearch(profile({
+    upazila: 'Gulshan',
+    preferred_areas: [{ district: 'Dhaka', upazila: 'Banani' }],
+    travel_willingness: 'PREFERRED_AREAS'
+  }), search), true);
+  assert.equal(matchesPreferenceSearch(profile({
+    upazila: 'Gulshan',
+    travel_willingness: 'ANYWHERE_IN_DISTRICT'
+  }), search), true);
+  assert.equal(matchesPreferenceSearch(profile({
+    upazila: 'Gulshan',
+    travel_willingness: 'HOME_ONLY'
+  }), search), false);
+});
+
+test('preference reasons expose the match, not the private preference data', () => {
+  const match = donorPreferenceMatch(profile({
+    preferred_facilities: [{ registry_code: '100', name: 'Example Hospital', district: 'Dhaka', locality: 'Banani' }],
+    contact_windows: [{ days: [4], start_time: '09:00', end_time: '18:00' }]
+  }), {
+    district: 'Dhaka',
+    upazilas: ['Banani'],
+    facilityCode: '100'
+  }, new Date('2026-08-27T06:00:00.000Z'));
+  assert.deepEqual(match.reasons, ['Home upazila', 'Preferred collection facility', 'Usually reachable around this time']);
+  assert.equal(match.score, 9);
+});
+
+test('every public sort is deterministic and keeps verified registered donors above imports', () => {
+  const donors = [
+    { donor_ref: 'imp:1', donor_kind: 'IMPORTED' as const, blood_group: 'A+', name: 'A Imported', is_exact_group: true, ranking: { donation_total: 99, location_match_score: 9 } },
+    { donor_ref: 'reg:2', donor_kind: 'REGISTERED' as const, blood_group: 'O-', name: 'B Registered', is_verified: true, is_exact_group: false, ranking: { donation_total: 2, location_match_score: 1, contact_issue_total: 2 } },
+    { donor_ref: 'reg:1', donor_kind: 'REGISTERED' as const, blood_group: 'A+', name: 'A Registered', is_verified: true, is_exact_group: true, ranking: { donation_total: 1, location_match_score: 4, contact_issue_total: 0 } }
+  ];
+  for (const sort of ['recommended', 'recently_confirmed', 'best_location', 'most_donations', 'fewest_contact_issues', 'name'] as const) {
+    const ranked = rankDonorResults(donors, 'A+', sort);
+    assert.equal(ranked.at(-1)?.donor_kind, 'IMPORTED', `${sort} moved an import above verified members`);
+    assert.deepEqual(rankDonorResults(donors, 'A+', sort), ranked, `${sort} changed between identical calls`);
+  }
 });

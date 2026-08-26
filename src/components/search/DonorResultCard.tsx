@@ -1,4 +1,5 @@
 import { CalendarDays, CheckCircle2, LockKeyhole, MapPin, Phone, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Link } from 'react-router';
 import type { SearchDonorCard } from '../../lib/api';
 import type { PublicDonationSummary } from '../../lib/donation';
 
@@ -61,10 +62,10 @@ export default function DonorResultCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-lg font-extrabold text-slate-950">{donor.name}</h3>
-            {donor.donor_kind === 'REGISTERED' && (
+            {donor.is_verified && (
               <span className="inline-flex min-h-7 items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2.5 text-[11px] font-extrabold uppercase tracking-wide text-green-800">
                 <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                Registered donor
+                Phone verified
               </span>
             )}
             {!donor.is_exact_group && (
@@ -94,20 +95,41 @@ export default function DonorResultCard({
         </div>
       </div>
 
-      {donationSummary && (
+      {(donor.preference_match_reasons || []).length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2" aria-label="Why this donor matched">
+          {donor.preference_match_reasons!.map(reason => (
+            <span key={reason} className="inline-flex items-center gap-1.5 rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-800">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+              {reason}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {(donationSummary || donor.donation_total !== undefined) && (
         <div className="mt-4 rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3">
           <p className="text-[11px] font-extrabold uppercase tracking-wide text-green-800">Self-reported donation history</p>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-700">
-            <span className="inline-flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 shrink-0 text-green-700" aria-hidden="true" />
-              {donationSummaryLabel(donationSummary)}
-            </span>
-            {donationSummary.donation_count !== undefined && (
+            {donationSummary && (
+              <span className="inline-flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 shrink-0 text-green-700" aria-hidden="true" />
+                {donationSummaryLabel(donationSummary)}
+              </span>
+            )}
+            {donor.donation_total !== undefined && (
               <span>
-                {donationSummary.donation_count.toLocaleString()} total donation{donationSummary.donation_count === 1 ? '' : 's'}
+                {donor.donation_total.toLocaleString()} total donation{donor.donation_total === 1 ? '' : 's'}
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {donor.donor_kind === 'IMPORTED' && donor.claim_path && (
+        <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-3">
+          <p className="text-sm font-bold text-violet-950">Is this your listing?</p>
+          <p className="mt-1 text-xs leading-5 text-violet-900/80">Verify the listed phone, confirm your details, and manage availability yourself.</p>
+          <Link to={donor.claim_path} className="mt-2 inline-flex min-h-9 items-center rounded-lg bg-violet-700 px-3 text-xs font-extrabold text-white hover:bg-violet-800">Claim with short link</Link>
         </div>
       )}
 

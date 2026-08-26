@@ -34,9 +34,16 @@ import {
   DONATION_INTERVAL_DAYS,
   donorCanSeeRequest,
   donorEligibility,
-  matchesUpazilaSearch,
-  rankDonorResults
+  donorPreferenceMatch,
+  matchesPreferenceSearch,
+  rankDonorResults,
+  SEARCH_SORTS,
+  type SearchSort
 } from './donorSearch';
+import {
+  parseDonorPreferences,
+  type DonorPreferences
+} from './donorPreferences';
 import { canAssignStaffRole, canEditMember, canManageMember, capabilitiesFor, hasCapability, isStaffRole, legacyStaffRole, type AdminCapability, type StaffRole } from './adminPolicy';
 import {
   canonicalLastDonationDate,
@@ -233,7 +240,7 @@ type AvailabilityHistoryEntry = {
   changed_at: string;
 };
 
-type DonorProfile = {
+type DonorProfile = DonorPreferences & {
   blood_group: string;
   /** Structured self-report; legacy profiles may have only last_donation_date. */
   last_donation?: LastDonationDeclaration;
@@ -1069,6 +1076,16 @@ type DonorCard = {
   /** Aggregated, non-accusatory counts. Notes and reporter identities stay private. */
   contact_issues?: ContactIssueSummary;
   claim_path?: string;
+  /** Human-readable reasons only; preference details and schedules stay private. */
+  preference_match_reasons?: string[];
+  donation_total?: number;
+  /** Internal sorting values removed before the response is serialized. */
+  ranking?: {
+    location_match_score?: number;
+    availability_confirmed_at?: string;
+    donation_total?: number;
+    contact_issue_total?: number;
+  };
 };
 
 export function registeredDonorRef(userId: string) {
@@ -1187,13 +1204,19 @@ async function resolveRegisteredContactIssues(
   }
 }
 
-function registeredDonorCard(user: User, exactGroup: string): DonorCard {
+function registeredDonorCard(
+  user: User,
+  exactGroup: string,
+  search: { district: string; upazilas: string[]; facilityCode?: string; facilityName?: string }
+): DonorCard {
   const profile = user.donor_profile!;
   const donationSummary = createPublicDonationSummary(
     profile.last_donation,
     profile.donation_count,
     profile.last_donation_date
   );
+  const preferenceMatch = donorPreferenceMatch(profile, search);
+  const donationTotal = donationSummary?.donation_count;
   return {
     donor_ref: registeredDonorRef(user.id),
     donor_kind: 'REGISTERED',
@@ -1206,12 +1229,24 @@ function registeredDonorCard(user: User, exactGroup: string): DonorCard {
     has_phone: Boolean(user.phone),
     is_verified: Boolean(user.is_verified),
     availability_status: profile.availability_status,
-    ...(donationSummary ? { donation_summary: donationSummary } : {})
+    ...(donationSummary ? { donation_summary: donationSummary } : {}),
+    ...(donationTotal !== undefined ? { donation_total: donationTotal } : {}),
+    preference_match_reasons: preferenceMatch.reasons,
+    ranking: {
+      location_match_score: preferenceMatch.score,
+      availability_confirmed_at: profile.availability_confirmed_at,
+      donation_total: donationTotal || 0,
+      contact_issue_total: 0
+    }
   };
 }
 
 function importedDonorCard(donor: ImportedDonor, exactGroup: string): DonorCard {
   const view = toPublicImportedDonor(donor);
+  const importedDonationTotal = Number(donor.extra?.donation_count);
+  const donationTotal = Number.isInteger(importedDonationTotal) && importedDonationTotal >= 0
+    ? importedDonationTotal
+    : undefined;
   return {
     donor_ref: importedDonorRef(view.id),
     donor_kind: 'IMPORTED',
@@ -1225,8 +1260,16 @@ function importedDonorCard(donor: ImportedDonor, exactGroup: string): DonorCard 
     // No availability status: nobody has asked these people whether they are
     // free, and inventing one would misrepresent a scraped listing.
     source: { organization: view.source.organization, url: view.source.url },
-    claim_path: view.claim_path
+    claim_path: view.claim_path,
+    preference_match_reasons: ['Listed in the searched upazila'],
+    ...(donationTotal !== undefined ? { donation_total: donationTotal } : {}),
+    ranking: { location_match_score: 1, donation_total: donationTotal || 0, contact_issue_total: 0 }
   };
+}
+
+function publicDonorCard(card: DonorCard): DonorCard {
+  const { ranking: _ranking, ...publicCard } = card;
+  return publicCard;
 }
 
 /**
@@ -1243,25 +1286,33 @@ async function findRequestDonors(params: {
   excludeUserId?: string;
   page?: number;
   pageSize?: number;
+  sort?: SearchSort;
+  exactGroupOnly?: boolean;
+  phoneVerifiedOnly?: boolean;
+  facilityCode?: string;
+  facilityName?: string;
 }) {
   const compatibleGroups = COMPATIBLE_DONORS[params.bloodGroup] || [params.bloodGroup];
   const upazilas = getUpazilaVariants(params.district, params.upazila);
   const pageSize = params.pageSize ?? SEARCH_PAGE_SIZE;
   const requester = params.excludeUserId ? users.find(user => user.id === params.excludeUserId) : undefined;
 
-  const allRegistered = rankDonorResults(
-    users
-      .filter(user => registeredMatchesRequestSearch(user, {
-        compatibleGroups,
-        district: params.district,
-        upazilas,
-        excludeUserId: params.excludeUserId
-      }, requester))
-      .map(user => registeredDonorCard(user, params.bloodGroup)),
-    params.bloodGroup
-  );
+  const allRegistered = users
+    .filter(user => registeredMatchesRequestSearch(user, {
+      compatibleGroups,
+      district: params.district,
+      upazilas,
+      excludeUserId: params.excludeUserId
+    }, requester))
+    .map(user => registeredDonorCard(user, params.bloodGroup, {
+      district: params.district,
+      upazilas,
+      facilityCode: params.facilityCode,
+      facilityName: params.facilityName
+    }));
 
   let directoryTotal = 0;
+  let allDirectory: DonorCard[] = [];
   try {
     directoryTotal = await countImportedDonors({
       district: params.district,
@@ -1269,55 +1320,56 @@ async function findRequestDonors(params: {
       bloodGroups: compatibleGroups,
       claimStatus: 'UNCLAIMED'
     });
-  } catch {
-    // Imported records supplement registered donors. A storage problem must
-    // not hide registered matches.
-    directoryTotal = 0;
-  }
-
-  const total = allRegistered.length + directoryTotal;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const page = Math.min(Math.max(1, params.page || 1), totalPages);
-  const offset = (page - 1) * pageSize;
-  const registered = allRegistered.slice(offset, offset + pageSize);
-  const directorySlots = Math.max(0, pageSize - registered.length);
-  let directory: DonorCard[] = [];
-
-  if (directorySlots > 0 && offset + registered.length >= allRegistered.length) {
-    try {
+    if (directoryTotal > 0 && !params.phoneVerifiedOnly) {
       const listings = await queryImportedDonorsForRequest({
         district: params.district,
         upazilas,
         bloodGroups: compatibleGroups,
-        limit: directorySlots,
-        offset: Math.max(0, offset - allRegistered.length)
+        limit: directoryTotal
       });
-      directory = rankDonorResults(
-        listings.map(listing => importedDonorCard(listing, params.bloodGroup)),
-        params.bloodGroup
-      );
-    } catch {
-      directory = [];
+      allDirectory = listings.map(listing => importedDonorCard(listing, params.bloodGroup));
     }
+  } catch {
+    // Imported records supplement registered donors. A storage problem must
+    // not hide registered matches.
+    directoryTotal = 0;
+    allDirectory = [];
   }
 
+  let allCards = [...allRegistered, ...allDirectory];
+  if (params.exactGroupOnly) allCards = allCards.filter(donor => donor.is_exact_group);
+  if (params.phoneVerifiedOnly) allCards = allCards.filter(donor => donor.donor_kind === 'REGISTERED' && donor.is_verified);
+
   try {
-    const summaries = await contactIssueSummaries([...registered, ...directory].map(donor => donor.donor_ref));
-    for (const donor of [...registered, ...directory]) {
+    const summaries = await contactIssueSummaries(allCards.map(donor => donor.donor_ref));
+    for (const donor of allCards) {
       const summary = summaries.get(donor.donor_ref);
-      if (summary && Object.keys(summary).length > 0) donor.contact_issues = summary;
+      if (!summary || Object.keys(summary).length === 0) continue;
+      donor.contact_issues = summary;
+      if (donor.ranking) donor.ranking.contact_issue_total = Object.values(summary).reduce((sum, count) => sum + (count || 0), 0);
     }
   } catch {
     // Contact quality is supplemental. A temporary report-table read failure
     // must not hide otherwise eligible donors.
   }
 
+  allCards = rankDonorResults(allCards, params.bloodGroup, params.sort || 'recommended');
+  const registeredTotal = allCards.filter(donor => donor.donor_kind === 'REGISTERED').length;
+  const filteredDirectoryTotal = allCards.filter(donor => donor.donor_kind === 'IMPORTED').length;
+  const total = allCards.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(1, params.page || 1), totalPages);
+  const offset = (page - 1) * pageSize;
+  const pageCards = allCards.slice(offset, offset + pageSize);
+  const registered = pageCards.filter(donor => donor.donor_kind === 'REGISTERED').map(publicDonorCard);
+  const directory = pageCards.filter(donor => donor.donor_kind === 'IMPORTED').map(publicDonorCard);
+
   return {
     registered,
     directory,
     compatibleGroups,
     upazilas,
-    totals: { registered: allRegistered.length, directory: directoryTotal },
+    totals: { registered: registeredTotal, directory: filteredDirectoryTotal },
     pagination: {
       page,
       page_size: pageSize,
@@ -1336,7 +1388,23 @@ function parseUpazilaSearch(query: Record<string, unknown>) {
   if (!location) return { error: 'Valid Bangladesh district is required' } as const;
   const upazila = parseUpazila(location.area_name, query.upazila);
   if (!upazila) return { error: 'Choose an upazila that belongs to the selected district' } as const;
-  return { value: { bloodGroup, location, upazila } } as const;
+  const sort = typeof query.sort === 'string' && SEARCH_SORTS.includes(query.sort as SearchSort)
+    ? query.sort as SearchSort
+    : 'recommended';
+  const facilityName = optionalCleanString(query.collection_facility, 180);
+  const facilityCode = optionalCleanString(query.collection_facility_code, 40);
+  return {
+    value: {
+      bloodGroup,
+      location,
+      upazila,
+      sort,
+      exactGroupOnly: query.exact_group === 'true',
+      phoneVerifiedOnly: query.phone_verified_only === 'true',
+      facilityName,
+      facilityCode
+    }
+  } as const;
 }
 
 // Haversine distance calculation in kilometers.
@@ -1574,7 +1642,7 @@ function registeredMatchesRequestSearch(
     !user.donor_profile?.contact_suspended_at &&
     (!params.excludeUserId || !user.blocked_user_ids?.includes(params.excludeUserId)) &&
     !requester?.blocked_user_ids?.includes(user.id) &&
-    matchesUpazilaSearch(user.donor_profile, params);
+    matchesPreferenceSearch(user.donor_profile, params);
 }
 
 function importedMatchesRequestSearch(
@@ -1653,7 +1721,7 @@ app.get('/api/search/donors', async (req, res) => {
   if ('error' in parsed) return validationError(res, parsed.error);
 
   const auth = getCurrentAuth(req);
-  const { bloodGroup, location, upazila } = parsed.value;
+  const { bloodGroup, location, upazila, sort, exactGroupOnly, phoneVerifiedOnly, facilityName, facilityCode } = parsed.value;
   const requestedPage = Math.max(1, Math.min(10_000, Math.floor(Number(req.query.page) || 1)));
   const budget = dailySearchBudget.consume({
     identities: [auth ? `user:${auth.user.id}` : '', `ip:${req.ip || req.socket.remoteAddress || 'unknown'}`],
@@ -1671,7 +1739,12 @@ app.get('/api/search/donors', async (req, res) => {
     district: location.area_name,
     upazila,
     excludeUserId: auth?.user.id,
-    page: requestedPage
+    page: requestedPage,
+    sort,
+    exactGroupOnly,
+    phoneVerifiedOnly,
+    facilityName,
+    facilityCode
   });
 
   res.json({
@@ -1679,7 +1752,10 @@ app.get('/api/search/donors', async (req, res) => {
       blood_group: bloodGroup,
       district: location.area_name,
       upazila,
-      compatible_groups: compatibleGroups
+      compatible_groups: compatibleGroups,
+      sort,
+      exact_group: exactGroupOnly,
+      phone_verified_only: phoneVerifiedOnly
     },
     registered,
     directory,
@@ -2667,6 +2743,10 @@ app.post('/api/me/donor-profile', async (req, res) => {
     existingProfile,
     resolvedHistory
   );
+  const donorPreferences = await parseDonorPreferences(
+    isPlainObject(req.body) ? req.body : {},
+    existingProfile
+  );
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
   if (!isOneOf(availability_status, AVAILABILITY_STATUSES)) return validationError(res, 'Valid availability status is required');
@@ -2679,6 +2759,7 @@ app.post('/api/me/donor-profile', async (req, res) => {
   if (medical_conditions === null) return validationError(res, 'Medical condition or sickness must be 500 characters or fewer');
   if (donation_history === null) return validationError(res, 'Valid donation history is required');
   if ('error' in donationDetails) return validationError(res, donationDetails.error);
+  if ('error' in donorPreferences) return validationError(res, donorPreferences.error);
   if (!isOneOf(deferral_status, DEFERRAL_STATUSES)) return validationError(res, 'Valid deferral status is required');
   if (deferred_until === null || (deferral_status === 'TEMPORARY' && !deferred_until)) return validationError(res, 'Temporary deferral needs an end date');
 
@@ -2692,7 +2773,10 @@ app.post('/api/me/donor-profile', async (req, res) => {
     const availabilityHistory = [...(existingProfile?.availability_history || [])];
     const areaChanged = Boolean(existingProfile) && (
       existingProfile!.location.area_name !== location.area_name ||
-      (existingProfile!.upazila || '') !== (upazila ?? keptUpazila ?? '')
+      (existingProfile!.upazila || '') !== (upazila ?? keptUpazila ?? '') ||
+      JSON.stringify(existingProfile!.preferred_areas || []) !== JSON.stringify(donorPreferences.value.preferred_areas || []) ||
+      JSON.stringify(existingProfile!.preferred_facilities || []) !== JSON.stringify(donorPreferences.value.preferred_facilities || []) ||
+      existingProfile!.travel_willingness !== donorPreferences.value.travel_willingness
     );
     const donationChanged = Boolean(existingProfile) && (
       JSON.stringify(existingProfile!.last_donation || null) !== JSON.stringify(donationDetails.value.last_donation || null) ||
@@ -2725,7 +2809,8 @@ app.post('/api/me/donor-profile', async (req, res) => {
       deferred_until,
       availability_confirmed_at: availability_status === 'AVAILABLE' ? new Date().toISOString() : existingProfile?.availability_confirmed_at,
       donation_history: resolvedHistory,
-      availability_history: availabilityHistory.slice(-50)
+      availability_history: availabilityHistory.slice(-50),
+      ...donorPreferences.value
     };
     await saveToTable('common_users', users[userIndex]);
     const resolvedCategories: ContactIssueCategory[] = [];

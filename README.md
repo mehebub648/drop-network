@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.87`
+Current version: `0.0.88`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -79,8 +79,12 @@ Refresh the district facility files from the public DGHS registry with:
   collection facility, and requester role are asked one at a time and carry
   into `/directory`. The interface shows only the current question and answer,
   without stage labels, progress graphics, or repeated instructions.
-  Registered, opted-in donors are ranked first and explicitly labelled before
-  attributed public listings. Every result stays masked until the protected
+  Phone-verified, opted-in donors are ranked first and explicitly labelled before
+  attributed public listings. Requesters can sort by recommendation, recent
+  confirmation, location fit, donation total, contact reliability, or name,
+  and can limit results to the exact group or phone-verified profiles. Cards
+  explain area, facility, or current-time preference matches without exposing
+  a donor's stored schedule. Every result stays masked until the protected
   request and one-at-a-time reveal workflow opens a contact. Opening a contact
   displays a non-dismissible call-outcome dialog over the current page; the
   rest of Drop remains unavailable across navigation and reloads until that
@@ -97,6 +101,12 @@ Refresh the district facility files from the public DGHS registry with:
   one responsive workspace. Donors can keep an optional private note about a
   medical condition or current sickness; it is excluded from donor search and
   never treated as medical clearance.
+- Donors can optionally add 10 preferred areas, 8 DGHS-registered collection
+  facilities, home/preferred/district-wide travel willingness, and 3 recurring
+  Asia/Dhaka contact or donation windows. A bounded coordination note stays in
+  the account record only. These settings extend eligible search locations and
+  create concise match reasons; raw preferences, windows, and the private note
+  are never included in public result cards or donor partition copies.
 - Every new account creates a donor profile with blood group, location, and an
   explicit availability choice. Members who choose “I’m not available to
   donate” stay off live search and may save a private optional reason.

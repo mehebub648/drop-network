@@ -21,6 +21,7 @@ export type Criteria = {
   district: string;
   upazila: string;
   collection_facility: string;
+  collection_facility_code?: string;
   requester_role: RequesterRole | '';
 };
 
@@ -143,8 +144,8 @@ export default function SearchCriteriaForm({
     next();
   };
 
-  const chooseFacility = (name: string) => {
-    onChange({ ...value, collection_facility: name });
+  const chooseFacility = (facility: RegisteredCollectionFacility) => {
+    onChange({ ...value, collection_facility: facility.name, collection_facility_code: facility.registryCode });
     setFacilityOpen(false);
   };
 
@@ -165,7 +166,7 @@ export default function SearchCriteriaForm({
     }
     if (event.key === 'Enter' && facilityOpen && matchingFacilities[activeFacilityIndex]) {
       event.preventDefault();
-      chooseFacility(matchingFacilities[activeFacilityIndex].name);
+      chooseFacility(matchingFacilities[activeFacilityIndex]);
     }
   };
 
@@ -217,7 +218,8 @@ export default function SearchCriteriaForm({
                     ...value,
                     district: event.target.value,
                     upazila: '',
-                    collection_facility: ''
+                    collection_facility: '',
+                    collection_facility_code: undefined
                   })}
                   className="input appearance-none pl-11 pr-10"
                 >
@@ -279,7 +281,7 @@ export default function SearchCriteriaForm({
                 onClick={() => setFacilityOpen(true)}
                 onKeyDown={handleFacilityKeys}
                 onChange={event => {
-                  onChange({ ...value, collection_facility: event.target.value });
+                  onChange({ ...value, collection_facility: event.target.value, collection_facility_code: undefined });
                   setFacilityOpen(true);
                 }}
                 placeholder={`Search in ${value.district}`}
@@ -317,7 +319,7 @@ export default function SearchCriteriaForm({
                             role="option"
                             aria-selected={value.collection_facility === item.name}
                             onMouseEnter={() => setActiveFacilityIndex(index)}
-                            onClick={() => chooseFacility(item.name)}
+                            onClick={() => chooseFacility(item)}
                             className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2.5 text-left ${
                               index === activeFacilityIndex ? 'bg-rose-50' : 'hover:bg-slate-50'
                             }`}

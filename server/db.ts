@@ -67,7 +67,14 @@ export async function syncDonorToPartition(user: any) {
   // common_users, their authoritative store, and out of these public-facing
   // search documents.
   const { password: _password, donor_profile: donorProfile, ...searchUser } = user;
-  const { medical_conditions: _medicalConditions, ...searchDonorProfile } = donorProfile;
+  const {
+    medical_conditions: _medicalConditions,
+    private_coordination_note: _privateCoordinationNote,
+    contact_windows: _contactWindows,
+    preferred_areas: _preferredAreas,
+    preferred_facilities: _preferredFacilities,
+    ...searchDonorProfile
+  } = donorProfile;
 
   await table.add([{
     vector: [user.donor_profile.location.lng, user.donor_profile.location.lat],

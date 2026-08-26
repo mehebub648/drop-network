@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { CheckCircle2, Clock, HeartPulse, LockKeyhole, MapPin, Save, Stethoscope } from 'lucide-react';
 import DonationExperienceFields from '../../components/DonationExperienceFields';
+import DonorPreferencesFields, { type DonorPreferenceDraft } from '../../components/DonorPreferencesFields';
 import { api } from '../../lib/api';
 import { BLOOD_GROUPS, DONATION_INTERVAL_DAYS, getEligibility } from '../../lib/blood';
 import {
@@ -23,6 +24,16 @@ const statusLabels: Record<AvailabilityStatus, string> = {
   NOT_AVAILABLE: 'Not available right now'
 };
 
+function preferenceDraft(user: ProfilePageProps['user']): DonorPreferenceDraft {
+  return {
+    preferredAreas: user.donor_profile?.preferred_areas || [],
+    preferredFacilities: user.donor_profile?.preferred_facilities || [],
+    travelWillingness: user.donor_profile?.travel_willingness || 'HOME_ONLY',
+    contactWindows: user.donor_profile?.contact_windows || [],
+    privateCoordinationNote: user.donor_profile?.private_coordination_note || ''
+  };
+}
+
 export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   const [bloodGroup, setBloodGroup] = useState(user.donor_profile?.blood_group || 'O+');
   const [district, setDistrict] = useState(user.donor_profile?.location.area_name || 'Dhaka');
@@ -37,6 +48,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     user.donor_profile?.last_donation_date,
     user.donor_profile?.donation_count
   ));
+  const [preferences, setPreferences] = useState<DonorPreferenceDraft>(() => preferenceDraft(user));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -54,6 +66,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
       user.donor_profile?.last_donation_date,
       user.donor_profile?.donation_count
     ));
+    setPreferences(preferenceDraft(user));
   }, [user]);
 
   const upazilas = useMemo(() => getUpazilasForDistrict(district), [district]);
@@ -70,6 +83,9 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     if (!location) return setMessage({ type: 'error', text: 'Choose a supported district.' });
     const donationError = validateDonationExperience(donationExperience, user.donor_profile?.donation_history?.length || 0);
     if (donationError) return setMessage({ type: 'error', text: donationError });
+    if (preferences.contactWindows.some(window => window.days.length === 0 || !window.start_time || !window.end_time || window.start_time === window.end_time)) {
+      return setMessage({ type: 'error', text: 'Each contact window needs at least one day and different start and end times.' });
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -82,6 +98,11 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
         medical_conditions: medicalConditions,
         availability_status: status,
         availability_reason: status === 'AVAILABLE' ? undefined : availabilityReason,
+        preferred_areas: preferences.preferredAreas,
+        preferred_facilities: preferences.preferredFacilities,
+        travel_willingness: preferences.travelWillingness,
+        contact_windows: preferences.contactWindows,
+        private_coordination_note: preferences.privateCoordinationNote,
         ...donationExperiencePayload(donationExperience)
       }));
       await onUpdate();
@@ -141,6 +162,14 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
               <small>Without an upazila, your profile will not appear in donor search results.</small>
             </label>
           </div>
+        </section>
+
+        <section className="profile-form-section">
+          <div className="profile-section-heading">
+            <span><MapPin aria-hidden="true" /></span>
+            <div><h2>Where and when donation is convenient</h2><p>Optional preferences improve matching without publishing your private schedule or note.</p></div>
+          </div>
+          <DonorPreferencesFields value={preferences} onChange={setPreferences} homeDistrict={district} />
         </section>
 
         <section className="profile-form-section profile-health-section">

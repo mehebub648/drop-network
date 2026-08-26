@@ -32,6 +32,17 @@ type SearchResponse = {
   pagination: { page: number; page_size: number; total: number; total_pages: number };
 };
 
+const SEARCH_SORTS = ['recommended', 'recently_confirmed', 'best_location', 'most_donations', 'fewest_contact_issues', 'name'] as const;
+type SearchSort = (typeof SEARCH_SORTS)[number];
+const SORT_LABELS: Record<SearchSort, string> = {
+  recommended: 'Recommended',
+  recently_confirmed: 'Recently confirmed',
+  best_location: 'Best location match',
+  most_donations: 'Most donations',
+  fewest_contact_issues: 'Fewest contact issues',
+  name: 'Name'
+};
+
 /**
  * Searching for donors and posting a blood request are the same act here.
  *
@@ -54,7 +65,9 @@ export default function DonorSearchPage({
       ...stored,
       blood_group: searchParams.get('blood_group') || stored.blood_group,
       district: searchParams.get('district') || stored.district,
-      upazila: searchParams.get('upazila') || stored.upazila
+      upazila: searchParams.get('upazila') || stored.upazila,
+      collection_facility: searchParams.get('collection_facility') || stored.collection_facility,
+      collection_facility_code: searchParams.get('collection_facility_code') || stored.collection_facility_code
     };
   });
   const [results, setResults] = useState<SearchResponse | null>(null);
@@ -72,6 +85,12 @@ export default function DonorSearchPage({
   const district = searchParams.get('district') || '';
   const upazila = searchParams.get('upazila') || '';
   const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
+  const sortParam = searchParams.get('sort');
+  const sort: SearchSort = SEARCH_SORTS.includes(sortParam as SearchSort) ? sortParam as SearchSort : 'recommended';
+  const exactGroupOnly = searchParams.get('exact_group') === 'true';
+  const phoneVerifiedOnly = searchParams.get('phone_verified_only') === 'true';
+  const collectionFacility = searchParams.get('collection_facility') || '';
+  const collectionFacilityCode = searchParams.get('collection_facility_code') || '';
   const hasQuery = Boolean(bloodGroup && district && upazila);
   const contextComplete = Boolean(draft.collection_facility.trim() && draft.requester_role);
   const draftRef = useRef(draft);
@@ -90,7 +109,17 @@ export default function DonorSearchPage({
     let cancelled = false;
     setLoading(true);
     setError('');
-    api.searchDonorsByUpazila({ blood_group: bloodGroup, district, upazila, page })
+    api.searchDonorsByUpazila({
+      blood_group: bloodGroup,
+      district,
+      upazila,
+      page,
+      sort,
+      exact_group: exactGroupOnly,
+      phone_verified_only: phoneVerifiedOnly,
+      collection_facility: collectionFacility,
+      collection_facility_code: collectionFacilityCode
+    })
       .then(response => {
         if (!cancelled) setResults(response);
       })
@@ -106,7 +135,7 @@ export default function DonorSearchPage({
     return () => {
       cancelled = true;
     };
-  }, [bloodGroup, district, upazila, page, hasQuery, reloadKey]);
+  }, [bloodGroup, district, upazila, page, sort, exactGroupOnly, phoneVerifiedOnly, collectionFacility, collectionFacilityCode, hasQuery, reloadKey]);
 
   useEffect(() => {
     if (!hasQuery || !contextComplete) setRefineOpen(true);
@@ -114,11 +143,17 @@ export default function DonorSearchPage({
 
   const runSearch = () => {
     writeSearchDraft(draft);
-    setSearchParams({
+    const next: Record<string, string> = {
       blood_group: draft.blood_group,
       district: draft.district,
       upazila: draft.upazila
-    });
+    };
+    if (draft.collection_facility) next.collection_facility = draft.collection_facility;
+    if (draft.collection_facility_code) next.collection_facility_code = draft.collection_facility_code;
+    if (sort !== 'recommended') next.sort = sort;
+    if (exactGroupOnly) next.exact_group = 'true';
+    if (phoneVerifiedOnly) next.phone_verified_only = 'true';
+    setSearchParams(next);
     setRefineOpen(false);
   };
 
@@ -173,7 +208,16 @@ export default function DonorSearchPage({
     district: draft.district,
     upazila: draft.upazila,
     collection_facility: draft.collection_facility,
+    collection_facility_code: draft.collection_facility_code,
     requester_role: draft.requester_role as RequesterRole | ''
+  };
+
+  const updateSearchOption = (key: 'sort' | 'exact_group' | 'phone_verified_only', value: string | boolean) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('page');
+    if ((key === 'sort' && value === 'recommended') || value === false) next.delete(key);
+    else next.set(key, String(value));
+    setSearchParams(next);
   };
 
   const donors = results ? [...results.registered, ...results.directory] : [];
@@ -298,6 +342,24 @@ export default function DonorSearchPage({
               </span>
             )}
           </div>
+
+          {!loading && !error && results && (
+            <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:items-end">
+              <label className="text-sm font-extrabold text-slate-800">Sort donor matches
+                <select value={sort} onChange={event => updateSearchOption('sort', event.target.value)} className="input mt-1.5">
+                  {SEARCH_SORTS.map(option => <option key={option} value={option}>{SORT_LABELS[option]}</option>)}
+                </select>
+              </label>
+              <label className="flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <input type="checkbox" checked={exactGroupOnly} onChange={event => updateSearchOption('exact_group', event.target.checked)} className="h-4 w-4 accent-red-600" />
+                Exact blood group only
+              </label>
+              <label className="flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                <input type="checkbox" checked={phoneVerifiedOnly} onChange={event => updateSearchOption('phone_verified_only', event.target.checked)} className="h-4 w-4 accent-red-600" />
+                Phone verified only
+              </label>
+            </div>
+          )}
 
           {error && (
             <div role="alert" className="alert alert-error mb-5">{error}</div>

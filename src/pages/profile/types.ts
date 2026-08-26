@@ -13,6 +13,16 @@ export type AvailabilityHistoryEntry = {
   changed_at: string;
 };
 
+export type PreferredDonationArea = { district: string; upazila: string };
+export type PreferredCollectionFacility = {
+  registry_code: string;
+  name: string;
+  district: string;
+  locality: string;
+};
+export type TravelWillingness = 'HOME_ONLY' | 'PREFERRED_AREAS' | 'ANYWHERE_IN_DISTRICT';
+export type RecurringContactWindow = { days: number[]; start_time: string; end_time: string };
+
 export type DonorProfileData = {
   blood_group: string;
   last_donation?: LastDonationDeclaration;
@@ -35,6 +45,12 @@ export type DonorProfileData = {
   deferred_until?: string;
   donation_history?: DonationRecord[];
   availability_history?: AvailabilityHistoryEntry[];
+  preferred_areas?: PreferredDonationArea[];
+  preferred_facilities?: PreferredCollectionFacility[];
+  travel_willingness?: TravelWillingness;
+  contact_windows?: RecurringContactWindow[];
+  /** Private to the owner; never included in donor search cards. */
+  private_coordination_note?: string;
 };
 
 export type DonorProfilePayload = Omit<DonorProfileData, 'last_donation'> & {
