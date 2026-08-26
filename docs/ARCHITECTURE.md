@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.91`
+Current application version: `0.0.93`
 
 ## Overview
 
@@ -151,8 +151,13 @@ Routes:
   a search, the page continues with a compact summary of the carried
   criteria and an in-place refine panel instead of repeating the initial hero.
   A shared URL without request context opens that panel automatically before a
-  contact can be requested. Results show every number masked. Asking for one
-  number opens the patient-details gate. Previously completed search, role,
+  contact can be requested. Results show every number masked. The imported-
+  listing claim option is shown only to guests, because signed-in members
+  already have a donor profile. An eligible signed-in member's own donor
+  profile appears first with “Your profile” and “Phone verified” labels; its
+  action opens profile management rather than revealing the member's own
+  number. Asking for another donor's number opens the patient-details gate.
+  Previously completed search, role,
   patient, and contact answers are summarized rather than requested again and
   remain editable. Separate patient, contact, and review stages carry explicit
   publication consent before the inline sign-in; publishing the request is what
@@ -344,7 +349,11 @@ API routes:
   Alternative sorts retain the verified-member tier. Optional collection
   facility context adds a safe match reason without returning raw preferences.
   Result cards include a clear phone-verification badge, public donation total,
-  active contact summary, and short claim route for unclaimed imports.
+  and active contact summary. Guests also see the short claim route for
+  unclaimed imports; signed-in members do not. Authenticated searches include
+  the requester's own profile when it is available, eligible, blood-compatible,
+  and matched to the searched area. That card is pinned first and cannot start
+  a self-contact reveal.
 - `POST /api/search/requests` creates and publishes in one step, because the
   flow has a single submit. It requires explicit consent, resolves the district
   server-side rather than trusting client coordinates, and takes the requester's

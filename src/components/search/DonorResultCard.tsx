@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, LockKeyhole, MapPin, Phone, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { CalendarDays, CheckCircle2, LockKeyhole, MapPin, Phone, ShieldAlert, ShieldCheck, UserRound } from 'lucide-react';
 import { Link } from 'react-router';
 import type { SearchDonorCard } from '../../lib/api';
 import type { PublicDonationSummary } from '../../lib/donation';
@@ -33,11 +33,13 @@ function donationSummaryLabel(summary: PublicDonationSummary) {
 export default function DonorResultCard({
   donor,
   onSelect,
-  busy
+  busy,
+  showClaimOption
 }: {
   donor: SearchDonorCard;
   onSelect: (donor: SearchDonorCard) => void | Promise<void>;
   busy?: boolean;
+  showClaimOption: boolean;
 }) {
   const availability = availabilityLabel(donor.availability_status);
   const donationSummary = donor.donor_kind === 'REGISTERED' ? donor.donation_summary : undefined;
@@ -62,6 +64,12 @@ export default function DonorResultCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-lg font-extrabold text-slate-950">{donor.name}</h3>
+            {donor.is_current_user && (
+              <span className="inline-flex min-h-7 items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-extrabold uppercase tracking-wide text-rose-800">
+                <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                Your profile
+              </span>
+            )}
             {donor.is_verified && (
               <span className="inline-flex min-h-7 items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2.5 text-[11px] font-extrabold uppercase tracking-wide text-green-800">
                 <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
@@ -125,7 +133,7 @@ export default function DonorResultCard({
         </div>
       )}
 
-      {donor.donor_kind === 'IMPORTED' && donor.claim_path && (
+      {showClaimOption && donor.donor_kind === 'IMPORTED' && donor.claim_path && (
         <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-3">
           <p className="text-sm font-bold text-violet-950">Is this your listing?</p>
           <p className="mt-1 text-xs leading-5 text-violet-900/80">Verify the listed phone, confirm your details, and manage availability yourself.</p>
@@ -148,15 +156,25 @@ export default function DonorResultCard({
           <LockKeyhole className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           {donor.has_phone ? donor.phone_masked : 'No number published'}
         </p>
-        <button
-          type="button"
-          disabled={!donor.has_phone || busy}
-          onClick={() => onSelect(donor)}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Phone className="h-4 w-4" aria-hidden="true" />
-          {busy ? 'Opening...' : 'Request contact'}
-        </button>
+        {donor.is_current_user ? (
+          <Link
+            to="/profile/donor"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark"
+          >
+            <UserRound className="h-4 w-4" aria-hidden="true" />
+            Open my profile
+          </Link>
+        ) : (
+          <button
+            type="button"
+            disabled={!donor.has_phone || busy}
+            onClick={() => onSelect(donor)}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Phone className="h-4 w-4" aria-hidden="true" />
+            {busy ? 'Opening...' : 'Request contact'}
+          </button>
+        )}
       </div>
     </article>
   );

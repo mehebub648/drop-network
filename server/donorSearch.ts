@@ -201,6 +201,7 @@ export type RankableDonor = {
   blood_group: string;
   name: string;
   donor_ref?: string;
+  is_current_user?: boolean;
   is_verified?: boolean;
   is_exact_group?: boolean;
   ranking?: {
@@ -214,12 +215,14 @@ export type RankableDonor = {
 /**
  * Ordering for a result page:
  *
- * 1. registered members before imported listings - they opted in to be called;
- * 2. the patient's exact group before a merely compatible one - a compatible
+ * 1. the signed-in requester's own eligible donor profile, when present;
+ * 2. registered members before imported listings - they opted in to be called;
+ * 3. the patient's exact group before a merely compatible one - a compatible
  *    donor is still useful, just less certain to be what the hospital asked for;
- * 3. name, so the order is stable between reloads.
+ * 4. name, so the order is stable between reloads.
  */
 export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGroup: string, sort: SearchSort = 'recommended'): T[] {
+  const currentUserTier = (donor: T) => donor.is_current_user ? 0 : 1;
   const verifiedTier = (donor: T) => donor.donor_kind === 'REGISTERED' && donor.is_verified !== false ? 0 : 1;
   const exactTier = (donor: T) => (donor.is_exact_group ?? donor.blood_group === exactGroup) ? 0 : 1;
   const confirmed = (donor: T) => new Date(donor.ranking?.availability_confirmed_at || 0).getTime() || 0;
@@ -229,6 +232,8 @@ export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGrou
   const stableName = (a: T, b: T) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
     || (a.donor_ref || '').localeCompare(b.donor_ref || '', 'en');
   return [...donors].sort((a, b) => {
+    const currentUser = currentUserTier(a) - currentUserTier(b);
+    if (currentUser) return currentUser;
     const tier = verifiedTier(a) - verifiedTier(b);
     if (tier) return tier;
     if (sort === 'name') return stableName(a, b);

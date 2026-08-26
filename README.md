@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.91`
+Current version: `0.0.93`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -186,6 +186,12 @@ bound Messavo code, then must confirm name, blood group, district, upazila,
 availability, and consent with no preselected defaults. A matching phone claims
 the stub. A different unique phone creates or updates that person's own
 passwordless profile and leaves the original listing unclaimed.
+Search results show the imported-listing claim option only to guests; signed-in
+members use their existing donor profile instead.
+When a signed-in member's verified, available profile matches the searched
+blood group and upazila, it appears first with a “Your profile” label. Its
+action opens profile management instead of revealing or calling the member's
+own phone number.
 
 Anyone can use `/contribute` to create a private donor suggestion. It remains
 unsearchable, sends no unsolicited SMS, and expires after 30 days unless the

@@ -1127,6 +1127,8 @@ type DonorCard = {
   upazila: string;
   phone_masked: string;
   has_phone: boolean;
+  /** True only for an authenticated search result belonging to the requester. */
+  is_current_user?: boolean;
   is_verified?: boolean;
   availability_status?: string;
   /** Public, bounded self-report. Detailed history and organizations stay private. */
@@ -1267,7 +1269,8 @@ async function resolveRegisteredContactIssues(
 function registeredDonorCard(
   user: User,
   exactGroup: string,
-  search: { district: string; upazilas: string[]; facilityCode?: string; facilityName?: string }
+  search: { district: string; upazilas: string[]; facilityCode?: string; facilityName?: string },
+  isCurrentUser = false
 ): DonorCard {
   const profile = user.donor_profile!;
   const donationSummary = createPublicDonationSummary(
@@ -1287,6 +1290,7 @@ function registeredDonorCard(
     upazila: profile.upazila || '',
     phone_masked: maskPhone(user.phone),
     has_phone: Boolean(user.phone),
+    ...(isCurrentUser ? { is_current_user: true } : {}),
     is_verified: Boolean(user.is_verified),
     availability_status: profile.availability_status,
     ...(donationSummary ? { donation_summary: donationSummary } : {}),
@@ -1343,7 +1347,7 @@ async function findRequestDonors(params: {
   bloodGroup: BloodGroup;
   district: string;
   upazila: string;
-  excludeUserId?: string;
+  requesterUserId?: string;
   page?: number;
   pageSize?: number;
   sort?: SearchSort;
@@ -1355,21 +1359,21 @@ async function findRequestDonors(params: {
   const compatibleGroups = COMPATIBLE_DONORS[params.bloodGroup] || [params.bloodGroup];
   const upazilas = getUpazilaVariants(params.district, params.upazila);
   const pageSize = params.pageSize ?? SEARCH_PAGE_SIZE;
-  const requester = params.excludeUserId ? users.find(user => user.id === params.excludeUserId) : undefined;
+  const requester = params.requesterUserId ? users.find(user => user.id === params.requesterUserId) : undefined;
 
   const allRegistered = users
     .filter(user => registeredMatchesRequestSearch(user, {
       compatibleGroups,
       district: params.district,
       upazilas,
-      excludeUserId: params.excludeUserId
+      requesterUserId: params.requesterUserId
     }, requester))
     .map(user => registeredDonorCard(user, params.bloodGroup, {
       district: params.district,
       upazilas,
       facilityCode: params.facilityCode,
       facilityName: params.facilityName
-    }));
+    }, user.id === params.requesterUserId));
 
   let directoryTotal = 0;
   let allDirectory: DonorCard[] = [];
@@ -1692,15 +1696,15 @@ function otpVerificationPayload(phone: string, purpose: OtpChallenge['purpose'],
 
 function registeredMatchesRequestSearch(
   user: User,
-  params: { compatibleGroups: string[]; district: string; upazilas: string[]; excludeUserId?: string },
+  params: { compatibleGroups: string[]; district: string; upazilas: string[]; requesterUserId?: string; excludeRequester?: boolean },
   requester?: User
 ) {
-  return user.id !== params.excludeUserId &&
+  return (!params.excludeRequester || user.id !== params.requesterUserId) &&
     user.account_status !== 'SUSPENDED' &&
     !user.deleted_at &&
     user.is_verified &&
     !user.donor_profile?.contact_suspended_at &&
-    (!params.excludeUserId || !user.blocked_user_ids?.includes(params.excludeUserId)) &&
+    (!params.requesterUserId || !user.blocked_user_ids?.includes(params.requesterUserId)) &&
     !requester?.blocked_user_ids?.includes(user.id) &&
     matchesPreferenceSearch(user.donor_profile, params);
 }
@@ -1798,7 +1802,7 @@ app.get('/api/search/donors', async (req, res) => {
     bloodGroup,
     district: location.area_name,
     upazila,
-    excludeUserId: auth?.user.id,
+    requesterUserId: auth?.user.id,
     page: requestedPage,
     sort,
     exactGroupOnly,
@@ -3251,7 +3255,8 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
       compatibleGroups,
       district: request.location.area_name,
       upazilas,
-      excludeUserId: auth.user.id
+      requesterUserId: auth.user.id,
+      excludeRequester: true
     }, auth.user)) {
       card = registeredDonorCard(donor, request.blood_group, {
         district: request.location.area_name,

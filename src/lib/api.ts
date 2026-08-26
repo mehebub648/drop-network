@@ -56,6 +56,7 @@ export type SearchDonorCard = {
   upazila: string;
   phone_masked: string;
   has_phone: boolean;
+  is_current_user?: boolean;
   is_verified?: boolean;
   availability_status?: string;
   donation_summary?: PublicDonationSummary;

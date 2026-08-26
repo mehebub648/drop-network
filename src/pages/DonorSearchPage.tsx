@@ -91,6 +91,7 @@ export default function DonorSearchPage({
   const phoneVerifiedOnly = searchParams.get('phone_verified_only') === 'true';
   const collectionFacility = searchParams.get('collection_facility') || '';
   const collectionFacilityCode = searchParams.get('collection_facility_code') || '';
+  const userId = user?.id || '';
   const hasQuery = Boolean(bloodGroup && district && upazila);
   const contextComplete = Boolean(draft.collection_facility.trim() && draft.requester_role);
   const draftRef = useRef(draft);
@@ -135,7 +136,7 @@ export default function DonorSearchPage({
     return () => {
       cancelled = true;
     };
-  }, [bloodGroup, district, upazila, page, sort, exactGroupOnly, phoneVerifiedOnly, collectionFacility, collectionFacilityCode, hasQuery, reloadKey]);
+  }, [bloodGroup, district, upazila, page, sort, exactGroupOnly, phoneVerifiedOnly, collectionFacility, collectionFacilityCode, hasQuery, reloadKey, userId]);
 
   useEffect(() => {
     if (!hasQuery || !contextComplete) setRefineOpen(true);
@@ -397,6 +398,7 @@ export default function DonorSearchPage({
                     donor={donor}
                     onSelect={selectDonor}
                     busy={busyRef === donor.donor_ref}
+                    showClaimOption={!user}
                   />
                 ))}
               </div>

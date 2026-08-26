@@ -131,3 +131,14 @@ test('every public sort is deterministic and keeps verified registered donors ab
     assert.deepEqual(rankDonorResults(donors, 'A+', sort), ranked, `${sort} changed between identical calls`);
   }
 });
+
+test('the signed-in donor stays first in every sort when eligible for their own search', () => {
+  const donors = [
+    { donor_ref: 'reg:other', donor_kind: 'REGISTERED' as const, blood_group: 'A+', name: 'A Donor', is_verified: true, is_exact_group: true, ranking: { donation_total: 99, location_match_score: 8 } },
+    { donor_ref: 'reg:me', donor_kind: 'REGISTERED' as const, blood_group: 'A+', name: 'Z Donor', is_current_user: true, is_verified: true, is_exact_group: true, ranking: { donation_total: 0, location_match_score: 4 } },
+    { donor_ref: 'imp:1', donor_kind: 'IMPORTED' as const, blood_group: 'A+', name: 'Imported Donor', is_exact_group: true, ranking: { donation_total: 120, location_match_score: 9 } }
+  ];
+  for (const sort of ['recommended', 'recently_confirmed', 'best_location', 'most_donations', 'fewest_contact_issues', 'name'] as const) {
+    assert.equal(rankDonorResults(donors, 'A+', sort)[0]?.donor_ref, 'reg:me', `${sort} did not keep the current donor first`);
+  }
+});
