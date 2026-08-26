@@ -160,6 +160,7 @@ export type ImportedDonorRow = {
   row_version: string;
   listing_state: string;
   publication_state: string;
+  contact_state: string;
   public_id: string;
   claim_slug: string;
   contribution_expires_at: string;
@@ -272,6 +273,7 @@ async function prepareImportedDonorTable() {
       row_version: "''",
       listing_state: "'ACTIVE'",
       publication_state: "'PUBLIC'",
+      contact_state: "'ACTIVE'",
       contribution_expires_at: "''"
     };
     const missing = Object.keys(defaults)
@@ -292,6 +294,7 @@ async function prepareImportedDonorTable() {
     row_version: IMPORTED_ROW_VERSION,
     listing_state: 'ACTIVE',
     publication_state: 'PUBLIC',
+    contact_state: 'ACTIVE',
     public_id: '',
     claim_slug: '',
     contribution_expires_at: '',
@@ -372,6 +375,8 @@ export type ImportedDonorQuery = {
   includeRemoved?: boolean;
   /** Include owner-unverified anonymous suggestions. Off by default. */
   includePrivate?: boolean;
+  /** Include rows temporarily suppressed by verified contact-failure reports. */
+  includeSuspended?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -388,6 +393,9 @@ export function buildImportedFilter(query: ImportedDonorQuery) {
   }
   if (!query.includePrivate) {
     clauses.push(`(publication_state IS NULL OR publication_state = ${stringLiteral('PUBLIC')})`);
+  }
+  if (!query.includeSuspended) {
+    clauses.push(`(contact_state IS NULL OR contact_state = ${stringLiteral('ACTIVE')})`);
   }
   if (query.bloodGroups?.length) {
     clauses.push(`blood_group IN (${query.bloodGroups.map(stringLiteral).join(', ')})`);
@@ -458,10 +466,13 @@ export async function queryImportedDonorsForRequest(params: {
  * backs the detail page, the claim flow, and the phone reveal - if it returned
  * the row, a removal would not actually remove anything.
  */
-export async function getImportedDonor(publicId: string, options: { includeRemoved?: boolean } = {}) {
+export async function getImportedDonor(publicId: string, options: { includeRemoved?: boolean; includeSuspended?: boolean } = {}) {
   const table = await readable(await ensureImportedDonorTable());
   const clauses = [`public_id = ${stringLiteral(publicId)}`];
   clauses.push(`(publication_state IS NULL OR publication_state = ${stringLiteral('PUBLIC')})`);
+  if (!options.includeSuspended) {
+    clauses.push(`(contact_state IS NULL OR contact_state = ${stringLiteral('ACTIVE')})`);
+  }
   if (!options.includeRemoved) {
     clauses.push(`(listing_state IS NULL OR listing_state <> ${stringLiteral('REMOVED')})`);
   }
@@ -476,6 +487,7 @@ export async function getImportedDonorByClaimSlug(claimSlug: string, options: { 
   const donors = await queryImportedDonors({
     claimSlug,
     includePrivate: true,
+    includeSuspended: true,
     includeRemoved: options.includeRemoved,
     limit: 1
   });
@@ -638,6 +650,7 @@ export type CallReportQuery = {
   requestId?: string;
   actorId?: string;
   donorRef?: string;
+  donorRefs?: string[];
   kind?: string;
   limit?: number;
   offset?: number;
@@ -649,6 +662,7 @@ export function buildCallReportFilter(query: CallReportQuery) {
   if (query.requestId) clauses.push(`request_id = ${stringLiteral(query.requestId)}`);
   if (query.actorId) clauses.push(`actor_id = ${stringLiteral(query.actorId)}`);
   if (query.donorRef) clauses.push(`donor_ref = ${stringLiteral(query.donorRef)}`);
+  if (query.donorRefs?.length) clauses.push(`donor_ref IN (${query.donorRefs.map(stringLiteral).join(', ')})`);
   if (query.kind) clauses.push(`kind = ${stringLiteral(query.kind)}`);
   return clauses.join(' AND ');
 }

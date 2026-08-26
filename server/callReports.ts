@@ -5,15 +5,16 @@
 // response status enum, which is load-bearing for units accounting and cannot
 // represent an imported listing at all (those are not user accounts).
 //
-// Nothing recorded here changes a donor's own state. A requester saying "she
-// recently donated" or "he is ill" is an unverified third-party claim; acting on
-// it would let anyone deactivate any donor with one click. The donor's own
-// report, filed from their side, is a different matter.
+// A single report never changes a donor's own state. Public summaries count
+// distinct verified requesters, owner corrections append resolution evidence,
+// and only three independent recent connection failures suppress search.
 
 export const CALL_OUTCOMES = [
   'WILL_DONATE',
+  'CALL_BACK_LATER',
   'NOT_CALLED',
   'NO_ANSWER',
+  'UNREACHABLE',
   'WRONG_NUMBER',
   'DECLINED'
 ] as const;
@@ -24,8 +25,8 @@ export const DECLINE_REASONS = [
   'RECENTLY_DONATED',
   'LOCATION_FAR',
   'DONOR_ILL',
+  'UNAVAILABLE',
   'OTHER',
-  'UNSPECIFIED'
 ] as const;
 export type DeclineReason = (typeof DECLINE_REASONS)[number];
 
@@ -51,7 +52,24 @@ export const DONOR_REPORT_OUTCOMES = [
 ] as const;
 export type DonorReportOutcome = (typeof DONOR_REPORT_OUTCOMES)[number];
 
-export const CALL_REPORT_KINDS = ['REVEAL', 'CALL_OUTCOME', 'DONOR_REPORT'] as const;
+export const CONTACT_ISSUE_CATEGORIES = [
+  'WRONG_NUMBER',
+  'UNREACHABLE',
+  'DECLINED',
+  'RECENTLY_DONATED',
+  'TOO_FAR',
+  'HEALTH'
+] as const;
+export type ContactIssueCategory = (typeof CONTACT_ISSUE_CATEGORIES)[number];
+
+export const CALL_REPORT_KINDS = [
+  'REVEAL',
+  'CALL_OUTCOME',
+  'DONOR_REPORT',
+  'OWNER_RESOLUTION',
+  'DISPUTE',
+  'STAFF_RESOLUTION'
+] as const;
 
 export type CallReport = {
   id: string;
@@ -62,14 +80,90 @@ export type CallReport = {
   /** `reg:<user_id>` or `imp:<public_id>`. */
   donor_ref: string;
   donor_kind: 'REGISTERED' | 'IMPORTED';
+  /** Snapshot set only by the verified call-report route. */
+  actor_verified?: boolean;
   outcome?: string;
   reason?: string;
   detail?: string;
   note?: string;
   /** On a CALL_OUTCOME, the REVEAL it answers. */
   reveal_id?: string;
+  /** Owner/staff remediation or dispute categories. */
+  categories?: ContactIssueCategory[];
+  resolution_kind?: string;
   created_at: string;
 };
+
+export type ContactIssueSummary = Partial<Record<ContactIssueCategory, number>>;
+
+export function contactIssueCategories(report: Pick<CallReport, 'kind' | 'outcome' | 'reason'>) {
+  if (report.kind !== 'CALL_OUTCOME') return [] as ContactIssueCategory[];
+  if (report.outcome === 'WRONG_NUMBER') return ['WRONG_NUMBER'] as ContactIssueCategory[];
+  if (report.outcome === 'NO_ANSWER' || report.outcome === 'UNREACHABLE') {
+    return ['UNREACHABLE'] as ContactIssueCategory[];
+  }
+  if (report.outcome !== 'DECLINED') return [] as ContactIssueCategory[];
+  const categories: ContactIssueCategory[] = ['DECLINED'];
+  if (report.reason === 'RECENTLY_DONATED') categories.push('RECENTLY_DONATED');
+  if (report.reason === 'LOCATION_FAR') categories.push('TOO_FAR');
+  if (report.reason === 'DONOR_ILL') categories.push('HEALTH');
+  return categories;
+}
+
+/**
+ * Active public counts. A requester contributes at most one count per donor
+ * category, and a later owner/staff resolution makes earlier evidence stale.
+ */
+export function aggregateContactIssues(reports: CallReport[]): ContactIssueSummary {
+  const resolvedAfter = new Map<ContactIssueCategory, number>();
+  for (const report of reports) {
+    if (!['OWNER_RESOLUTION', 'STAFF_RESOLUTION'].includes(report.kind)) continue;
+    const at = new Date(report.created_at).getTime();
+    for (const category of report.categories || []) {
+      resolvedAfter.set(category, Math.max(resolvedAfter.get(category) || 0, at));
+    }
+  }
+
+  const actors = new Map<ContactIssueCategory, Set<string>>();
+  for (const report of reports) {
+    if (report.kind !== 'CALL_OUTCOME') continue;
+    const at = new Date(report.created_at).getTime();
+    for (const category of contactIssueCategories(report)) {
+      if (at <= (resolvedAfter.get(category) || 0)) continue;
+      const seen = actors.get(category) || new Set<string>();
+      seen.add(report.actor_id);
+      actors.set(category, seen);
+    }
+  }
+  return Object.fromEntries(
+    [...actors.entries()].filter(([, reporters]) => reporters.size > 0).map(([category, reporters]) => [category, reporters.size])
+  ) as ContactIssueSummary;
+}
+
+/** Three independent verified requesters reporting connection failure in 90 days. */
+export function recentConnectionFailureReporterCount(
+  reports: CallReport[],
+  now = Date.now(),
+  days = 90
+) {
+  const cutoff = now - days * 86_400_000;
+  let resolvedAfter = 0;
+  for (const report of reports) {
+    if (!['OWNER_RESOLUTION', 'STAFF_RESOLUTION'].includes(report.kind)) continue;
+    if (!(report.categories || []).some(category => category === 'WRONG_NUMBER' || category === 'UNREACHABLE')) continue;
+    resolvedAfter = Math.max(resolvedAfter, new Date(report.created_at).getTime());
+  }
+  const reporters = new Set<string>();
+  for (const report of reports) {
+    const reportedAt = new Date(report.created_at).getTime();
+    if (reportedAt < cutoff || reportedAt <= resolvedAfter) continue;
+    const categories = contactIssueCategories(report);
+    if (categories.includes('WRONG_NUMBER') || categories.includes('UNREACHABLE')) {
+      reporters.add(report.actor_id);
+    }
+  }
+  return reporters.size;
+}
 
 export function findUnansweredReveals(reports: CallReport[]) {
   const answered = new Set(

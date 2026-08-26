@@ -160,6 +160,9 @@ async function main() {
       contributed_at: previous.contributed_at,
       contribution_expires_at: previous.contribution_expires_at,
       contribution_fingerprint_hash: previous.contribution_fingerprint_hash,
+      contact_state: previous.contact_state,
+      report_suspended_at: previous.report_suspended_at,
+      report_suspension_count: previous.report_suspension_count,
       imported_at: previous.imported_at
     };
   }));

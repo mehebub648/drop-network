@@ -16,7 +16,19 @@ import { getLocationByName } from './locations';
 import { getSmsProvider, isSmsConfigured, type SmsDeliveryStatus } from './sms';
 import { getUpazilaByName, getUpazilaVariants } from './upazilas';
 import { BLOOD_GROUPS, COMPATIBLE_DONORS, type BloodGroup } from './blood';
-import { findPendingReveal, findUnansweredReveals, parseCallOutcome, parseDonorReport, parseDonorRef, type CallReport } from './callReports';
+import {
+  CONTACT_ISSUE_CATEGORIES,
+  aggregateContactIssues,
+  findPendingReveal,
+  findUnansweredReveals,
+  parseCallOutcome,
+  parseDonorReport,
+  parseDonorRef,
+  recentConnectionFailureReporterCount,
+  type CallReport,
+  type ContactIssueCategory,
+  type ContactIssueSummary
+} from './callReports';
 import {
   AVAILABILITY_TTL_DAYS,
   DONATION_INTERVAL_DAYS,
@@ -252,6 +264,9 @@ type DonorProfile = {
   deferred_until?: string;
   donation_history?: DonationRecord[];
   availability_history?: AvailabilityHistoryEntry[];
+  contact_suspended_at?: string;
+  contact_suspension_count?: number;
+  contact_suspension_source?: 'AUTOMATIC' | 'STAFF';
 };
 
 type RecipientProfile = {
@@ -999,6 +1014,7 @@ async function findDonorMatches(
   return dbMatches
     .filter(u => u.id !== excludeUserId)
     .filter(u => u.account_status !== 'SUSPENDED' && !u.deleted_at && u.is_verified)
+    .filter(u => !u.donor_profile.contact_suspended_at)
     .filter(u => !u.blocked_user_ids?.includes(excludeUserId) && !requester?.blocked_user_ids?.includes(u.id))
     .filter(u => donorGroups.includes(u.donor_profile.blood_group as BloodGroup))
     .filter(u => u.donor_profile.availability_status === 'AVAILABLE')
@@ -1050,6 +1066,9 @@ type DonorCard = {
   donation_summary?: PublicDonationSummary;
   /** Attribution for an imported listing; absent for registered members. */
   source?: { organization: string; url: string };
+  /** Aggregated, non-accusatory counts. Notes and reporter identities stay private. */
+  contact_issues?: ContactIssueSummary;
+  claim_path?: string;
 };
 
 export function registeredDonorRef(userId: string) {
@@ -1058,6 +1077,114 @@ export function registeredDonorRef(userId: string) {
 
 export function importedDonorRef(publicId: string) {
   return `imp:${publicId}`;
+}
+
+async function loadContactReports(donorRefs: string[]) {
+  const unique = [...new Set(donorRefs.filter(Boolean))];
+  if (unique.length === 0) return [] as CallReport[];
+  const reports: CallReport[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const batch = await queryCallReports<CallReport>({ donorRefs: unique, limit: 500, offset });
+    reports.push(...batch);
+    if (batch.length < 500) break;
+  }
+  const verifiedActors = new Set(users.filter(user => user.is_verified && !user.deleted_at).map(user => user.id));
+  return reports.filter(report => report.kind !== 'CALL_OUTCOME' || report.actor_verified === true || verifiedActors.has(report.actor_id));
+}
+
+async function contactIssueSummaries(donorRefs: string[]) {
+  const reports = await loadContactReports(donorRefs);
+  const grouped = new Map<string, CallReport[]>();
+  for (const report of reports) grouped.set(report.donor_ref, [...(grouped.get(report.donor_ref) || []), report]);
+  return new Map([...grouped.entries()].map(([donorRef, items]) => [donorRef, aggregateContactIssues(items)]));
+}
+
+async function setContactSuspension(
+  donorRef: string,
+  suspended: boolean,
+  source: 'AUTOMATIC' | 'STAFF',
+  count = 0
+) {
+  const reference = parseDonorRef(donorRef);
+  if (!reference) return false;
+  const now = new Date().toISOString();
+  if (reference.kind === 'REGISTERED') {
+    const donor = users.find(user => user.id === reference.id && user.donor_profile);
+    if (!donor?.donor_profile) return false;
+    if (suspended) {
+      if (donor.donor_profile.contact_suspended_at) {
+        donor.donor_profile.contact_suspension_count = Math.max(donor.donor_profile.contact_suspension_count || 0, count);
+        await saveToTable('common_users', donor);
+        return false;
+      }
+      donor.donor_profile.contact_suspended_at = donor.donor_profile.contact_suspended_at || now;
+      donor.donor_profile.contact_suspension_count = count;
+      donor.donor_profile.contact_suspension_source = source;
+      await saveToTable('common_users', donor);
+      await removeDonorFromAllPartitions(donor.id);
+      await notify(donor.id, 'CONTACT_REPORT_SUSPENSION', 'Donor search paused', 'Several verified requesters could not use your contact number. Reverify it from Contact reports to restore search.', '/profile/contact-reports');
+    } else {
+      delete donor.donor_profile.contact_suspended_at;
+      delete donor.donor_profile.contact_suspension_count;
+      delete donor.donor_profile.contact_suspension_source;
+      await saveToTable('common_users', donor);
+      await removeDonorFromAllPartitions(donor.id);
+      if (donor.donor_profile.availability_status === 'AVAILABLE') await syncDonorToPartition(donor);
+    }
+    return true;
+  }
+
+  const donor = await getImportedDonor(reference.id, { includeRemoved: true, includeSuspended: true });
+  if (!donor) return false;
+  if (suspended && donor.contact_state === 'SUSPENDED') {
+    donor.report_suspension_count = Math.max(donor.report_suspension_count || 0, count);
+    await replaceImportedDonor(toImportedDonorRow(donor));
+    return false;
+  }
+  donor.contact_state = suspended ? 'SUSPENDED' : 'ACTIVE';
+  donor.report_suspended_at = suspended ? donor.report_suspended_at || now : undefined;
+  donor.report_suspension_count = suspended ? count : undefined;
+  await replaceImportedDonor(toImportedDonorRow(donor));
+  return true;
+}
+
+async function reconcileAutomaticContactSuspension(donorRef: string) {
+  const reports = await loadContactReports([donorRef]);
+  const count = recentConnectionFailureReporterCount(reports);
+  if (count < 3) return;
+  const changed = await setContactSuspension(donorRef, true, 'AUTOMATIC', count);
+  if (changed) await audit('system', 'CONTACT_REPORT_AUTO_SUSPENDED', 'DONOR', donorRef, { distinct_verified_reporters: count, window_days: 90 });
+}
+
+async function resolveRegisteredContactIssues(
+  user: User,
+  requestedCategories: ContactIssueCategory[],
+  resolutionKind: string
+) {
+  if (!user.donor_profile) return;
+  const donorRef = registeredDonorRef(user.id);
+  const reports = await loadContactReports([donorRef]);
+  const summary = aggregateContactIssues(reports);
+  const categories = requestedCategories.filter(category => Boolean(summary[category]));
+  const clearsConnectionSuspension = requestedCategories.some(category => category === 'WRONG_NUMBER' || category === 'UNREACHABLE');
+  if (categories.length > 0) {
+    await addCallReports([{
+      id: uuidv4(),
+      kind: 'OWNER_RESOLUTION',
+      request_id: '',
+      actor_id: user.id,
+      donor_ref: donorRef,
+      donor_kind: 'REGISTERED',
+      categories,
+      resolution_kind: resolutionKind,
+      created_at: new Date().toISOString()
+    } satisfies CallReport]);
+    await audit(user.id, 'CONTACT_REPORTS_RESOLVED', 'DONOR', donorRef, { categories, resolution_kind: resolutionKind });
+  }
+  if (clearsConnectionSuspension && user.donor_profile.contact_suspended_at) {
+    await setContactSuspension(donorRef, false, 'AUTOMATIC');
+    await audit(user.id, 'CONTACT_REPORT_SUSPENSION_CLEARED', 'DONOR', donorRef, { resolution_kind: resolutionKind });
+  }
 }
 
 function registeredDonorCard(user: User, exactGroup: string): DonorCard {
@@ -1097,7 +1224,8 @@ function importedDonorCard(donor: ImportedDonor, exactGroup: string): DonorCard 
     has_phone: view.has_phone,
     // No availability status: nobody has asked these people whether they are
     // free, and inventing one would misrepresent a scraped listing.
-    source: { organization: view.source.organization, url: view.source.url }
+    source: { organization: view.source.organization, url: view.source.url },
+    claim_path: view.claim_path
   };
 }
 
@@ -1171,6 +1299,17 @@ async function findRequestDonors(params: {
     } catch {
       directory = [];
     }
+  }
+
+  try {
+    const summaries = await contactIssueSummaries([...registered, ...directory].map(donor => donor.donor_ref));
+    for (const donor of [...registered, ...directory]) {
+      const summary = summaries.get(donor.donor_ref);
+      if (summary && Object.keys(summary).length > 0) donor.contact_issues = summary;
+    }
+  } catch {
+    // Contact quality is supplemental. A temporary report-table read failure
+    // must not hide otherwise eligible donors.
   }
 
   return {
@@ -1432,6 +1571,7 @@ function registeredMatchesRequestSearch(
     user.account_status !== 'SUSPENDED' &&
     !user.deleted_at &&
     user.is_verified &&
+    !user.donor_profile?.contact_suspended_at &&
     (!params.excludeUserId || !user.blocked_user_ids?.includes(params.excludeUserId)) &&
     !requester?.blocked_user_ids?.includes(user.id) &&
     matchesUpazilaSearch(user.donor_profile, params);
@@ -2253,6 +2393,77 @@ app.get('/api/me', (req, res) => {
   res.json(sanitizeUser(auth.user));
 });
 
+app.get('/api/me/contact-reports', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!auth.user.donor_profile) return res.json({ issues: {}, suspended: false, disputes: [] });
+  const donorRef = registeredDonorRef(auth.user.id);
+  const reports = await loadContactReports([donorRef]);
+  const issues = aggregateContactIssues(reports);
+  const disputes = reports
+    .filter(report => report.kind === 'DISPUTE' && report.actor_id === auth.user.id)
+    .filter(dispute => !reports.some(report =>
+      report.kind === 'STAFF_RESOLUTION' &&
+      new Date(report.created_at).getTime() > new Date(dispute.created_at).getTime() &&
+      report.categories?.some(category => dispute.categories?.includes(category))
+    ))
+    .map(report => ({ id: report.id, categories: report.categories || [], created_at: report.created_at }));
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({
+    issues,
+    suspended: Boolean(auth.user.donor_profile.contact_suspended_at),
+    suspended_at: auth.user.donor_profile.contact_suspended_at,
+    suspension_count: auth.user.donor_profile.contact_suspension_count,
+    disputes
+  });
+}));
+
+app.post('/api/me/contact-reports/reverify-phone', authLimiter, asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const challenge = verifiedChallenge(auth.user.phone, 'CHANGE_PHONE', req.body?.verification_token);
+  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify your current phone before clearing contact warnings' });
+  if (challenge) await consumeChallenge(challenge);
+  auth.user.is_verified = true;
+  auth.user.phone_verified_at = new Date().toISOString();
+  await saveToTable('common_users', auth.user);
+  await resolveRegisteredContactIssues(auth.user, ['WRONG_NUMBER', 'UNREACHABLE'], 'PHONE_REVERIFIED');
+  res.json({ success: true, user: sanitizeUser(auth.user) });
+}));
+
+app.post('/api/me/contact-reports/disputes', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!auth.user.donor_profile) return validationError(res, 'A donor profile is required');
+  const category = req.body?.category;
+  const note = cleanString(req.body?.note, 300);
+  if (!isOneOf(category, CONTACT_ISSUE_CATEGORIES) || !note || note.length < 10) {
+    return validationError(res, 'Choose an active category and explain the dispute in at least 10 characters');
+  }
+  const donorRef = registeredDonorRef(auth.user.id);
+  const reports = await loadContactReports([donorRef]);
+  if (!aggregateContactIssues(reports)[category]) return res.status(409).json({ error: 'That contact warning is no longer active' });
+  const recentDuplicate = reports.some(report =>
+    report.kind === 'DISPUTE' && report.actor_id === auth.user.id && report.categories?.includes(category) &&
+    Date.now() - new Date(report.created_at).getTime() < 7 * 86_400_000
+  );
+  if (recentDuplicate) return res.status(409).json({ error: 'This category is already waiting for staff review' });
+  const dispute: CallReport = {
+    id: uuidv4(),
+    kind: 'DISPUTE',
+    request_id: '',
+    actor_id: auth.user.id,
+    donor_ref: donorRef,
+    donor_kind: 'REGISTERED',
+    categories: [category],
+    note,
+    created_at: new Date().toISOString()
+  };
+  await addCallReports([dispute]);
+  await audit(auth.user.id, 'CONTACT_REPORT_DISPUTED', 'DONOR', donorRef, { category });
+  res.status(201).json({ dispute_id: dispute.id, category, created_at: dispute.created_at });
+}));
+
 app.patch('/api/me', async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
@@ -2282,6 +2493,9 @@ app.patch('/api/me', async (req, res) => {
     ...(phoneChanged ? { is_verified: true, phone_verified_at: new Date().toISOString() } : {})
   };
   await saveToTable('common_users', users[userIndex]);
+  if (phoneChanged && users[userIndex].donor_profile) {
+    await resolveRegisteredContactIssues(users[userIndex], ['WRONG_NUMBER', 'UNREACHABLE'], 'PHONE_CHANGED_AND_VERIFIED');
+  }
 
   if (users[userIndex].donor_profile) {
     await removeDonorFromAllPartitions(users[userIndex].id);
@@ -2476,6 +2690,15 @@ app.post('/api/me/donor-profile', async (req, res) => {
       ? existingProfile?.upazila
       : undefined;
     const availabilityHistory = [...(existingProfile?.availability_history || [])];
+    const areaChanged = Boolean(existingProfile) && (
+      existingProfile!.location.area_name !== location.area_name ||
+      (existingProfile!.upazila || '') !== (upazila ?? keptUpazila ?? '')
+    );
+    const donationChanged = Boolean(existingProfile) && (
+      JSON.stringify(existingProfile!.last_donation || null) !== JSON.stringify(donationDetails.value.last_donation || null) ||
+      JSON.stringify(existingProfile!.donation_history || []) !== JSON.stringify(resolvedHistory)
+    );
+    const returnedAfterHealthPause = existingProfile?.availability_status === 'SICK' && availability_status === 'AVAILABLE';
     if (!existingProfile || existingProfile.availability_status !== availability_status) {
       availabilityHistory.push({ status: availability_status, changed_at: new Date().toISOString() });
     }
@@ -2505,6 +2728,14 @@ app.post('/api/me/donor-profile', async (req, res) => {
       availability_history: availabilityHistory.slice(-50)
     };
     await saveToTable('common_users', users[userIndex]);
+    const resolvedCategories: ContactIssueCategory[] = [];
+    if (availability_status === 'AVAILABLE') resolvedCategories.push('DECLINED');
+    if (donationChanged) resolvedCategories.push('RECENTLY_DONATED');
+    if (areaChanged) resolvedCategories.push('TOO_FAR');
+    if (returnedAfterHealthPause) resolvedCategories.push('HEALTH');
+    if (resolvedCategories.length > 0) {
+      await resolveRegisteredContactIssues(users[userIndex], resolvedCategories, 'DONOR_PROFILE_UPDATED');
+    }
     await removeDonorFromAllPartitions(users[userIndex].id);
     if (users[userIndex].donor_profile?.availability_status === 'AVAILABLE') {
       await syncDonorToPartition(users[userIndex]);
@@ -2896,14 +3127,15 @@ app.get('/api/me/reveals/pending', async (req, res) => {
 /**
  * The answer to "what happened when you called".
  *
- * Nothing here changes the donor's own record. "Recently donated" and "is ill"
- * are unverified third-party claims, and acting on them would let any requester
- * mark any donor unavailable. They are recorded for staff to aggregate instead.
+ * One report never changes a donor's own profile. Counts aggregate distinct
+ * verified requesters, and only three recent independent connection failures
+ * temporarily suppress search.
  */
 app.post('/api/requests/:id/call-reports', async (req, res) => {
   const auth = getCurrentAuth(req);
   const request = requests.find(item => item.id === req.params.id);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verified account required' });
   if (!request) return res.status(404).json({ error: 'Request not found' });
   if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can report a call' });
 
@@ -2927,6 +3159,7 @@ app.post('/api/requests/:id/call-reports', async (req, res) => {
     actor_id: auth.user.id,
     donor_ref: reveal.donor_ref,
     donor_kind: reveal.donor_kind,
+    actor_verified: true,
     reveal_id: revealId,
     outcome: parsed.value.outcome,
     reason: 'reason' in parsed.value ? parsed.value.reason : undefined,
@@ -2935,6 +3168,7 @@ app.post('/api/requests/:id/call-reports', async (req, res) => {
     created_at: new Date().toISOString()
   };
   await addCallReports([report]);
+  await reconcileAutomaticContactSuspension(reveal.donor_ref);
 
   // A registered donor already has a response record for this request, so a
   // declined call is reflected there too rather than leaving them "invited"
@@ -2944,7 +3178,7 @@ app.post('/api/requests/:id/call-reports', async (req, res) => {
     const response = donorResponses.find(item =>
       item.request_id === request.id && item.donor_id === reference.id && item.status === 'INVITED'
     );
-    if (response && ['WRONG_NUMBER', 'DECLINED'].includes(parsed.value.outcome)) {
+    if (response && ['WRONG_NUMBER', 'UNREACHABLE', 'DECLINED'].includes(parsed.value.outcome)) {
       response.status = 'DECLINED';
       response.updated_at = new Date().toISOString();
       await saveToTable('common_responses', response);
@@ -3750,8 +3984,23 @@ app.get('/api/admin/call-reports', async (req, res) => {
       kind: kind || undefined,
       limit: 500
     });
+    const grouped = new Map<string, CallReport[]>();
+    for (const report of reports) grouped.set(report.donor_ref, [...(grouped.get(report.donor_ref) || []), report]);
+    const states: Record<string, { suspended: boolean; suspended_at?: string; suspension_count?: number }> = {};
+    for (const ref of grouped.keys()) {
+      const parsedRef = parseDonorRef(ref);
+      if (parsedRef?.kind === 'REGISTERED') {
+        const profile = users.find(user => user.id === parsedRef.id)?.donor_profile;
+        states[ref] = { suspended: Boolean(profile?.contact_suspended_at), suspended_at: profile?.contact_suspended_at, suspension_count: profile?.contact_suspension_count };
+      } else if (parsedRef?.kind === 'IMPORTED') {
+        const donor = await getImportedDonor(parsedRef.id, { includeRemoved: true, includeSuspended: true });
+        states[ref] = { suspended: donor?.contact_state === 'SUSPENDED', suspended_at: donor?.report_suspended_at, suspension_count: donor?.report_suspension_count };
+      }
+    }
     res.json({
-      items: reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      items: reports.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+      aggregations: Object.fromEntries([...grouped.entries()].map(([ref, items]) => [ref, aggregateContactIssues(items)])),
+      states
     });
   } catch {
     res.status(503).json({ error: 'Call reports are temporarily unavailable' });
@@ -3830,6 +4079,44 @@ app.post('/api/organizations/:id/campaigns', async (req, res) => {
   await saveToTable('common_organizations', organization); await audit(auth.user.id, 'CAMPAIGN_PUBLISHED', 'ORGANIZATION', organization.id, { campaign_id: campaign.id });
   res.status(201).json(campaign);
 });
+
+app.patch('/api/admin/contact-reports/actions', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
+  const donorRef = cleanString(req.body?.donor_ref, 120);
+  const action = req.body?.action;
+  const note = cleanString(req.body?.note, 300);
+  if (!donorRef || !parseDonorRef(donorRef) || !isOneOf(action, ['SUSPEND', 'RESTORE', 'RESOLVE_DISPUTE'] as const) || !note || note.length < 10) {
+    return validationError(res, 'Choose a donor, action, and staff note of at least 10 characters');
+  }
+  const reports = await loadContactReports([donorRef]);
+  const active = aggregateContactIssues(reports);
+  let categories = CONTACT_ISSUE_CATEGORIES.filter(category => Boolean(active[category]));
+  if (action === 'RESOLVE_DISPUTE') {
+    const disputeId = cleanString(req.body?.dispute_id, 80);
+    const dispute = reports.find(report => report.id === disputeId && report.kind === 'DISPUTE');
+    if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+    categories = dispute.categories || [];
+  }
+
+  if (action === 'SUSPEND') {
+    const count = recentConnectionFailureReporterCount(reports);
+    if (!await setContactSuspension(donorRef, true, 'STAFF', count)) {
+      return res.status(409).json({ error: 'That donor is already suspended or no longer exists' });
+    }
+  } else {
+    if (categories.length > 0) {
+      await addCallReports([{
+        id: uuidv4(), kind: 'STAFF_RESOLUTION', request_id: '', actor_id: auth.user.id,
+        donor_ref: donorRef, donor_kind: parseDonorRef(donorRef)!.kind,
+        categories, resolution_kind: action, note, created_at: new Date().toISOString()
+      } satisfies CallReport]);
+    }
+    await setContactSuspension(donorRef, false, 'STAFF');
+  }
+  await audit(auth.user.id, `CONTACT_REPORT_${action}`, 'DONOR', donorRef, { categories, note });
+  res.json({ success: true, donor_ref: donorRef, action, resolved_categories: categories });
+}));
 
 const CONTRIBUTION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 

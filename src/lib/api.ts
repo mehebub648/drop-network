@@ -60,6 +60,8 @@ export type SearchDonorCard = {
   availability_status?: string;
   donation_summary?: PublicDonationSummary;
   source?: { organization: string; url: string };
+  contact_issues?: Partial<Record<'WRONG_NUMBER' | 'UNREACHABLE' | 'DECLINED' | 'RECENTLY_DONATED' | 'TOO_FAR' | 'HEALTH', number>>;
+  claim_path?: string;
 };
 
 export type CommunityPostType = 'DONATION_STORY' | 'HEALTH_SUGGESTION';
@@ -535,6 +537,37 @@ export const api = {
     if (params.page && params.page > 1) query.set('page', String(params.page));
     const res = await fetch(`${API_BASE}/search/donors?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to search donors');
+  },
+
+  async getAdminCallReports() {
+    const res = await fetch(`${API_BASE}/admin/call-reports`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load contact report evidence');
+  },
+
+  async moderateContactReports(body: { donor_ref: string; action: 'SUSPEND' | 'RESTORE' | 'RESOLVE_DISPUTE'; note: string; dispute_id?: string }) {
+    const res = await fetch(`${API_BASE}/admin/contact-reports/actions`, {
+      method: 'PATCH', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to update contact report state');
+  },
+
+  async getMyContactReports() {
+    const res = await fetch(`${API_BASE}/me/contact-reports`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load contact reports');
+  },
+
+  async reverifyContactPhone(verificationToken: string) {
+    const res = await fetch(`${API_BASE}/me/contact-reports/reverify-phone`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ verification_token: verificationToken })
+    });
+    return readJsonOrThrow(res, 'Failed to reverify the contact number');
+  },
+
+  async disputeContactReport(category: string, note: string) {
+    const res = await fetch(`${API_BASE}/me/contact-reports/disputes`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ category, note })
+    });
+    return readJsonOrThrow(res, 'Failed to submit the dispute');
   },
 
   async createSearchRequest(body: Record<string, unknown>) {

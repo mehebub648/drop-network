@@ -62,6 +62,12 @@ type AdminRecord = {
   [key: string]: any;
 };
 
+type ContactReportData = {
+  items: AdminRecord[];
+  aggregations: Record<string, Record<string, number>>;
+  states: Record<string, { suspended: boolean; suspended_at?: string; suspension_count?: number }>;
+};
+
 type TabId = 'overview' | 'members' | 'requests' | 'community' | 'reports' | 'support' | 'organizations' | 'claims' | 'audit' | 'system';
 
 type DialogState = {
@@ -118,6 +124,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   const [organizations, setOrganizations] = useState<AdminRecord[]>([]);
   const [claims, setClaims] = useState<AdminRecord[]>([]);
   const [auditEvents, setAuditEvents] = useState<AdminRecord[]>([]);
+  const [contactReports, setContactReports] = useState<ContactReportData>({ items: [], aggregations: {}, states: {} });
   const [userSearch, setUserSearch] = useState('');
   const [requestStatus, setRequestStatus] = useState('');
   const [communityStatus, setCommunityStatus] = useState<'' | Extract<CommunityPostStatus, 'PUBLISHED' | 'HIDDEN'>>('');
@@ -177,7 +184,8 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
       if (tab === 'overview' || tab === 'support' || tab === 'system') {
         await loadOverview();
       } else if (tab === 'reports') {
-        const next = await loadOverview();
+        const [next, contactData] = await Promise.all([loadOverview(), api.getAdminCallReports()]);
+        setContactReports({ items: contactData.items || [], aggregations: contactData.aggregations || {}, states: contactData.states || {} });
         const reportedPostIds = (next.reports || [])
           .filter(report => report.target_type === 'POST')
           .map(report => String(report.target_id || ''))
@@ -226,6 +234,18 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   };
 
   const openAction = (next: DialogState) => setDialog(next);
+
+  const contactReportAction = (donorRef: string, action: 'SUSPEND' | 'RESTORE' | 'RESOLVE_DISPUTE', disputeId?: string) => {
+    openAction({
+      title: action === 'SUSPEND' ? 'Suppress this donor from search?' : action === 'RESTORE' ? 'Restore this donor?' : 'Resolve this dispute?',
+      description: 'The reason is protected in the audit trail. Existing call evidence is retained.',
+      confirmLabel: action === 'SUSPEND' ? 'Suppress donor' : action === 'RESTORE' ? 'Restore donor' : 'Resolve dispute',
+      tone: action === 'SUSPEND' ? 'danger' : 'default',
+      reasonLabel: 'Staff review note',
+      reasonRequired: true,
+      onConfirm: reason => run(`contact-${donorRef}-${action}`, () => api.moderateContactReports({ donor_ref: donorRef, action, note: reason, dispute_id: disputeId }), 'Contact report state updated.')
+    });
+  };
 
   const submitMemberSearch = async (event: FormEvent) => {
     event.preventDefault();
@@ -541,6 +561,27 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
               )}
 
               {activeTab === 'reports' && overview && (
+                <>
+                <section className="mb-8">
+                  <PanelHeader eyebrow="Contact reliability" title="Donor contact evidence" description="Distinct verified requester counts, abuse patterns, owner disputes, and search suspension controls. Reporter identities and notes stay inside this staff view." />
+                  {Object.keys(contactReports.aggregations).length === 0 ? (
+                    <EmptyState icon={ShieldCheck} title="No donor contact evidence" description="Recorded reveal outcomes and owner disputes will appear here." />
+                  ) : (
+                    <div className="admin-record-list">
+                      {Object.entries(contactReports.aggregations).map(([donorRef, summary]) => {
+                        const related = contactReports.items.filter(item => item.donor_ref === donorRef);
+                        const disputes = related.filter(item => item.kind === 'DISPUTE' && !related.some(resolution => resolution.kind === 'STAFF_RESOLUTION' && new Date(resolution.created_at).getTime() > new Date(item.created_at).getTime() && resolution.categories?.some((category: string) => item.categories?.includes(category))));
+                        const reporters = new Set(related.filter(item => item.kind === 'CALL_OUTCOME').map(item => item.actor_id)).size;
+                        const state = contactReports.states[donorRef] || { suspended: false };
+                        return <article key={donorRef} className="admin-record">
+                          <div className="record-icon record-icon-amber"><ShieldAlert className="h-5 w-5" /></div>
+                          <div className="record-primary record-primary-grow"><div><div className="record-title-row"><h3>{donorRef}</h3><StatusBadge value={state.suspended ? 'SUSPENDED' : 'ACTIVE'} /></div><p>{reporters} distinct reporter{reporters === 1 ? '' : 's'} · {related.length} append-only evidence record{related.length === 1 ? '' : 's'}</p><div className="mt-2 flex flex-wrap gap-2">{Object.entries(summary).filter(([, count]) => count > 0).map(([category, count]) => <span key={category} className="admin-badge">{count} {humanize(category)}</span>)}</div>{disputes.map(dispute => <div key={dispute.id} className="record-note"><strong>Owner dispute:</strong> {dispute.note}<div className="mt-2"><ActionButton label="Resolve dispute" disabled={busy === `contact-${donorRef}-RESOLVE_DISPUTE`} onClick={() => contactReportAction(donorRef, 'RESOLVE_DISPUTE', dispute.id)} /></div></div>)}</div></div>
+                          <div className="record-actions">{state.suspended ? <ActionButton label="Restore donor" disabled={busy === `contact-${donorRef}-RESTORE`} onClick={() => contactReportAction(donorRef, 'RESTORE')} /> : <ActionButton label="Suppress donor" danger disabled={busy === `contact-${donorRef}-SUSPEND`} onClick={() => contactReportAction(donorRef, 'SUSPEND')} />}</div>
+                        </article>;
+                      })}
+                    </div>
+                  )}
+                </section>
                 <QueuePanel
                   title="Safety reports"
                   eyebrow="Trust and safety"
@@ -588,6 +629,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                     );
                   }}
                 />
+                </>
               )}
 
               {activeTab === 'support' && overview && (

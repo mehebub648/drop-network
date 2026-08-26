@@ -13,10 +13,10 @@
 // once. Every reveal is recorded. There is no browsable directory, and a
 // revealed number is not a licence to redistribute it.
 //
-// A claim is auto-approved only when the claimant's own verified phone number
-// matches the number the source published. Everything else - records with no
-// published phone, or a claim from a different number - is queued for staff
-// review, because nothing in the imported data proves ownership.
+// The short claim flow claims this stub only when the verified phone matches
+// the source. A different verified phone gets its own account/profile and
+// leaves this stub untouched. `evaluateClaim` below remains for the one-release
+// legacy authenticated endpoint, where mismatches still enter staff review.
 
 import { createHash } from 'node:crypto';
 
@@ -105,6 +105,10 @@ export type ImportedDonor = {
   contributed_at?: string;
   contribution_expires_at?: string;
   contribution_fingerprint_hash?: string;
+  /** Search suppression from independent verified connection-failure reports. */
+  contact_state?: 'ACTIVE' | 'SUSPENDED';
+  report_suspended_at?: string;
+  report_suspension_count?: number;
   imported_at: string;
 };
 
@@ -337,8 +341,9 @@ export function toRevealedImportedDonor(donor: ImportedDonor): RevealedImportedD
  *   1  id, public_id, blood_group, district, phone, claim_status, source_id
  *   2  adds upazila
  *   3  adds claim slug and anonymous-contribution publication state
+ *   4  adds contact-report suspension state
  */
-export const IMPORTED_ROW_VERSION = '3';
+export const IMPORTED_ROW_VERSION = '4';
 
 /**
  * Projection stored in LanceDB: filterable columns plus the whole record as
@@ -353,6 +358,7 @@ export function toImportedDonorRow(donor: ImportedDonor) {
     row_version: IMPORTED_ROW_VERSION,
     listing_state: storedDonor.listing_state || 'ACTIVE',
     publication_state: storedDonor.publication_state || 'PUBLIC',
+    contact_state: storedDonor.contact_state || 'ACTIVE',
     public_id: storedDonor.public_id,
     claim_slug: storedDonor.claim_slug,
     contribution_expires_at: storedDonor.contribution_expires_at || '',

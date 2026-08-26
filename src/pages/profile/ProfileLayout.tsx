@@ -1,4 +1,4 @@
-import { BellRing, Clock3, FileClock, HeartPulse, KeyRound, Settings, ShieldCheck, Siren, UserRound } from 'lucide-react';
+import { BellRing, Clock3, FileClock, HeartPulse, KeyRound, Settings, ShieldAlert, ShieldCheck, Siren, UserRound } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router';
 import VerifiedBadge from '../../components/VerifiedBadge';
 import { cn } from '../../lib/utils';
@@ -18,6 +18,7 @@ const groups = [
       { to: '/profile/donor-requests', label: 'Requests near you', icon: Siren },
       { to: '/profile/requests', label: 'My requests', icon: Clock3 },
       { to: '/profile/invitations', label: 'Invitations', icon: BellRing },
+      { to: '/profile/contact-reports', label: 'Contact reports', icon: ShieldAlert },
       { to: '/profile/history', label: 'Donation history', icon: FileClock }
     ]
   },

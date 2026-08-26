@@ -21,8 +21,10 @@ type PendingReveal = {
 
 const OUTCOMES = [
   { value: 'WILL_DONATE', label: 'The donor agreed to donate' },
+  { value: 'CALL_BACK_LATER', label: 'The donor asked me to call back later' },
   { value: 'NOT_CALLED', label: "I didn't call" },
   { value: 'NO_ANSWER', label: "The donor didn't pick up" },
+  { value: 'UNREACHABLE', label: 'The phone was switched off or unreachable' },
   { value: 'WRONG_NUMBER', label: 'Wrong or invalid number' },
   { value: 'DECLINED', label: "The donor doesn't want to donate" }
 ];
@@ -31,8 +33,8 @@ const DECLINE_REASONS = [
   { value: 'RECENTLY_DONATED', label: 'Recently donated' },
   { value: 'LOCATION_FAR', label: 'Location is far away' },
   { value: 'DONOR_ILL', label: 'The donor is ill' },
+  { value: 'UNAVAILABLE', label: 'Not available right now' },
   { value: 'OTHER', label: 'Another reason' },
-  { value: 'UNSPECIFIED', label: "The donor didn't say" }
 ];
 
 const FAR_DETAILS = [

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { findPendingReveal, parseCallOutcome, parseDonorReport, parseDonorRef, type CallReport } from './callReports';
+import {
+  aggregateContactIssues,
+  findPendingReveal,
+  parseCallOutcome,
+  parseDonorReport,
+  parseDonorRef,
+  recentConnectionFailureReporterCount,
+  type CallReport
+} from './callReports';
 
 function error(input: Parameters<typeof parseCallOutcome>[0]) {
   const result = parseCallOutcome(input);
@@ -11,6 +19,8 @@ test('a simple outcome carries no reason and rejects one', () => {
   const parsed = parseCallOutcome({ outcome: 'NOT_CALLED' });
   assert.deepEqual(parsed, { value: { outcome: 'NOT_CALLED', note: undefined } });
   assert.ok(parseCallOutcome({ outcome: 'WILL_DONATE' }).value);
+  assert.ok(parseCallOutcome({ outcome: 'CALL_BACK_LATER' }).value);
+  assert.ok(parseCallOutcome({ outcome: 'UNREACHABLE' }).value);
   // "I did not call, because they recently donated" is not something the
   // caller can know, so the combination is refused rather than stored.
   assert.ok(error({ outcome: 'NOT_CALLED', reason: 'RECENTLY_DONATED' }));
@@ -31,7 +41,7 @@ test('declining requires a reason, and distance requires a detail', () => {
   assert.deepEqual(parsed.value, {
     outcome: 'DECLINED', reason: 'LOCATION_FAR', detail: 'TRAVELLING', note: undefined
   });
-  assert.ok(parseCallOutcome({ outcome: 'DECLINED', reason: 'UNSPECIFIED' }).value);
+  assert.ok(parseCallOutcome({ outcome: 'DECLINED', reason: 'UNAVAILABLE' }).value);
 });
 
 test('an "other" reason has to say what it was, and notes are bounded', () => {
@@ -69,4 +79,35 @@ test('the oldest unanswered reveal is pending across every request', () => {
     { id: 'answered', kind: 'CALL_OUTCOME', request_id: 'request-1', actor_id: 'user-1', donor_ref: 'reg:1', donor_kind: 'REGISTERED', reveal_id: 'older', outcome: 'NO_ANSWER', created_at: '2026-08-26T12:03:00.000Z' }
   ];
   assert.equal(findPendingReveal(reports)?.id, 'pending');
+});
+
+test('contact issue summaries count each requester once and keep notes private', () => {
+  const reports: CallReport[] = [
+    { id: '1', kind: 'CALL_OUTCOME', request_id: 'r1', actor_id: 'u1', donor_ref: 'reg:d1', donor_kind: 'REGISTERED', outcome: 'WRONG_NUMBER', note: 'private', created_at: '2026-08-01T00:00:00.000Z' },
+    { id: '2', kind: 'CALL_OUTCOME', request_id: 'r2', actor_id: 'u1', donor_ref: 'reg:d1', donor_kind: 'REGISTERED', outcome: 'WRONG_NUMBER', created_at: '2026-08-02T00:00:00.000Z' },
+    { id: '3', kind: 'CALL_OUTCOME', request_id: 'r3', actor_id: 'u2', donor_ref: 'reg:d1', donor_kind: 'REGISTERED', outcome: 'DECLINED', reason: 'DONOR_ILL', created_at: '2026-08-03T00:00:00.000Z' }
+  ];
+  assert.deepEqual(aggregateContactIssues(reports), { WRONG_NUMBER: 1, DECLINED: 1, HEALTH: 1 });
+  assert.equal(JSON.stringify(aggregateContactIssues(reports)).includes('private'), false);
+});
+
+test('owner resolution makes earlier evidence stale without deleting it', () => {
+  const reports: CallReport[] = [
+    { id: '1', kind: 'CALL_OUTCOME', request_id: 'r1', actor_id: 'u1', donor_ref: 'reg:d1', donor_kind: 'REGISTERED', outcome: 'NO_ANSWER', created_at: '2026-08-01T00:00:00.000Z' },
+    { id: '2', kind: 'OWNER_RESOLUTION', request_id: '', actor_id: 'd1', donor_ref: 'reg:d1', donor_kind: 'REGISTERED', categories: ['UNREACHABLE'], resolution_kind: 'PHONE_REVERIFIED', created_at: '2026-08-02T00:00:00.000Z' },
+    { id: '3', kind: 'CALL_OUTCOME', request_id: 'r2', actor_id: 'u2', donor_ref: 'reg:d1', donor_kind: 'REGISTERED', outcome: 'UNREACHABLE', created_at: '2026-08-03T00:00:00.000Z' }
+  ];
+  assert.deepEqual(aggregateContactIssues(reports), { UNREACHABLE: 1 });
+  assert.equal(reports.length, 3);
+});
+
+test('three distinct recent connection-failure reporters trigger suppression', () => {
+  const reports: CallReport[] = ['u1', 'u2', 'u3'].map((actor_id, index) => ({
+    id: String(index), kind: 'CALL_OUTCOME' as const, request_id: `r${index}`, actor_id,
+    donor_ref: 'imp:d1', donor_kind: 'IMPORTED' as const,
+    outcome: index === 0 ? 'WRONG_NUMBER' : 'UNREACHABLE', created_at: `2026-08-0${index + 1}T00:00:00.000Z`
+  }));
+  assert.equal(recentConnectionFailureReporterCount(reports, new Date('2026-08-26T00:00:00.000Z').getTime()), 3);
+  reports.push({ id: 'resolved', kind: 'OWNER_RESOLUTION', request_id: '', actor_id: 'd1', donor_ref: 'imp:d1', donor_kind: 'IMPORTED', categories: ['WRONG_NUMBER', 'UNREACHABLE'], created_at: '2026-08-20T00:00:00.000Z' });
+  assert.equal(recentConnectionFailureReporterCount(reports, new Date('2026-08-26T00:00:00.000Z').getTime()), 0);
 });

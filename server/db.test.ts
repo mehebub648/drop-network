@@ -60,6 +60,7 @@ test('legacy imported rows gain an opaque public id without changing their stora
   assert.equal(schema.fields.some(field => field.name === 'upazila'), true);
   assert.equal(schema.fields.some(field => field.name === 'claim_slug'), true);
   assert.equal(schema.fields.some(field => field.name === 'publication_state'), true);
+  assert.equal(schema.fields.some(field => field.name === 'contact_state'), true);
 
   const hydrated = await database.getImportedDonor(donor.public_id);
   assert.ok(hydrated);
@@ -116,6 +117,25 @@ test('private contributions are claimable by slug but absent from public reads',
   assert.equal(claimable?.public_id, donor.public_id);
   assert.equal(claimable?.publication_state, 'PRIVATE_PENDING');
   assert.equal((await database.queryImportedDonors({ phone: donor.phone, includePrivate: true })).length, 1);
+
+  await database.deleteImportedDonorsByPublicIds([donor.public_id]);
+});
+
+test('contact-suspended imported donors stay claimable but disappear from search and reveal reads', async () => {
+  const donor = toImportedDonor({
+    source_id: 'bd-scouts', source_organization: 'Bangladesh Scouts', source_url: 'https://example.test',
+    scraped_at: '2026-08-01T00:00:00.000Z', source_ref: 'suspended-1', name: 'Suspended contact',
+    phone: '+8801911000044', blood_group: 'A-', district: 'Dhaka', upazila: 'Adabor'
+  }, '2026-08-01T00:00:00.000Z');
+  donor.contact_state = 'SUSPENDED';
+  donor.report_suspended_at = '2026-08-20T00:00:00.000Z';
+  donor.report_suspension_count = 3;
+  await database.addImportedDonors([toImportedDonorRow(donor)]);
+
+  assert.equal(await database.getImportedDonor(donor.public_id), null);
+  assert.equal((await database.queryImportedDonors({ phone: donor.phone })).length, 0);
+  assert.equal((await database.queryImportedDonors({ phone: donor.phone, includeSuspended: true })).length, 1);
+  assert.equal((await database.getImportedDonorByClaimSlug(donor.claim_slug))?.contact_state, 'SUSPENDED');
 
   await database.deleteImportedDonorsByPublicIds([donor.public_id]);
 });
@@ -208,18 +228,19 @@ test('filters escape quoted values instead of breaking the predicate', () => {
   // `includeRemoved` here only so the escaping is compared against an exact
   // string; the listing-state clause is asserted separately below.
   assert.equal(
-    database.buildImportedFilter({ upazilas: ["Cox's Bazar Sadar"], includeRemoved: true, includePrivate: true }),
+    database.buildImportedFilter({ upazilas: ["Cox's Bazar Sadar"], includeRemoved: true, includePrivate: true, includeSuspended: true }),
     `upazila IN ('Cox''s Bazar Sadar')`
   );
   assert.equal(
-    database.buildImportedFilter({ district: 'Dhaka', bloodGroups: ['A+', 'O-'], includeRemoved: true, includePrivate: true }),
+    database.buildImportedFilter({ district: 'Dhaka', bloodGroups: ['A+', 'O-'], includeRemoved: true, includePrivate: true, includeSuspended: true }),
     `blood_group IN ('A+', 'O-') AND district = 'Dhaka'`
   );
   // Removed listings are excluded unless a caller opts in, so a new query
   // cannot expose them by forgetting to say so.
   assert.match(database.buildImportedFilter({}), /listing_state/);
   assert.match(database.buildImportedFilter({}), /publication_state/);
-  assert.equal(database.buildImportedFilter({ includeRemoved: true, includePrivate: true }), '');
+  assert.match(database.buildImportedFilter({}), /contact_state/);
+  assert.equal(database.buildImportedFilter({ includeRemoved: true, includePrivate: true, includeSuspended: true }), '');
 });
 
 test('call reports are queryable per request without loading the table', async () => {
@@ -234,6 +255,8 @@ test('call reports are queryable per request without loading the table', async (
 
   const reveals = await database.queryCallReports<{ id: string }>({ kind: 'REVEAL' });
   assert.deepEqual(reveals.map(report => report.id).sort(), ['cr-1', 'cr-3']);
+  const twoDonors = await database.queryCallReports<{ id: string }>({ donorRefs: ['imp:abc', 'reg:xyz'] });
+  assert.deepEqual(twoDonors.map(report => report.id).sort(), ['cr-1', 'cr-2', 'cr-3']);
   assert.equal(await database.countCallReports({ requestId: 'req-2' }), 1);
 });
 

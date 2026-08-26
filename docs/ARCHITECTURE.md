@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.86`
+Current application version: `0.0.87`
 
 ## Overview
 
@@ -184,6 +184,10 @@ Routes:
 - `/profile/requests` filters and updates requests owned by the member.
 - `/profile/invitations` manages private invitations, donor responses, mutual
   donation confirmation, purpose-limited contacts, and in-app notifications.
+- `/profile/contact-reports` is the donor's private remediation inbox. It shows
+  aggregate categories without reporter identities or notes, supports current-
+  phone Messavo reverification, links to corrective profile actions, and accepts
+  private disputes for staff review.
 - `/profile/history` adds, edits, and deletes validated donation records.
 - `/profile/security` changes the password and manages signed-in devices.
 - `/profile/settings` stores device-local preferences, downloads the complete
@@ -350,15 +354,17 @@ API routes:
   restore the blocking dialog after navigation, reload, focus, and cross-tab
   changes without putting the revealed phone number into the URL.
 - `POST /api/requests/:id/call-reports` records what happened on the call.
-  Nothing there changes the donor's own record: a requester saying a donor is
-  ill or recently donated is an unverified third-party claim, and acting on it
-  would let anyone deactivate any donor with one click.
+  A single report never changes a donor's own record. Public summaries count a
+  verified requester once per donor/category and begin at one; owner/staff
+  resolutions make older evidence stale without deleting it. Three distinct
+  wrong-number or unreachable reporters within 90 days temporarily suppress a
+  donor from search.
 - `GET /api/me/donor-requests` and `POST /api/requests/:id/donor-reports` are
   the donor's half: requests their group can answer in their upazila, with the
   requester's number masked until they say they can help. A donor's report about
   themselves *may* update their own record, because it is self-declared.
-- `GET /api/admin/call-reports` exposes the full reveal and outcome trail to
-  staff with `MODERATE_CONTENT`.
+- `GET /api/admin/call-reports` exposes the full reveal/outcome trail, aggregate
+  patterns, disputes, and suspension state to staff with `MODERATE_CONTENT`.
 - `GET /api/donors/search?blood_group&lat&lng&area_name` is the older radius
   search, still used by request publication and invitations. It returns
   `{ donors, total, contact_access, query }` and caps results at 50.
@@ -432,6 +438,13 @@ API routes:
   collapses duplicate phones, and returns the same neutral response shape.
   Honeypot, IP, browser-fingerprint, and phone controls limit intake; it never
   sends an unsolicited message.
+- `GET /api/me/contact-reports` returns only the owner's active aggregate
+  categories and suspension state. Phone reverification and dispute endpoints
+  append protected evidence; donor-profile corrections append category-specific
+  resolutions automatically.
+- `GET /api/admin/call-reports` returns paged operational evidence and
+  aggregations to staff. The contact-report action endpoint supports audited
+  suspension, restoration, and dispute resolution without deleting evidence.
 - The legacy authenticated `POST /api/directory/:id/claim` and staff claim
   review routes remain compatible for one release.
 
@@ -460,7 +473,7 @@ Tables:
   organisations' public listings. Unlike every other table it is never loaded
   into the runtime cache, because it is orders of magnitude larger than the
   account tables. Its filter columns (`public_id`, `claim_slug`,
-  `publication_state`, `contribution_expires_at`, `blood_group`, `district`,
+  `publication_state`, `contact_state`, `contribution_expires_at`, `blood_group`, `district`,
   `upazila`, `phone`, `claim_status`, `source_id`, `search_text`) are stored as real
   columns so LanceDB can push predicates down; the full record still travels in
   `doc`. Internal row IDs are never exposed through the API. Every row carries a
@@ -576,6 +589,11 @@ account:
   dialog that the person is not expecting the call, never show an invented
   availability status, and require an outcome for each call so wrong and dead
   numbers get found.
+- Active wrong-number, unreachable, declined, recently-donated, distance, and
+  health-related counts appear from the first distinct verified requester.
+  Notes and identities stay in protected staff evidence. Three independent
+  connection failures in 90 days set `contact_state = 'SUSPENDED'`; search and
+  reveal exclude the row, while its owner claim link remains available.
 - **Anyone listed can remove themselves at `/directory/remove`, with no
   account.** Requiring one would mean signing up in order to leave. Control of
   the number is proved by SMS code (`REMOVE_LISTING`), and

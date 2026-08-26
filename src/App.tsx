@@ -20,6 +20,7 @@ import DonorPage from './pages/profile/DonorPage';
 import DonorRequestsPage from './pages/profile/DonorRequestsPage';
 import InvitationsPage from './pages/profile/InvitationsPage';
 import ProfileLayout from './pages/profile/ProfileLayout';
+import ContactReportsPage from './pages/profile/ContactReportsPage';
 import ProfileRequestsPage from './pages/profile/ProfileRequestsPage';
 import SecurityPage from './pages/profile/SecurityPage';
 import SettingsPage from './pages/profile/SettingsPage';
@@ -115,6 +116,7 @@ export default function App() {
               <Route path="donor-requests" element={<DonorRequestsPage user={user} onUpdate={fetchUser} />} />
               <Route path="requests" element={<ProfileRequestsPage />} />
               <Route path="invitations" element={<InvitationsPage user={user} />} />
+              <Route path="contact-reports" element={<ContactReportsPage user={user} onUpdate={fetchUser} />} />
               <Route path="history" element={<DeferredRoute label="Loading donation history…"><HistoryPage user={user} onUpdate={fetchUser} /></DeferredRoute>} />
               <Route path="security" element={<SecurityPage />} />
               <Route path="settings" element={<SettingsPage user={user} />} />

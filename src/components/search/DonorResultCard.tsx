@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, LockKeyhole, MapPin, Phone, ShieldCheck } from 'lucide-react';
+import { CalendarDays, CheckCircle2, LockKeyhole, MapPin, Phone, ShieldAlert, ShieldCheck } from 'lucide-react';
 import type { SearchDonorCard } from '../../lib/api';
 import type { PublicDonationSummary } from '../../lib/donation';
 
@@ -40,6 +40,15 @@ export default function DonorResultCard({
 }) {
   const availability = availabilityLabel(donor.availability_status);
   const donationSummary = donor.donor_kind === 'REGISTERED' ? donor.donation_summary : undefined;
+  const issueLabels: Record<string, string> = {
+    WRONG_NUMBER: 'reported wrong number',
+    UNREACHABLE: 'could not connect',
+    DECLINED: 'reported unavailable',
+    RECENTLY_DONATED: 'reported recent donation',
+    TOO_FAR: 'reported too far',
+    HEALTH: 'reported health limitation'
+  };
+  const issues = Object.entries(donor.contact_issues || {}).filter(([, count]) => Boolean(count));
 
   return (
     <article className="theme-card group relative flex h-full min-w-0 flex-col overflow-hidden p-5 sm:p-6">
@@ -99,6 +108,16 @@ export default function DonorResultCard({
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {issues.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3" aria-label="Recent contact feedback">
+          <p className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wide text-amber-900"><ShieldAlert className="h-4 w-4" aria-hidden="true" />Contact feedback</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {issues.map(([category, count]) => <span key={category} className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-amber-900">{count} {issueLabels[category] || 'contact report'}</span>)}
+          </div>
+          <p className="mt-2 text-xs leading-5 text-amber-900/80">Counts come from distinct verified requesters after a recorded phone reveal; owner corrections can make earlier reports stale.</p>
         </div>
       )}
 

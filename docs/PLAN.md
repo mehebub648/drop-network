@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.86`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.87`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -40,10 +40,6 @@ delivered.
 - [ ] **Imported search paging is offset-by-overfetch.** `queryImportedDonors()` in
   `server/db.ts` fetches `offset + limit` rows and slices, because LanceDB has
   no OFFSET. Fine for shallow paging; revisit if deep paging is needed.
-- [ ] **Repeatedly reported wrong numbers stay searchable.** Call outcomes are
-  recorded in `common_call_reports` but nothing acts on them. Suppress an
-  imported listing after N independent `WRONG_NUMBER` reports from different
-  requesters, so the same dead number is not handed out repeatedly.
 - [ ] **`GET /api/donors/search` is now legacy.** The upazila search at
   `/api/search/donors` replaced it for users; the radius version survives only
   because `findDonorMatches()` still backs request publication and invitations.

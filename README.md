@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.86`
+Current version: `0.0.87`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -190,6 +190,17 @@ rather than deleted: re-importing the same source carries the withdrawal
 forward, so the removal is not undone by the next scrape. See
 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the claim rules and how to
 add a source.
+
+After every recorded phone reveal, the requester reports whether the donor will
+donate, asked for a later call, did not answer, was unreachable, had the wrong
+number, declined with a structured reason, or was not called. Search cards show
+non-accusatory counts from distinct verified requesters beginning with the first
+report; notes and identities remain private. Three distinct wrong-number or
+unreachable reports in 90 days temporarily suppress that donor from search.
+Registered donors manage these warnings at `/profile/contact-reports`: phone
+reverification and relevant profile corrections make older evidence stale,
+while disputes enter the protected staff review queue. Evidence remains append-
+only and staff suspension/restoration actions are audited.
 
 ## Validation
 

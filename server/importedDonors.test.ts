@@ -72,6 +72,7 @@ test('storage rows keep separate internal and public identities', () => {
   assert.equal(row.public_id, donor.public_id);
   assert.equal(row.claim_slug, donor.claim_slug);
   assert.equal(row.publication_state, 'PUBLIC');
+  assert.equal(row.contact_state, 'ACTIVE');
   assert.equal(JSON.parse(row.doc).public_id, donor.public_id);
   // Upazila is a filterable column, not only a `doc` field, so a district and
   // upazila search can push the predicate down.
