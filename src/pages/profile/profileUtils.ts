@@ -11,6 +11,7 @@ export function donorProfilePayload(user: ProfileUser, changes: Partial<DonorPro
     upazila: user.donor_profile?.upazila,
     age: user.donor_profile?.age,
     weight_kg: user.donor_profile?.weight_kg,
+    medical_conditions: user.donor_profile?.medical_conditions,
     // Pages send last_donation only when it changes; omission preserves the
     // server-stamped reported_at value on unrelated profile updates.
     donation_count: user.donor_profile?.donation_count,

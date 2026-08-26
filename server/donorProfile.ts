@@ -1,4 +1,5 @@
 export const AVAILABILITY_REASON_MAX_LENGTH = 240;
+export const MEDICAL_CONDITIONS_MAX_LENGTH = 500;
 
 export type RegistrationAvailability = 'AVAILABLE' | 'NOT_AVAILABLE';
 
@@ -8,6 +9,14 @@ export function parseAvailabilityReason(value: unknown): string | undefined | nu
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   return trimmed.length <= AVAILABILITY_REASON_MAX_LENGTH ? trimmed : null;
+}
+
+export function parseMedicalConditions(value: unknown): string | undefined | null {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length <= MEDICAL_CONDITIONS_MAX_LENGTH ? trimmed : null;
 }
 
 export function parseRegistrationAvailability(

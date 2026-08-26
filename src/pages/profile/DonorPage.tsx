@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { CheckCircle2, Clock, HeartPulse, Save } from 'lucide-react';
+import { CheckCircle2, Clock, HeartPulse, LockKeyhole, MapPin, Save, Stethoscope } from 'lucide-react';
 import DonationExperienceFields from '../../components/DonationExperienceFields';
 import { api } from '../../lib/api';
 import { BLOOD_GROUPS, DONATION_INTERVAL_DAYS, getEligibility } from '../../lib/blood';
@@ -29,6 +29,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   const [upazila, setUpazila] = useState(user.donor_profile?.upazila || '');
   const [age, setAge] = useState(user.donor_profile?.age ? String(user.donor_profile.age) : '');
   const [weight, setWeight] = useState(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
+  const [medicalConditions, setMedicalConditions] = useState(user.donor_profile?.medical_conditions || '');
   const [status, setStatus] = useState<AvailabilityStatus>(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
   const [availabilityReason, setAvailabilityReason] = useState(user.donor_profile?.availability_reason || '');
   const [donationExperience, setDonationExperience] = useState<DonationExperienceDraft>(() => donationExperienceDraft(
@@ -45,6 +46,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     setUpazila(user.donor_profile?.upazila || '');
     setAge(user.donor_profile?.age ? String(user.donor_profile.age) : '');
     setWeight(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
+    setMedicalConditions(user.donor_profile?.medical_conditions || '');
     setStatus(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
     setAvailabilityReason(user.donor_profile?.availability_reason || '');
     setDonationExperience(donationExperienceDraft(
@@ -55,7 +57,6 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   }, [user]);
 
   const upazilas = useMemo(() => getUpazilasForDistrict(district), [district]);
-
   const latestDonation = useMemo(() => [
     canonicalLastDonationDate(user.donor_profile?.last_donation),
     user.donor_profile?.last_donation_date,
@@ -67,10 +68,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     event.preventDefault();
     const location = getLocationByName(district);
     if (!location) return setMessage({ type: 'error', text: 'Choose a supported district.' });
-    const donationError = validateDonationExperience(
-      donationExperience,
-      user.donor_profile?.donation_history?.length || 0
-    );
+    const donationError = validateDonationExperience(donationExperience, user.donor_profile?.donation_history?.length || 0);
     if (donationError) return setMessage({ type: 'error', text: donationError });
     setSaving(true);
     setMessage(null);
@@ -81,6 +79,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
         upazila: upazila || undefined,
         age: age ? Number(age) : undefined,
         weight_kg: weight ? Number(weight) : undefined,
+        medical_conditions: medicalConditions,
         availability_status: status,
         availability_reason: status === 'AVAILABLE' ? undefined : availabilityReason,
         ...donationExperiencePayload(donationExperience)
@@ -95,121 +94,147 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className={cn('theme-card border p-6 flex gap-4', eligibility.eligible ? 'border-green-100 bg-green-50/40' : 'border-rose-100')}>
-        <div className={cn('w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0', eligibility.eligible ? 'bg-green-100 text-green-700' : 'bg-rose-50 text-primary')}>
-          {eligibility.eligible ? <CheckCircle2 className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
-        </div>
+    <div className="profile-editor-stack">
+      <div className={cn('profile-eligibility', eligibility.eligible ? 'is-eligible' : 'is-waiting')}>
+        <span>{eligibility.eligible ? <CheckCircle2 aria-hidden="true" /> : <Clock aria-hidden="true" />}</span>
         <div>
-          <h2 className="font-extrabold text-lg">{eligibility.eligible ? 'Eligible to donate again' : `${eligibility.daysLeft} day${eligibility.daysLeft === 1 ? '' : 's'} until eligibility`}</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Drop uses a {DONATION_INTERVAL_DAYS}-day whole-blood reminder. The collection facility makes the final eligibility decision.
-            {eligibility.nextEligibleDate && !eligibility.eligible ? ` Next date: ${eligibility.nextEligibleDate.toLocaleDateString()}.` : ''}
-          </p>
+          <p>Donation reminder</p>
+          <h2>{eligibility.eligible ? 'Your waiting period is complete' : `${eligibility.daysLeft} day${eligibility.daysLeft === 1 ? '' : 's'} remaining`}</h2>
+          <span>
+            Drop uses a {DONATION_INTERVAL_DAYS}-day reminder. The collection facility always makes the final decision.
+            {eligibility.nextEligibleDate && !eligibility.eligible ? ` Next reminder: ${eligibility.nextEligibleDate.toLocaleDateString()}.` : ''}
+          </span>
         </div>
       </div>
 
-      <form onSubmit={save} className="theme-card border border-slate-100 p-6 sm:p-8">
-        <div className="flex items-center gap-2">
-          <HeartPulse className="w-6 h-6 text-primary" />
-          <h2 className="text-2xl font-extrabold tracking-tight">Donor profile</h2>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2 mt-7">
+      <form onSubmit={save} className="profile-editor">
+        <header className="profile-editor-header">
+          <span><HeartPulse aria-hidden="true" /></span>
           <div>
-            <label htmlFor="donor-blood-group" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Blood group</label>
-            <select id="donor-blood-group" value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium">
-              {BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}
-            </select>
+            <p>Donor profile</p>
+            <h1>Keep your donor details current</h1>
+            <span>Accurate location and availability help people contact the right donors.</span>
           </div>
-          <div>
-            <label htmlFor="donor-district" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">District</label>
-            <select
-              id="donor-district"
-              value={district}
-              onChange={event => {
-                setDistrict(event.target.value);
-                // Upazila names belong to one district, so a move clears it.
-                setUpazila('');
-              }}
-              className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium"
-            >
-              {BD_LOCATION_NAMES.map(name => <option key={name}>{name}</option>)}
-            </select>
+        </header>
+
+        <section className="profile-form-section">
+          <div className="profile-section-heading">
+            <span><MapPin aria-hidden="true" /></span>
+            <div><h2>Search details</h2><p>These details help people find you when you are available.</p></div>
           </div>
-          <div className="sm:col-span-2">
-            <label htmlFor="donor-upazila" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Upazila / thana</label>
-            <select id="donor-upazila" value={upazila} onChange={event => setUpazila(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium">
-              <option value="">Not set</option>
-              {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-            <p className="mt-2 text-xs text-slate-500">
-              Requesters search by upazila. Without one you will not appear in their results.
-            </p>
+          <div className="profile-form-grid">
+            <label>Blood group
+              <select id="donor-blood-group" value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input">
+                {BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}
+              </select>
+            </label>
+            <label>Home district
+              <select id="donor-district" value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input">
+                {BD_LOCATION_NAMES.map(name => <option key={name}>{name}</option>)}
+              </select>
+            </label>
+            <label className="profile-grid-wide">Home upazila / thana
+              <select id="donor-upazila" value={upazila} onChange={event => setUpazila(event.target.value)} className="input">
+                <option value="">Not set</option>
+                {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+              <small>Without an upazila, your profile will not appear in donor search results.</small>
+            </label>
           </div>
-          <div>
-            <label htmlFor="donor-age" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Age (optional)</label>
-            <input id="donor-age" type="number" inputMode="numeric" min={16} max={70} value={age} onChange={event => setAge(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium" />
+        </section>
+
+        <section className="profile-form-section profile-health-section">
+          <div className="profile-section-heading">
+            <span><Stethoscope aria-hidden="true" /></span>
+            <div><h2>Private health details</h2><p>Helpful context for keeping your availability honest.</p></div>
           </div>
-          <div>
-            <label htmlFor="donor-weight" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Weight in kg (optional)</label>
-            <input id="donor-weight" type="number" inputMode="numeric" min={30} max={200} value={weight} onChange={event => setWeight(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium" />
+          <div className="profile-form-grid">
+            <label>Age <em>Optional</em>
+              <input id="donor-age" type="number" inputMode="numeric" min={16} max={70} value={age} onChange={event => setAge(event.target.value)} className="input" />
+            </label>
+            <label>Weight in kg <em>Optional</em>
+              <input id="donor-weight" type="number" inputMode="numeric" min={30} max={200} value={weight} onChange={event => setWeight(event.target.value)} className="input" />
+            </label>
+            <label className="profile-grid-wide">Any medical condition or current sickness? <em>Optional</em>
+              <textarea
+                id="donor-medical-conditions"
+                rows={4}
+                maxLength={500}
+                value={medicalConditions}
+                onChange={event => setMedicalConditions(event.target.value)}
+                className="input profile-textarea"
+                placeholder="For example: recovering from fever, taking prescribed medicine, or a long-term condition"
+              />
+              <small>{medicalConditions.length}/500 characters</small>
+            </label>
           </div>
-          <p className="sm:col-span-2 -mt-2 text-xs text-slate-500">
-            Age and weight are shown to nobody and never block a request. The collection facility screens you on the day.
-          </p>
+          <div className="profile-private-note">
+            <LockKeyhole aria-hidden="true" />
+            <p><strong>Private to your account.</strong> This information never appears in donor search and is not medical clearance. Do not upload medical records; the collection facility will screen you before donation.</p>
+          </div>
+          {medicalConditions.trim() && status === 'AVAILABLE' && (
+            <p className="profile-health-reminder">If you are currently unwell, consider changing your availability to “Sick or recovering”.</p>
+          )}
+        </section>
+
+        <section className="profile-form-section">
+          <div className="profile-section-heading">
+            <span><Clock aria-hidden="true" /></span>
+            <div><h2>Donation experience</h2><p>Add only what you remember. Exact dates are not required.</p></div>
+          </div>
           <DonationExperienceFields
             idPrefix="donor-profile"
             value={donationExperience}
             onChange={setDonationExperience}
             optional
             minimumCount={user.donor_profile?.donation_history?.length || 0}
-            className="sm:col-span-2"
           />
-          <p className="sm:col-span-2 -mt-2 text-xs leading-5 text-slate-500">
-            Your last-donation summary and lifetime count appear publicly while you are listed as available.
-            Detailed donation records and hospital or organization names stay private in your account.
-          </p>
-          <div className="sm:col-span-2">
-            <label htmlFor="donor-status" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Availability</label>
-            <select id="donor-status" value={status} onChange={event => setStatus(event.target.value as AvailabilityStatus)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium">
-              {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
+          <p className="profile-section-footnote">Your last-donation summary and lifetime count can appear publicly while you are available. Detailed records stay private.</p>
+        </section>
+
+        <section className="profile-form-section">
+          <div className="profile-section-heading">
+            <span><HeartPulse aria-hidden="true" /></span>
+            <div><h2>Availability</h2><p>Pause your listing any time. You can return when you are ready.</p></div>
           </div>
-          {status !== 'AVAILABLE' && (
-            <div className="sm:col-span-2">
-              <label htmlFor="donor-availability-reason" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Reason (optional)</label>
-              <textarea
-                id="donor-availability-reason"
-                maxLength={240}
-                rows={3}
-                value={availabilityReason}
-                onChange={event => setAvailabilityReason(event.target.value)}
-                className="w-full resize-y px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-medium"
-                placeholder="For example: recovering, traveling, or taking a break"
-              />
-              <p className="mt-2 text-xs text-slate-500">This stays private and is never shown in donor search.</p>
-            </div>
-          )}
-        </div>
-        {message && <p className={message.type === 'success' ? 'mt-4 text-green-700 font-bold text-sm' : 'mt-4 text-red-600 font-bold text-sm'}>{message.text}</p>}
-        <button disabled={saving} className="mt-6 inline-flex items-center gap-2 px-5 py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark disabled:opacity-50"><Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save donor profile'}</button>
+          <div className="profile-form-grid">
+            <label className="profile-grid-wide">Current status
+              <select id="donor-status" value={status} onChange={event => setStatus(event.target.value as AvailabilityStatus)} className="input">
+                {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+            {status !== 'AVAILABLE' && (
+              <label className="profile-grid-wide">Reason <em>Optional</em>
+                <textarea id="donor-availability-reason" maxLength={240} rows={3} value={availabilityReason} onChange={event => setAvailabilityReason(event.target.value)} className="input profile-textarea" placeholder="For example: recovering, traveling, or taking a break" />
+                <small>This stays private and is never shown in donor search.</small>
+              </label>
+            )}
+          </div>
+        </section>
+
+        <footer className="profile-editor-actions">
+          <div aria-live="polite">
+            {message && <p className={message.type === 'success' ? 'profile-message is-success' : 'profile-message is-error'}>{message.text}</p>}
+          </div>
+          <button disabled={saving} className="profile-save-button"><Save aria-hidden="true" /> {saving ? 'Saving…' : 'Save donor profile'}</button>
+        </footer>
       </form>
 
-      <div className="theme-card border border-slate-100 p-6">
-        <h2 className="font-extrabold">Availability history</h2>
+      <section className="profile-history-card">
+        <h2>Availability history</h2>
         {(user.donor_profile?.availability_history || []).length === 0 ? (
-          <p className="text-sm text-slate-500 mt-2">No availability changes recorded yet.</p>
+          <p>No availability changes recorded yet.</p>
         ) : (
-          <ul className="mt-4 space-y-3">
+          <ul>
             {[...(user.donor_profile?.availability_history || [])].reverse().slice(0, 8).map((entry, index) => (
-              <li key={entry.changed_at + index} className="flex items-center justify-between gap-4 text-sm border-b border-slate-100 pb-3 last:border-0">
-                <span className="font-bold text-slate-700">{statusLabels[entry.status]}</span>
-                <time className="text-slate-400">{new Date(entry.changed_at).toLocaleString()}</time>
+              <li key={entry.changed_at + index}>
+                <span>{statusLabels[entry.status]}</span>
+                <time>{new Date(entry.changed_at).toLocaleString()}</time>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </section>
     </div>
   );
 }

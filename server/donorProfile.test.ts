@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   AVAILABILITY_REASON_MAX_LENGTH,
+  MEDICAL_CONDITIONS_MAX_LENGTH,
   parseAvailabilityReason,
+  parseMedicalConditions,
   parseRegistrationAvailability
 } from './donorProfile';
 
@@ -36,4 +38,12 @@ test('available registration rejects an unavailable reason', () => {
 test('availability reasons are bounded', () => {
   assert.equal(parseAvailabilityReason('x'.repeat(AVAILABILITY_REASON_MAX_LENGTH)), 'x'.repeat(AVAILABILITY_REASON_MAX_LENGTH));
   assert.equal(parseAvailabilityReason('x'.repeat(AVAILABILITY_REASON_MAX_LENGTH + 1)), null);
+});
+
+test('private medical conditions are trimmed, optional, and bounded', () => {
+  assert.equal(parseMedicalConditions('  Recovering from fever  '), 'Recovering from fever');
+  assert.equal(parseMedicalConditions('  '), undefined);
+  assert.equal(parseMedicalConditions(42), null);
+  assert.equal(parseMedicalConditions('x'.repeat(MEDICAL_CONDITIONS_MAX_LENGTH)), 'x'.repeat(MEDICAL_CONDITIONS_MAX_LENGTH));
+  assert.equal(parseMedicalConditions('x'.repeat(MEDICAL_CONDITIONS_MAX_LENGTH + 1)), null);
 });

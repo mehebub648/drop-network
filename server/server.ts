@@ -62,7 +62,7 @@ import {
 } from './communityMedia';
 import { escapeHtml, renderCommunityPostHtml, renderPublicOriginHtml } from './communitySeo';
 import { inspectStaticAssets, type StaticAssetHealth } from './staticAssets';
-import { parseAvailabilityReason, parseRegistrationAvailability } from './donorProfile';
+import { parseAvailabilityReason, parseMedicalConditions, parseRegistrationAvailability } from './donorProfile';
 import { DAILY_UNIQUE_SEARCH_LIMIT, DailySearchBudget } from './searchBudget';
 
 const app = express();
@@ -226,6 +226,8 @@ type DonorProfile = {
    */
   age?: number;
   weight_kg?: number;
+  /** Private self-report, never projected into donor search or used as clearance. */
+  medical_conditions?: string;
   availability_status: 'AVAILABLE' | 'SICK' | 'TRAVELING' | 'NOT_AVAILABLE';
   /** Private self-reported context for a non-available status. */
   availability_reason?: string;
@@ -2283,6 +2285,7 @@ app.post('/api/me/donor-profile', async (req, res) => {
   const upazila = location ? parseUpazila(location.area_name, req.body?.upazila) : undefined;
   const age = parseOptionalInteger(req.body?.age, 16, 70);
   const weight_kg = parseOptionalInteger(req.body?.weight_kg, 30, 200);
+  const medical_conditions = parseMedicalConditions(req.body?.medical_conditions);
   const existingProfile = auth.user.donor_profile;
   const resolvedHistory = donation_history || existingProfile?.donation_history || [];
   const donationDetails = resolveDonationDetails(
@@ -2299,6 +2302,7 @@ app.post('/api/me/donor-profile', async (req, res) => {
   if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
   if (age === null) return validationError(res, 'Age must be between 16 and 70');
   if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
+  if (medical_conditions === null) return validationError(res, 'Medical condition or sickness must be 500 characters or fewer');
   if (donation_history === null) return validationError(res, 'Valid donation history is required');
   if ('error' in donationDetails) return validationError(res, donationDetails.error);
   if (!isOneOf(deferral_status, DEFERRAL_STATUSES)) return validationError(res, 'Valid deferral status is required');
@@ -2328,6 +2332,9 @@ app.post('/api/me/donor-profile', async (req, res) => {
       upazila: upazila ?? keptUpazila,
       age: age ?? existingProfile?.age,
       weight_kg: weight_kg ?? existingProfile?.weight_kg,
+      medical_conditions: req.body?.medical_conditions === undefined
+        ? existingProfile?.medical_conditions
+        : medical_conditions,
       last_donation: donationDetails.value.last_donation,
       last_donation_date: donationDetails.value.last_donation_date,
       donation_count: donationDetails.value.donation_count,

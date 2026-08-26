@@ -62,10 +62,16 @@ export async function syncDonorToPartition(user: any) {
     await table.delete(idFilter(user.id));
   } catch (e) {}
 
+  // Search partitions are only a lookup cache. Keep private account fields in
+  // common_users, their authoritative store, and out of these public-facing
+  // search documents.
+  const { password: _password, donor_profile: donorProfile, ...searchUser } = user;
+  const { medical_conditions: _medicalConditions, ...searchDonorProfile } = donorProfile;
+
   await table.add([{
     vector: [user.donor_profile.location.lng, user.donor_profile.location.lat],
     id: user.id,
-    doc: JSON.stringify(user)
+    doc: JSON.stringify({ ...searchUser, donor_profile: searchDonorProfile })
   }]);
 }
 

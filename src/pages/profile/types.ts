@@ -25,6 +25,8 @@ export type DonorProfileData = {
   /** Self-declared only. Eligibility is decided by the collection facility. */
   age?: number;
   weight_kg?: number;
+  /** Private self-report. It is not published or used as medical clearance. */
+  medical_conditions?: string;
   availability_status: AvailabilityStatus;
   /** Private optional context for a non-available status. */
   availability_reason?: string;

@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.82`
+Current application version: `0.0.83`
 
 ## Overview
 
@@ -172,9 +172,11 @@ Routes:
 - `/profile/donor` manages blood group, district, upazila, availability,
   eligibility, recent availability history, and a self-reported donation
   summary: exact date, approximate days/months/years ago, or never donated,
-  together with a lifetime count. Self-declared age and weight deliberately do
-  not affect eligibility. Without an upazila a donor does not appear in upazila
-  search, and the form says so.
+  together with a lifetime count. Self-declared age, weight, and an optional
+  private medical-condition or current-sickness note deliberately do not affect
+  eligibility. That health note is not published in donor search; the
+  collection facility makes the final decision. Without an upazila a donor
+  does not appear in upazila search, and the form says so.
 - `/profile/requests` filters and updates requests owned by the member.
 - `/profile/invitations` manages private invitations, donor responses, mutual
   donation confirmation, purpose-limited contacts, and in-app notifications.
@@ -465,7 +467,9 @@ Important helpers:
 - `getDb()` opens the `.lancedb` connection.
 - `ensureTable()` creates a table with a temporary schema row if missing.
 - `getPartitionName()` builds donor partition table names.
-- `syncDonorToPartition()` inserts or replaces an available donor in the correct partition.
+- `syncDonorToPartition()` inserts or replaces an available donor in the correct
+  partition while omitting password and private medical-condition fields from
+  the search copy; `common_users` remains the authoritative account record.
 - `removeDonorFromAllPartitions()` clears stale donor rows before profile resync.
 - `getAllFromTable()` loads saved JSON documents.
 - `saveToTable()` replaces a document by `id` using escaped ID filters.
