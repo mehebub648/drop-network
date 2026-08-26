@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, Heart, MapPin } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/utils';

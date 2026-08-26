@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.83`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.84`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,11 +13,6 @@ delivered.
 
 ### Code quality / polish
 
-- [ ] **Resolve current upstream dependency advisories.** `npm audit --omit=dev`
-  flags the existing React Router RSC action advisory and PostCSS source-map
-  file-read advisories. Drop does not use React Server Components or process
-  user-supplied CSS, but compatible patched releases should replace the affected
-  versions once available and then be verified through the Docker checks.
 - [ ] **Rendered accessibility/browser audit.** Keyboard/focus and reduced
   motion foundations exist, but complete WCAG 2.2 AA review, screen-reader
   testing, target-size/contrast audit, and responsive browser matrix remain.
@@ -25,14 +20,6 @@ delivered.
 - [ ] **Pervasive `any` and limited focused tests.** Blood-domain and privacy
   helper coverage now exists; add direct donor-search/admin API integration and
   focused component/browser coverage as workflows expand.
-- [ ] **Runtime cache has a 10,000-row load ceiling.** `getAllFromTable()` in
-  `server/db.ts` caps account-backed tables at 10,000 rows. Remove or explicitly
-  paginate this limit before registered donor volume can exceed it, otherwise
-  startup state and public live search can be incomplete.
-- [ ] **Continue route-level bundle splitting.** Community and Markdown routes
-  now load separately, but the remaining production entry chunk is about 624 kB
-  minified and still triggers Vite's 500 kB warning. Lazy-load another large
-  route module, especially the administration workspace, before traffic grows.
 - [ ] **Seven truncated upazila/blood-group combinations.** The Bangladesh
   Scouts register caps every search at 500 rows. The 0.0.44 full run hit that
   cap in exactly seven places: Rajshahi/Bagmara (A+, B+, O+),
@@ -61,19 +48,10 @@ delivered.
   recorded in `common_call_reports` but nothing acts on them. Suppress an
   imported listing after N independent `WRONG_NUMBER` reports from different
   requesters, so the same dead number is not handed out repeatedly.
-- [ ] **`common_audit_events` is boot-loaded through `getAllFromTable()`** and
-  so inherits the 10,000-row ceiling. The reveal flow works around it by writing
-  one audit row per request rather than per reveal, but the security log itself
-  should move to on-demand querying like `imported_donors` and
-  `common_call_reports`.
 - [ ] **`GET /api/donors/search` is now legacy.** The upazila search at
   `/api/search/donors` replaced it for users; the radius version survives only
   because `findDonorMatches()` still backs request publication and invitations.
   Retire the route once those two call sites are migrated.
-- [ ] **`getCurrentAuth()` linear-scans `sessions` on every request.** The
-  search and call flow is the most request-dense in the app (a reveal plus a
-  report per donor). Not a problem at current scale; index sessions by token
-  before it is.
 - [ ] **In-memory rate limits / runtime cache reset on restart** and are
   per-process; move to a shared store (Redis or the datastore) once a real
   multi-instance deployment exists. Covers the auth/API limiters added in

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Flag, Heart, Hospital, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, User as UserIcon, Users, Zap } from 'lucide-react';
 import { api, BROWSER_FINGERPRINT } from '../lib/api';

@@ -94,13 +94,15 @@ export async function getAllFromTable(name: string) {
   if (!tables.includes(name)) return [];
   const table = await conn.openTable(name);
   try {
+    // Account-backed tables must be complete at startup. A fixed query limit
+    // silently dropped valid users and sessions once a table crossed it.
     // @ts-ignore
-    const results = await table.query().limit(10000).toArray();
+    const results = await table.query().toArray();
     return results.map(r => JSON.parse(r.doc));
   } catch(e) {
     // fallback if query().toArray() is different
     // @ts-ignore
-    const results = await table.search([0,0]).limit(10000).toArray();
+    const results = await table.search([0,0]).toArray();
     return results.filter(r => r.id !== 'dummy').map(r => JSON.parse(r.doc));
   }
 }
@@ -490,8 +492,8 @@ export async function withdrawImportedDonorsByPhone(phone: string) {
 // faster than any other: a single search can show fifty donors and every
 // revealed number is expected to come back with an outcome. That is why it is
 // queried on demand like the imported directory rather than being loaded into
-// memory at boot - `getAllFromTable` silently stops at 10,000 rows, and this is
-// the table that would reach it first.
+// memory at boot. It is expected to grow faster than account-backed tables and
+// callers only need narrow slices for a request, actor, or donor.
 
 const CALL_REPORT_TABLE = 'common_call_reports';
 let callReportTableReady: Promise<lancedb.Table> | null = null;

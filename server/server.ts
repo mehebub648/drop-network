@@ -64,6 +64,7 @@ import { escapeHtml, renderCommunityPostHtml, renderPublicOriginHtml } from './c
 import { inspectStaticAssets, type StaticAssetHealth } from './staticAssets';
 import { parseAvailabilityReason, parseMedicalConditions, parseRegistrationAvailability } from './donorProfile';
 import { DAILY_UNIQUE_SEARCH_LIMIT, DailySearchBudget } from './searchBudget';
+import { isTrustedCookieMutation, secureBearerMatches } from './httpSecurity';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -119,6 +120,11 @@ const configuredPublicOrigin = (() => {
     return '';
   }
 })();
+const trustedMutationOrigins = new Set([
+  ...allowedCorsOrigins,
+  ...(configuredPublicOrigin ? [configuredPublicOrigin] : [])
+]);
+const metricsToken = process.env.METRICS_TOKEN?.trim() || '';
 
 function publicOrigin(req: express.Request) {
   return configuredPublicOrigin || `${req.protocol}://${req.get('host')}`;
@@ -157,6 +163,15 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '32kb' }));
 app.use(cookieParser());
+app.use((req, res, next) => {
+  if (isTrustedCookieMutation({
+    method: req.method,
+    sessionToken: getSessionToken(req),
+    origin: req.get('origin'),
+    trustedOrigins: trustedMutationOrigins
+  })) return next();
+  res.status(403).json({ error: 'This signed-in action must come from the configured Drop website' });
+});
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -643,11 +658,11 @@ function validationError(res: express.Response, message: string) {
 let users: User[] = [];
 let requests: BloodRequest[] = [];
 let sessions: AuthSession[] = [];
+const sessionsByToken = new Map<string, AuthSession>();
 let otpChallenges: OtpChallenge[] = [];
 let donorResponses: DonorResponse[] = [];
 let notifications: AppNotification[] = [];
 let moderationReports: ModerationReport[] = [];
-let auditEvents: AuditEvent[] = [];
 let supportTickets: SupportTicket[] = [];
 let organizations: Organization[] = [];
 let otpBypassSetting: OtpBypassSetting | undefined;
@@ -656,15 +671,25 @@ async function initDbData() {
   users = await getAllFromTable('common_users');
   requests = await getAllFromTable('common_requests');
   sessions = await getAllFromTable('common_sessions');
+  sessionsByToken.clear();
+  for (const session of sessions) sessionsByToken.set(session.token, session);
   otpChallenges = await getAllFromTable('common_otps');
   donorResponses = await getAllFromTable('common_responses');
   notifications = await getAllFromTable('common_notifications');
   moderationReports = await getAllFromTable('common_reports');
-  auditEvents = await getAllFromTable('common_audit_events');
   supportTickets = await getAllFromTable('common_support_tickets');
   organizations = await getAllFromTable('common_organizations');
   const appSettings: OtpBypassSetting[] = await getAllFromTable('common_app_settings');
   otpBypassSetting = appSettings.find(setting => setting.id === 'otp_bypass');
+  if (IS_PRODUCTION && otpBypassSetting?.enabled) {
+    otpBypassSetting = {
+      ...otpBypassSetting,
+      enabled: false,
+      updated_at: new Date().toISOString(),
+      updated_by: 'system:production-safety'
+    };
+    await saveToTable('common_app_settings', otpBypassSetting);
+  }
   const legacyStaffTokens = new Set(['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER']);
   for (const user of users) {
     const migratedStaffRole = user.staff_role || legacyStaffRole(user.roles);
@@ -689,7 +714,6 @@ async function initDbData() {
 
 async function audit(actorId: string, action: string, targetType: string, targetId: string, metadata?: Record<string, unknown>) {
   const event: AuditEvent = { id: uuidv4(), actor_id: actorId, action, target_type: targetType, target_id: targetId, metadata, created_at: new Date().toISOString() };
-  auditEvents.push(event);
   await saveToTable('common_audit_events', event);
   return event;
 }
@@ -1213,11 +1237,8 @@ function getCurrentAuth(req: express.Request) {
   if (!token) return null;
 
   const now = Date.now();
-  const session = sessions.find(s =>
-    s.token === token &&
-    !s.revoked_at &&
-    new Date(s.expires_at).getTime() > now
-  );
+  const session = sessionsByToken.get(token);
+  if (session?.revoked_at || (session && new Date(session.expires_at).getTime() <= now)) return null;
   if (!session) return null;
 
   const user = users.find(u => u.id === session.user_id);
@@ -1265,6 +1286,7 @@ async function issueSession(userId: string, req: express.Request) {
     last_seen_at: new Date(now).toISOString()
   };
   sessions.push(session);
+  sessionsByToken.set(session.token, session);
   await saveToTable('common_sessions', session);
   return session.token;
 }
@@ -1357,7 +1379,7 @@ function verifiedChallenge(phone: string, purpose: OtpChallenge['purpose'], toke
 }
 
 function isOtpBypassEnabled() {
-  return otpBypassSetting?.enabled === true;
+  return !IS_PRODUCTION && otpBypassSetting?.enabled === true;
 }
 
 async function issueOtpBypass(phone: string, purpose: OtpChallenge['purpose']) {
@@ -1537,9 +1559,18 @@ app.get('/health', asyncRoute(async (_req, res) => {
 }));
 app.get('/ready', asyncRoute(async (_req, res) => {
   const staticAssets = await currentStaticAssetHealth();
-  const ready = isReady && staticAssets.status !== 'failed';
+  const smsReady = !IS_PRODUCTION || isSmsConfigured();
+  const otpPolicyReady = !IS_PRODUCTION || otpBypassSetting?.enabled !== true;
+  const metricsReady = !IS_PRODUCTION || metricsToken.length >= 32;
+  const ready = isReady && staticAssets.status !== 'failed' && smsReady && otpPolicyReady && metricsReady;
   res.status(ready ? 200 : 503).json({
     status: ready ? 'ready' : isReady ? 'degraded' : 'starting',
+    checks: {
+      datastore_initialized: isReady,
+      sms_configured: smsReady,
+      otp_bypass_disabled: otpPolicyReady,
+      metrics_protected: metricsReady
+    },
     static_assets: {
       status: staticAssets.status,
       checked: staticAssets.checked.length,
@@ -1547,7 +1578,11 @@ app.get('/ready', asyncRoute(async (_req, res) => {
     }
   });
 }));
-app.get('/metrics', (_req, res) => {
+app.get('/metrics', (req, res) => {
+  if (IS_PRODUCTION && !secureBearerMatches(req.get('authorization'), metricsToken)) {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(401).json({ error: 'Metrics bearer token required' });
+  }
   res.type('text/plain').send([
     '# HELP drop_users_total Registered user records', '# TYPE drop_users_total gauge', `drop_users_total ${users.length}`,
     '# HELP drop_active_requests Active public blood requests', '# TYPE drop_active_requests gauge', `drop_active_requests ${requests.filter(item => ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(item.status)).length}`,
@@ -3268,6 +3303,9 @@ app.patch('/api/admin/settings/otp-bypass', async (req, res) => {
   const auth = requireStaffCapability(req, res, 'MANAGE_SYSTEM');
   if (!auth) return;
   if (typeof req.body?.enabled !== 'boolean') return validationError(res, 'Enabled must be true or false');
+  if (IS_PRODUCTION && req.body.enabled) {
+    return res.status(409).json({ error: 'OTP bypass cannot be enabled in production' });
+  }
   const reason = cleanString(req.body?.reason, 500);
   if (!reason) return validationError(res, 'A reason is required for this security-sensitive change');
 
@@ -3595,11 +3633,12 @@ app.get('/api/admin/call-reports', async (req, res) => {
   }
 });
 
-app.get('/api/admin/audit', (req, res) => {
+app.get('/api/admin/audit', asyncRoute(async (req, res) => {
   const auth = requireStaffCapability(req, res, 'VIEW_AUDIT');
   if (!auth) return;
-  res.json([...auditEvents].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 500));
-});
+  const auditEvents: AuditEvent[] = await getAllFromTable('common_audit_events');
+  res.json(auditEvents.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 500));
+}));
 
 app.get('/api/organizations', (_req, res) => {
   res.json(organizations.filter(item => item.status === 'VERIFIED').map(item => ({

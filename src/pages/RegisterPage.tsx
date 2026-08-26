@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Eye, EyeOff, Phone, TerminalSquare } from 'lucide-react';
 import AuthShell from '../components/AuthShell';
 import DonorAvailabilityFields, { type RegistrationAvailability } from '../components/DonorAvailabilityFields';

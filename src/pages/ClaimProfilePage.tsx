@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router';
 import { CheckCircle2, Clock, ExternalLink, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
 import { BLOOD_GROUPS } from '../lib/blood';

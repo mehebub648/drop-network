@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router';
 import { Droplet, Heart, LogOut, MapPin, Menu, Plus, ShieldCheck, Sparkles, UserRound, X } from 'lucide-react';
 import Footer from './Footer';
 
-const navigation = [
+const navigation: Array<{ label: string; to: string; end?: boolean }> = [
   { label: 'Live requests', to: '/requests' },
   { label: 'Community', to: '/community' },
   { label: 'About', to: '/about' }

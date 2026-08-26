@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.83`
+Current application version: `0.0.84`
 
 ## Overview
 
@@ -24,8 +24,10 @@ non-production environments use console delivery while production fails closed.
 ## Runtime Flow
 
 1. The server starts from `server/server.ts`.
-2. `initDbData()` loads users, sessions, and blood requests from LanceDB tables
-   and migrates legacy operational roles to the staff hierarchy.
+2. `initDbData()` loads complete account-backed tables without a fixed row
+   ceiling, indexes sessions by opaque token, and migrates legacy operational
+   roles to the staff hierarchy. High-growth call reports and audit events are
+   queried only when their protected interfaces request them.
 3. The first imported-directory access ensures the filterable columns exist
    (`public_id`, `upazila`, `row_version`), deletes any imported row without a
    phone number, and non-destructively backfills the remaining legacy rows in
@@ -255,9 +257,10 @@ Security middleware:
   page request.
 - Passwords are hashed with bcrypt (10 rounds). Legacy plaintext records are
   transparently re-hashed on the next successful login.
-- Sessions are opaque UUID tokens delivered in an httpOnly, `SameSite=Lax`
-  cookie (`Secure` in production) with a 7-day TTL. CSRF is mitigated by the
-  Lax cookie, JSON-only request bodies, and locked-down CORS in production.
+- Sessions are opaque UUID tokens indexed by token and delivered in an
+  httpOnly, `SameSite=Lax` cookie (`Secure` in production) with a 7-day TTL.
+  Every cookie-authenticated mutation must also carry an `Origin` matching
+  `APP_URL` or an explicitly allowed CORS origin.
 - API responses never include the `password` field (`sanitizeUser`).
 - Admin actions are capability-checked by `staff_role`. Member suspension,
   staff assignment, and session revocation enforce hierarchy and self/last-
@@ -429,8 +432,9 @@ Tables:
 - `common_otps` stores expiring hashed verification challenges.
 - `common_responses` stores private donor invitations and response state.
 - `common_notifications` stores per-user in-app notifications.
-- `common_reports`, `common_support_tickets`, and `common_audit_events` store
-  moderation operations and their audit trail.
+- `common_reports` and `common_support_tickets` store moderation operations.
+  `common_audit_events` is append-only and queried on demand by the protected
+  staff audit interface rather than loaded at startup.
 - `common_organizations` stores partner applications, verification state, and
   campaign records.
 - `community_posts` stores posts on demand with real filter columns for ID,
@@ -453,8 +457,7 @@ Tables:
 - `common_call_reports` records every revealed contact and every reported call
   outcome. Like `imported_donors` it is queried on demand and never boot-loaded:
   one search can show fifty donors and each reveal is expected to produce an
-  outcome, so this is the table that would reach the 10,000-row cache ceiling
-  first. Filter columns are `kind`, `request_id`, `actor_id`, and `donor_ref`.
+  outcome. Filter columns are `kind`, `request_id`, `actor_id`, and `donor_ref`.
   It is append-only; there is no update path.
 
 Records are stored as JSON strings in a `doc` field. LanceDB vectors use
@@ -543,9 +546,8 @@ account:
   call, and a per-route rate limit. Each reveal is written to
   `common_call_reports`; the first one on a request also writes a
   `REQUEST_CONTACTS_REVEALED` audit event. Deliberately **one** audit row per
-  request rather than per reveal, because `common_audit_events` is loaded into
-  memory at boot with a 10,000-row ceiling and per-reveal rows would silently
-  truncate the moderation trail.
+  request rather than per reveal so the moderation trail stays useful without
+  multiplying routine contact events.
 - These people did not sign up here, which is a real asymmetry and not one the
   code can resolve on its own. What the code does do: label every imported
   result with the organisation that published it, say plainly in the call-outcome
@@ -628,7 +630,8 @@ Environment:
 
 - `CORS_ORIGIN` optionally lists allowed cross-origin browser origins.
 - `APP_URL` sets the canonical public origin for generated public URLs and
-  defaults to `https://findadrop.org` for the production Compose service.
+  defaults to the current hosted HTTPS address for the production Compose
+  service. Domain replacement is configuration-only.
 - `LANCEDB_PATH` sets the datastore directory inside the container. Docker
   Compose sets it to `/data/lancedb`.
 - `COMMUNITY_MEDIA_PATH` sets the processed story-image directory. Compose sets
@@ -636,6 +639,8 @@ Environment:
 - `ADMIN_PHONE` bootstraps the first verified administrator by normalized
   Bangladesh phone as `SUPERADMIN`; further staff changes require the
   `MANAGE_STAFF` capability.
+- `METRICS_TOKEN` is a minimum 32-character bearer secret for the detailed
+  production `/metrics` endpoint. `/api/stats` remains public and coarse.
 - `SMS_PROVIDER` selects `woven`, the legacy provider-neutral `http`, or the
   development-only `console` transport.
   A blank value automatically selects console only outside production.
@@ -654,7 +659,8 @@ Environment:
   not revive after a later re-enable. The public config and every rendered page
   expose the active warning state, and each switch change is reason-gated and
   audited. Only the `MANAGE_SYSTEM` capability, held by superadmins, can change
-  it.
+  it. Production startup disables any persisted bypass and refuses attempts to
+  turn it back on.
 
 Persistent storage:
 
@@ -685,8 +691,9 @@ Operational endpoints and jobs:
   manifest, icon, doodles, and hashed JavaScript/CSS files before reporting
   healthy. Production startup fails when that asset set is missing, empty, or
   unreadable, and the Compose health check calls `/health`. `/ready` also
-  requires completed datastore initialization; `/metrics` exposes
-  low-cardinality Prometheus gauges.
+  requires completed datastore initialization, configured SMS, disabled OTP
+  bypass, and a protected metrics token. `/metrics` exposes low-cardinality
+  Prometheus gauges only to a valid bearer token in production.
 - A five-minute background job expires overdue requests and automatically
   pauses stale donor availability while creating an in-app reconfirmation notice.
 - `.github/workflows/ci.yml` runs Docker-based type checking, tests, bundle
@@ -702,7 +709,8 @@ Operational endpoints and jobs:
   complete HTTP configuration. Blank-provider console fallback and an explicit
   console provider are non-production only. Woven's required manual approval
   means it is not a zero-touch transactional OTP service.
-- OTP bypass is an explicit persisted test setting, not an automatic fallback.
+- OTP bypass is an explicit persisted non-production test setting, not an
+  automatic fallback.
   It deliberately removes phone-ownership proof across all OTP-protected
   activities and must remain disabled outside controlled testing.
 - Notification choices are currently device-local preferences; there is no

@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.83`
+Current version: `0.0.84`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -44,10 +44,13 @@ Refresh the district facility files from the public DGHS registry with:
 
 - `PORT` controls the Docker production host port.
 - `DEV_PORT` controls the Docker development host port.
-- `APP_URL` is the canonical public origin. Production defaults to
-  `https://findadrop.org`; development uses its localhost origin.
+- `APP_URL` is the canonical public origin. Production defaults to the current
+  hosted HTTPS address; future domain changes require configuration only.
 - `CORS_ORIGIN` can list allowed cross-origin browser origins; same-origin
   production requests do not need it.
+- `METRICS_TOKEN` must contain at least 32 random characters in production.
+  Monitoring reads `/metrics` with that bearer token; public network counts
+  remain available from `/api/stats`.
 - `LANCEDB_PATH` is set inside Docker Compose to `/data/lancedb`, bind-mounted
   from `./data/lancedb` (production) or `./data/lancedb-dev` (development) on
   the host. The datastore is a plain directory you can back up or copy; it is
@@ -63,11 +66,14 @@ Refresh the district facility files from the public DGHS registry with:
   OTP as pending approval, so a signed-in Woven user must approve it before the
   connected phone sends it. The legacy provider-neutral HTTP adapter remains
   available through the settings documented in `.env.example`.
-- A superadmin can turn on the persisted **OTP bypass test mode** from
+- A superadmin can turn on the persisted **OTP bypass test mode** outside
+  production from
   **Operations → System**. While active, every phone-protected activity skips
   code delivery and verification, the whole site shows a warning banner, and
   enabling or disabling the mode requires a reason and creates an audit event.
-  Keep it off outside controlled testing.
+  Production automatically disables a persisted bypass and refuses attempts to
+  enable it. `/ready` also stays unavailable until SMS and metrics protection
+  are configured.
 - The complete donor search starts on `/`: blood group, district, upazila,
   collection facility, and requester role are asked one at a time and carry
   into `/directory`. The interface shows only the current question and answer,
@@ -115,7 +121,7 @@ Refresh the district facility files from the public DGHS registry with:
 - Public requests use server-side filters and bounded pagination with URL-based
   filter state. `/health` and `/ready` verify the critical static files plus the
   hashed JavaScript/CSS referenced by the production shell, while
-  Prometheus-format `/metrics` supports monitoring.
+  bearer-protected Prometheus-format `/metrics` supports monitoring.
 - The responsive interface uses a doodle-led cartoon system on a clean white
   canvas, with white surfaces, soft neutral boundaries, deep-red actions,
   semantic availability/success green, rounded typography, lightweight line

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router';
 import { ArrowLeft, ArrowRight, CheckCircle2, KeyRound, TerminalSquare } from 'lucide-react';
 import AuthShell from '../components/AuthShell';
 import { api } from '../lib/api';

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, BookOpenText, ChevronLeft, ChevronRight, HeartHandshake, PenLine, ShieldCheck } from 'lucide-react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import CommunityPostCard from '../components/community/CommunityPostCard';
 import { api, type CommunityPostListResponse, type CommunityPostType, type PublicCommunityPostSummary } from '../lib/api';
 

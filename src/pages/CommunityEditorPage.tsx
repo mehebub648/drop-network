@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, BookOpenText, ChevronLeft, ChevronRight, FileImage, HeartHandshake, ImagePlus, LoaderCircle, Send, Trash2 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router';
 import MarkdownContent from '../components/community/MarkdownContent';
 import {
   api,

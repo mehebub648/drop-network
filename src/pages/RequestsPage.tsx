@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { Activity, AlertCircle, ArrowRight, ChevronLeft, ChevronRight, Clock, Filter, Hospital, MapPin, MessageCircle, Radio } from 'lucide-react';
 import { api } from '../lib/api';

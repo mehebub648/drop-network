@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router';
 import { Droplets } from 'lucide-react';
 import { api } from './lib/api';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -18,13 +18,11 @@ import TermsPage from './pages/info/TermsPage';
 import AccountPage from './pages/profile/AccountPage';
 import DonorPage from './pages/profile/DonorPage';
 import DonorRequestsPage from './pages/profile/DonorRequestsPage';
-import HistoryPage from './pages/profile/HistoryPage';
 import InvitationsPage from './pages/profile/InvitationsPage';
 import ProfileLayout from './pages/profile/ProfileLayout';
 import ProfileRequestsPage from './pages/profile/ProfileRequestsPage';
 import SecurityPage from './pages/profile/SecurityPage';
 import SettingsPage from './pages/profile/SettingsPage';
-import AdminPage from './pages/AdminPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import RouteMetadata from './components/RouteMetadata';
 import PartnersPage from './pages/PartnersPage';
@@ -37,6 +35,8 @@ import { getSafeReturnTo } from './lib/navigation';
 const CommunityEditorPage = lazy(() => import('./pages/CommunityEditorPage'));
 const CommunityPage = lazy(() => import('./pages/CommunityPage'));
 const CommunityPostPage = lazy(() => import('./pages/CommunityPostPage'));
+const HistoryPage = lazy(() => import('./pages/profile/HistoryPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -112,7 +112,7 @@ export default function App() {
               <Route path="donor-requests" element={<DonorRequestsPage user={user} onUpdate={fetchUser} />} />
               <Route path="requests" element={<ProfileRequestsPage />} />
               <Route path="invitations" element={<InvitationsPage user={user} />} />
-              <Route path="history" element={<HistoryPage user={user} onUpdate={fetchUser} />} />
+              <Route path="history" element={<DeferredRoute label="Loading donation history…"><HistoryPage user={user} onUpdate={fetchUser} /></DeferredRoute>} />
               <Route path="security" element={<SecurityPage />} />
               <Route path="settings" element={<SettingsPage user={user} />} />
             </Route>
@@ -122,7 +122,7 @@ export default function App() {
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/safety" element={<SafetyPage />} />
             <Route path="/partners" element={<PartnersPage user={user} />} />
-            <Route path="/admin" element={loading ? <RouteLoading /> : isStaff ? <AdminPage user={user} onOtpBypassChange={setOtpBypassEnabled} /> : <Navigate to="/" replace />} />
+            <Route path="/admin" element={loading ? <RouteLoading /> : isStaff ? <DeferredRoute label="Loading operations…"><AdminPage user={user} onOtpBypassChange={setOtpBypassEnabled} /></DeferredRoute> : <Navigate to="/" replace />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
           <CallOutcomeGate user={user} />
@@ -138,6 +138,10 @@ function CommunityRoute({ children }: { children: ReactNode }) {
       {children}
     </Suspense>
   );
+}
+
+function DeferredRoute({ children, label }: { children: ReactNode; label: string }) {
+  return <Suspense fallback={<LoadingPanel label={label} />}>{children}</Suspense>;
 }
 
 function CommunityRouteLoading() {

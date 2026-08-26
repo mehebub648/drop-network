@@ -6,7 +6,8 @@ services:
     container_name: drop
     environment:
       NODE_ENV: production
-      APP_URL: ${APP_URL:-https://findadrop.org}
+      APP_URL: ${APP_URL:-https://site-21000.91.108.104.57.mehebub.com}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
       LANCEDB_PATH: /data/lancedb
       COMMUNITY_MEDIA_PATH: /data/media/community
       SMS_PROVIDER: ${SMS_PROVIDER:-}
@@ -18,6 +19,7 @@ services:
       AVAILABILITY_TTL_DAYS: ${AVAILABILITY_TTL_DAYS:-14}
       MATCH_RADIUS_KM: ${MATCH_RADIUS_KM:-250}
       ADMIN_PHONE: ${ADMIN_PHONE:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
     ports:
       - "${PORT:-3000}:3000"
     volumes:
@@ -59,6 +61,7 @@ services:
       AVAILABILITY_TTL_DAYS: ${AVAILABILITY_TTL_DAYS:-14}
       MATCH_RADIUS_KM: ${MATCH_RADIUS_KM:-250}
       ADMIN_PHONE: ${ADMIN_PHONE:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       CHOKIDAR_USE_POLLING: "true"
       VITE_USE_POLLING: "true"
     ports:

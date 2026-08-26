@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { Bell, CheckCircle2, Clock3, Hospital, MapPin, Phone, XCircle } from 'lucide-react';
 import { api } from '../../lib/api';
 

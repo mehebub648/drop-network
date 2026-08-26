@@ -1,5 +1,5 @@
 import { BellRing, Clock3, FileClock, HeartPulse, KeyRound, Settings, ShieldCheck, Siren, UserRound } from 'lucide-react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router';
 import VerifiedBadge from '../../components/VerifiedBadge';
 import { cn } from '../../lib/utils';
 import type { ProfileUser } from './types';

@@ -1,5 +1,5 @@
 import { BookOpenText, HeartHandshake } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import type { PublicCommunityPostSummary } from '../../lib/api';
 import { communityPostTypeLabel, formatCommunityDate } from '../../lib/community';
 

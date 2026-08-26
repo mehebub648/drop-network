@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Check, Copy, Info, Phone, PhoneCall, RefreshCw, ShieldAlert } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import { api } from '../lib/api';
 import {
   PENDING_CALL_CHANGED_EVENT,

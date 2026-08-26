@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, ArrowLeft, BookOpenText, Flag, HeartHandshake, LoaderCircle, PenLine, ShieldCheck } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router';
 import MarkdownContent from '../components/community/MarkdownContent';
 import { api, type PublicCommunityPostDetail } from '../lib/api';
 import { communityPostTypeLabel, formatCommunityDate } from '../lib/community';

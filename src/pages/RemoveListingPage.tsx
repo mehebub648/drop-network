@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { CheckCircle2, KeyRound, Phone, ShieldOff } from 'lucide-react';
 import { api } from '../lib/api';
 import { PageHeader, StatusBadge, Surface } from '../components/ui';
