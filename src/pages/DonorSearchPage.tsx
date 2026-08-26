@@ -14,6 +14,7 @@ import {
 import { api, type SearchDonorCard } from '../lib/api';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
 import DonorResultCard from '../components/search/DonorResultCard';
+import DonorProfileSummary from '../components/search/DonorProfileSummary';
 import RequestGate from '../components/search/RequestGate';
 import { EmptyState } from '../components/ui';
 import {
@@ -74,6 +75,7 @@ export default function DonorSearchPage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<SearchDonorCard | null>(null);
+  const [profileDonor, setProfileDonor] = useState<SearchDonorCard | null>(null);
   const [gateOpen, setGateOpen] = useState(false);
   const [busyRef, setBusyRef] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
@@ -396,9 +398,9 @@ export default function DonorSearchPage({
                   <DonorResultCard
                     key={donor.donor_ref}
                     donor={donor}
+                    onView={setProfileDonor}
                     onSelect={selectDonor}
                     busy={busyRef === donor.donor_ref}
-                    showClaimOption={!user}
                   />
                 ))}
               </div>
@@ -446,6 +448,20 @@ export default function DonorSearchPage({
           </div>
         </div>
       </aside>
+
+      {profileDonor && (
+        <DonorProfileSummary
+          donor={profileDonor}
+          onClose={() => setProfileDonor(null)}
+          onRequest={() => {
+            const donor = profileDonor;
+            setProfileDonor(null);
+            void selectDonor(donor);
+          }}
+          busy={busyRef === profileDonor.donor_ref}
+          showClaimOption={!user}
+        />
+      )}
 
       {gateOpen && selected && (
         <RequestGate

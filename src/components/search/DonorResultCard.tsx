@@ -1,7 +1,6 @@
-import { CalendarDays, CheckCircle2, LockKeyhole, MapPin, Phone, ShieldAlert, ShieldCheck, UserRound } from 'lucide-react';
+import { Eye, MapPin, Phone, ShieldCheck, UserRound } from 'lucide-react';
 import { Link } from 'react-router';
 import type { SearchDonorCard } from '../../lib/api';
-import type { PublicDonationSummary } from '../../lib/donation';
 
 function availabilityLabel(status?: string) {
   if (!status) return null;
@@ -12,46 +11,22 @@ function availabilityLabel(status?: string) {
     .join(' ');
 }
 
-function donationSummaryLabel(summary: PublicDonationSummary) {
-  if (summary.kind === 'NEVER') return 'Never donated blood';
-  if (summary.kind === 'APPROXIMATE') {
-    const pluralUnit = summary.unit.toLowerCase();
-    const unit = summary.value === 1 ? pluralUnit.slice(0, -1) : pluralUnit;
-    return `Last donated about ${summary.value.toLocaleString()} ${unit} ago`;
-  }
-  const date = new Date(`${summary.date}T00:00:00`);
-  const label = Number.isNaN(date.getTime())
-    ? summary.date
-    : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  return `Last donated ${label}`;
-}
-
 /**
- * One donor. The number is always masked here; the button asks the server to
- * unmask it, which requires a published request and is recorded.
+ * A compact donor preview. Public details stay in the search-scoped profile
+ * summary; contact still requires a published request and is recorded.
  */
 export default function DonorResultCard({
   donor,
+  onView,
   onSelect,
-  busy,
-  showClaimOption
+  busy
 }: {
   donor: SearchDonorCard;
+  onView: (donor: SearchDonorCard) => void;
   onSelect: (donor: SearchDonorCard) => void | Promise<void>;
   busy?: boolean;
-  showClaimOption: boolean;
 }) {
   const availability = availabilityLabel(donor.availability_status);
-  const donationSummary = donor.donor_kind === 'REGISTERED' ? donor.donation_summary : undefined;
-  const issueLabels: Record<string, string> = {
-    WRONG_NUMBER: 'reported wrong number',
-    UNREACHABLE: 'could not connect',
-    DECLINED: 'reported unavailable',
-    RECENTLY_DONATED: 'reported recent donation',
-    TOO_FAR: 'reported too far',
-    HEALTH: 'reported health limitation'
-  };
-  const issues = Object.entries(donor.contact_issues || {}).filter(([, count]) => Boolean(count));
 
   return (
     <article className="theme-card group relative flex h-full min-w-0 flex-col overflow-hidden p-5 sm:p-6">
@@ -88,7 +63,7 @@ export default function DonorResultCard({
           </p>
           {availability && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-bold text-green-700">
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
               {availability}
             </p>
           )}
@@ -103,86 +78,27 @@ export default function DonorResultCard({
         </div>
       </div>
 
-      {(donor.preference_match_reasons || []).length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-2" aria-label="Why this donor matched">
-          {donor.preference_match_reasons!.map(reason => (
-            <span key={reason} className="inline-flex items-center gap-1.5 rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-800">
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              {reason}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {(donationSummary || donor.donation_total !== undefined) && (
-        <div className="mt-4 rounded-2xl border border-green-100 bg-green-50/70 px-4 py-3">
-          <p className="text-[11px] font-extrabold uppercase tracking-wide text-green-800">Self-reported donation history</p>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-700">
-            {donationSummary && (
-              <span className="inline-flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 shrink-0 text-green-700" aria-hidden="true" />
-                {donationSummaryLabel(donationSummary)}
-              </span>
-            )}
-            {donor.donation_total !== undefined && (
-              <span>
-                {donor.donation_total.toLocaleString()} total donation{donor.donation_total === 1 ? '' : 's'}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showClaimOption && donor.donor_kind === 'IMPORTED' && donor.claim_path && (
-        <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-3">
-          <p className="text-sm font-bold text-violet-950">Is this your listing?</p>
-          <p className="mt-1 text-xs leading-5 text-violet-900/80">Verify the listed phone, confirm your details, and manage availability yourself.</p>
-          <Link to={donor.claim_path} className="mt-2 inline-flex min-h-9 items-center rounded-lg bg-violet-700 px-3 text-xs font-extrabold text-white hover:bg-violet-800">Claim with short link</Link>
-        </div>
-      )}
-
-      {issues.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3" aria-label="Recent contact feedback">
-          <p className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wide text-amber-900"><ShieldAlert className="h-4 w-4" aria-hidden="true" />Contact feedback</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {issues.map(([category, count]) => <span key={category} className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-amber-900">{count} {issueLabels[category] || 'contact report'}</span>)}
-          </div>
-          <p className="mt-2 text-xs leading-5 text-amber-900/80">Counts come from distinct verified requesters after a recorded phone reveal; owner corrections can make earlier reports stale.</p>
-        </div>
-      )}
-
-      <div className="mt-auto pt-5">
-        <div className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2.5 text-slate-950 sm:px-4">
-          <p className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold tabular-nums text-slate-700 sm:text-base">
-            <LockKeyhole className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-            {donor.has_phone ? donor.phone_masked : 'No number published'}
-          </p>
-          {donor.is_current_user ? (
-            <Link
-              to="/profile/donor"
-              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark sm:px-4"
-            >
-              <UserRound className="h-4 w-4" aria-hidden="true" />
-              <span className="sm:hidden">My profile</span>
-              <span className="hidden sm:inline">Open my profile</span>
-            </Link>
-          ) : (
-            <button
-              type="button"
-              disabled={!donor.has_phone || busy}
-              onClick={() => onSelect(donor)}
-              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
-            >
-              <Phone className="h-4 w-4" aria-hidden="true" />
-              {busy ? 'Opening...' : (
-                <>
-                  <span className="sm:hidden">Contact</span>
-                  <span className="hidden sm:inline">Request contact</span>
-                </>
-              )}
-            </button>
-          )}
-        </div>
+      <div className="mt-auto grid grid-cols-2 gap-2 pt-5">
+        <button type="button" onClick={() => onView(donor)} className="button button-secondary w-full gap-2">
+          <Eye className="h-4 w-4" aria-hidden="true" />
+          View profile
+        </button>
+        {donor.is_current_user ? (
+          <Link to="/profile/donor" className="button button-primary w-full gap-2">
+            <UserRound className="h-4 w-4" aria-hidden="true" />
+            Manage profile
+          </Link>
+        ) : (
+          <button
+            type="button"
+            disabled={!donor.has_phone || busy}
+            onClick={() => onSelect(donor)}
+            className="button button-primary w-full gap-2"
+          >
+            <Phone className="h-4 w-4" aria-hidden="true" />
+            {busy ? 'Opening...' : 'Request contact'}
+          </button>
+        )}
       </div>
     </article>
   );

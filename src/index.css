@@ -1585,6 +1585,10 @@ body {
   width: min(100%, 46rem);
 }
 
+.donor-summary-dialog {
+  width: min(100%, 42rem);
+}
+
 /* The global call-report gate is intentionally calmer than a full workflow
    page: only its content scrolls, while the required action stays visible. */
 .call-outcome-dialog {

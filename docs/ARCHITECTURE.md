@@ -348,9 +348,11 @@ API routes:
   recent availability confirmation, fewer active contact issues, then name.
   Alternative sorts retain the verified-member tier. Optional collection
   facility context adds a safe match reason without returning raw preferences.
-  Result cards include a clear phone-verification badge, public donation total,
-  and active contact summary. Guests also see the short claim route for
-  unclaimed imports; signed-in members do not. Authenticated searches include
+  Result cards stay compact with separate “View profile” and “Request contact”
+  actions. The search-scoped profile summary shows the masked number, safe
+  donation summary, match reasons, attribution, and active contact summary
+  without creating a browsable donor-profile route. Guests also see the short
+  claim route for unclaimed imports; signed-in members do not. Authenticated searches include
   the requester's own profile when it is available, eligible, blood-compatible,
   and matched to the searched area. That card is pinned first and cannot start
   a self-contact reveal.
