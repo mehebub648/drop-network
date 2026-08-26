@@ -291,99 +291,107 @@ export default function CallOutcomeGate({ user }: { user: any }) {
               </button>
             </div>
           ) : pending ? (
-            <form onSubmit={submit}>
-              <span className="dialog-icon"><PhoneCall className="h-6 w-6" aria-hidden="true" /></span>
-              <h2 id="call-outcome-title" className="mt-4 text-2xl font-extrabold tracking-tight text-slate-950">How did the call go?</h2>
-              <p id="call-outcome-description">
-                Save this outcome before using any other part of Drop. The dialog cannot be closed or skipped.
-              </p>
+            <form onSubmit={submit} className="call-outcome-form">
+              <div className="call-outcome-scroll">
+                <header className="call-outcome-header">
+                  <span className="dialog-icon"><PhoneCall className="h-5 w-5" aria-hidden="true" /></span>
+                  <div>
+                    <span className="call-outcome-kicker">One quick update</span>
+                    <h2 id="call-outcome-title">How did the call go?</h2>
+                    <p id="call-outcome-description">Choose what happened so you can continue using Drop.</p>
+                  </div>
+                </header>
 
-              {reveal && (
-                <div className="mt-5 rounded-2xl border border-rose-100 bg-rose-50/70 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-extrabold text-slate-950">{reveal.name}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-600">
-                        {reveal.blood_group} · {reveal.upazila ? `${reveal.upazila}, ` : ''}{reveal.district}
-                      </p>
+                {reveal && (
+                  <section className="call-contact-card" aria-label="Donor contact">
+                    <div className="call-contact-identity">
+                      <div>
+                        <p>{reveal.name}</p>
+                        <span>{reveal.blood_group} · {reveal.upazila ? `${reveal.upazila}, ` : ''}{reveal.district}</span>
+                      </div>
+                      <a href={`tel:${reveal.phone}`} onClick={() => { dialling.current = true; }} className="call-contact-number">
+                        {reveal.phone}
+                      </a>
                     </div>
-                    <p className="select-all break-all text-xl font-extrabold tracking-wide text-slate-950 tabular-nums">{reveal.phone}</p>
-                  </div>
-                  <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                    <a href={`tel:${reveal.phone}`} onClick={() => { dialling.current = true; }} className="primary-button">
-                      <Phone className="h-4 w-4" aria-hidden="true" /> Call now
-                    </a>
-                    <button type="button" onClick={copy} className="theme-button">
-                      {copied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
-                      {copied ? 'Copied' : 'Copy number'}
-                    </button>
-                  </div>
-                </div>
-              )}
+                    <div className="call-contact-actions">
+                      <a href={`tel:${reveal.phone}`} onClick={() => { dialling.current = true; }} className="call-contact-action is-primary">
+                        <Phone className="h-4 w-4" aria-hidden="true" /> Call now
+                      </a>
+                      <button type="button" onClick={copy} className="call-contact-action">
+                        {copied ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+                        {copied ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </section>
+                )}
 
-              {reveal?.donor_kind === 'IMPORTED' && reveal.source && (
-                <div className="mt-4 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
-                  <p className="text-xs font-semibold leading-5 text-amber-900">
-                    {reveal.source.organization} published this listing. This person did not sign up with Drop and is not expecting your call. Please call once, be brief, and do not pass the number on.
-                  </p>
-                </div>
-              )}
+                {reveal?.donor_kind === 'IMPORTED' && reveal.source && (
+                  <aside className="call-source-note">
+                    <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <p>
+                      Listed by {reveal.source.organization}, not directly by this donor. Call once, keep it brief, and do not share the number.
+                    </p>
+                  </aside>
+                )}
 
-              {contactError && <div role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{contactError}</div>}
+                {contactError && <div role="status" className="call-contact-error">{contactError}</div>}
 
-              <fieldset className="mt-5">
-                <legend className="text-sm font-extrabold text-slate-800">What happened?</legend>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {OUTCOMES.map(option => (
-                    <label key={option.value} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-800 has-[:checked]:border-primary has-[:checked]:bg-rose-50">
-                      <input type="radio" name="outcome" value={option.value} checked={outcome === option.value} onChange={() => { setOutcome(option.value); setReason(''); setDetail(''); }} className="h-4 w-4" />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              {outcome === 'DECLINED' && (
-                <fieldset className="fade-in mt-5 border-l-2 border-slate-200 pl-4">
-                  <legend className="text-sm font-extrabold text-slate-800">Why not?</legend>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {DECLINE_REASONS.map(option => (
-                      <label key={option.value} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-800 has-[:checked]:border-primary has-[:checked]:bg-rose-50">
-                        <input type="radio" name="reason" value={option.value} checked={reason === option.value} onChange={() => { setReason(option.value); setDetail(''); }} className="h-4 w-4" />
-                        {option.label}
+                <fieldset className="call-outcome-section">
+                  <legend>What happened?</legend>
+                  <div className="call-outcome-options">
+                    {OUTCOMES.map(option => (
+                      <label key={option.value} className="call-outcome-option">
+                        <input type="radio" name="outcome" value={option.value} checked={outcome === option.value} onChange={() => { setOutcome(option.value); setReason(''); setDetail(''); }} />
+                        <span>{option.label}</span>
                       </label>
                     ))}
                   </div>
                 </fieldset>
-              )}
 
-              {outcome === 'DECLINED' && reason === 'LOCATION_FAR' && (
-                <fieldset className="fade-in mt-5 border-l-2 border-slate-200 pl-4">
-                  <legend className="text-sm font-extrabold text-slate-800">How far?</legend>
-                  <div className="mt-3 space-y-2">
-                    {FAR_DETAILS.map(option => (
-                      <label key={option.value} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-800 has-[:checked]:border-primary has-[:checked]:bg-rose-50">
-                        <input type="radio" name="detail" value={option.value} checked={detail === option.value} onChange={() => setDetail(option.value)} className="h-4 w-4" />
-                        {option.label}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              )}
+                {outcome === 'DECLINED' && (
+                  <fieldset className="call-outcome-followup fade-in">
+                    <legend>Why not?</legend>
+                    <div className="call-outcome-options">
+                      {DECLINE_REASONS.map(option => (
+                        <label key={option.value} className="call-outcome-option">
+                          <input type="radio" name="reason" value={option.value} checked={reason === option.value} onChange={() => { setReason(option.value); setDetail(''); }} />
+                          <span>{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
 
-              <label className="mt-5 block">
-                <span className="mb-2 block text-sm font-extrabold text-slate-800">Anything to add? {reason === 'OTHER' ? '(required)' : '(optional)'}</span>
-                <textarea value={note} onChange={event => setNote(event.target.value)} maxLength={300} rows={3} className="w-full rounded-xl border border-slate-300 p-3 text-sm font-medium outline-none focus:border-primary" />
-              </label>
+                {outcome === 'DECLINED' && reason === 'LOCATION_FAR' && (
+                  <fieldset className="call-outcome-followup fade-in">
+                    <legend>What made the location difficult?</legend>
+                    <div className="call-outcome-options is-single-column">
+                      {FAR_DETAILS.map(option => (
+                        <label key={option.value} className="call-outcome-option">
+                          <input type="radio" name="detail" value={option.value} checked={detail === option.value} onChange={() => setDetail(option.value)} />
+                          <span>{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                )}
 
-              {error && <div role="alert" className="alert alert-error mt-4">{error}</div>}
+                {outcome && (
+                  <label className="call-outcome-note fade-in">
+                    <span>Anything to add? <small>{reason === 'OTHER' ? 'Required' : 'Optional'}</small></span>
+                    <textarea value={note} onChange={event => setNote(event.target.value)} maxLength={300} rows={2} placeholder="Add a short note" />
+                  </label>
+                )}
 
-              <div className="sticky bottom-0 mt-6 border-t border-slate-200 bg-white/95 pt-4 pb-[max(0.25rem,env(safe-area-inset-bottom))] backdrop-blur">
-                <button type="submit" disabled={!canSubmit || busy} className="primary-button w-full disabled:cursor-not-allowed disabled:opacity-60">
-                  {busy ? 'Saving…' : 'Save outcome and continue'}
-                </button>
+                {error && <div role="alert" className="alert alert-error mt-4">{error}</div>}
               </div>
+
+              <footer className="call-outcome-footer">
+                <p>{outcome ? 'Your answer helps keep donor information reliable.' : 'Select one answer to continue.'}</p>
+                <button type="submit" disabled={!canSubmit || busy} className="primary-button disabled:cursor-not-allowed disabled:opacity-60">
+                  {busy ? 'Saving…' : 'Save and continue'}
+                </button>
+              </footer>
             </form>
           ) : null}
         </div>
