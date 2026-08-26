@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { ArrowLeft, ArrowRight, CheckCircle2, KeyRound, TerminalSquare } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react';
 import AuthShell from '../components/AuthShell';
-import { api } from '../lib/api';
+import OtpDeliveryStatus from '../components/OtpDeliveryStatus';
+import { api, type OtpDelivery } from '../lib/api';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ export default function ForgotPasswordPage() {
   const [code, setCode] = useState('');
   const [token, setToken] = useState('');
   const [password, setPassword] = useState('');
-  const [deliveryMode, setDeliveryMode] = useState('');
+  const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -22,7 +23,7 @@ export default function ForgotPasswordPage() {
     try {
       if (step === 1) {
         const result = await api.requestOtp(phone, 'RESET_PASSWORD');
-        setDeliveryMode(result.provider || '');
+        setDelivery(result);
         if (result.bypass && result.verification_token) {
           setToken(result.verification_token);
           setStep(3);
@@ -57,13 +58,29 @@ export default function ForgotPasswordPage() {
         {step === 1 && (
           <label className="block">
             <span className="mb-2 block text-sm font-bold text-slate-800">Registered Bangladesh mobile</span>
-            <input required autoComplete="tel" type="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="+880 1712 345678" className="input min-h-12" />
+            <input required autoComplete="tel" type="tel" value={phone} onChange={event => { setPhone(event.target.value); setDelivery(null); }} placeholder="+880 1712 345678" className="input min-h-12" />
           </label>
         )}
         {step === 2 && (
           <>
             <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-900">Enter the code sent for <strong>{phone}</strong>.</div>
-            {deliveryMode === 'console' && <div role="status" className="flex gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900"><TerminalSquare className="mt-0.5 h-5 w-5 shrink-0" /><span><strong>Development mode:</strong> the OTP was printed in the server logs.</span></div>}
+            <OtpDeliveryStatus
+              delivery={delivery}
+              onDeliveryChange={setDelivery}
+              busy={busy}
+              onResend={() => void (async () => {
+                setBusy(true);
+                setMessage('');
+                try {
+                  setDelivery(await api.requestOtp(phone, 'RESET_PASSWORD'));
+                  setCode('');
+                } catch (error: any) {
+                  setMessage(error.message || 'A new verification code could not be sent.');
+                } finally {
+                  setBusy(false);
+                }
+              })()}
+            />
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-slate-800">Six-digit verification code</span>
               <input required autoFocus autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} className="input min-h-14 text-center text-2xl font-extrabold tracking-[0.45em]" />

@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.84`
+Current application version: `0.0.85`
 
 ## Overview
 
@@ -17,9 +17,10 @@ Drop Network is a single Node.js application for urgent blood donation matching.
 - Docker targets for development, build, and production runtime.
 
 The app is currently self-contained. There is no external auth provider or
-hosted database integration. `server/sms.ts` can call Woven's scoped automation
-API or a provider-neutral HTTP SMS gateway; when no channel is configured,
-non-production environments use console delivery while production fails closed.
+hosted database integration. `server/sms.ts` can call Messavo's scoped automatic
+automation API or a provider-neutral HTTP SMS gateway. Missing or incomplete
+delivery configuration fails closed in every environment, and codes are never
+written to application logs.
 
 ## Runtime Flow
 
@@ -223,9 +224,9 @@ Client state:
   published request, and only for a donor still in that request's own results.
   The revealed contact is held in the global call-outcome dialog, not a route.
   Legacy call URLs remain `noindex` while they redirect to search.
-- Account and donor-match UI shows phone verification state. Registration and
-  recovery display a development-only notice when OTPs use console delivery;
-  production stays closed unless a complete external SMS provider is configured.
+- Account and donor-match UI shows phone verification state. Registration,
+  recovery, request ownership, and listing removal display safe Messavo delivery
+  progress and a resend action after failed or cancelled jobs.
 - A React error boundary displays a fallback if a route render fails.
 - The interface uses consistent English production copy; no translation
   provider or unfinished language control is exposed.
@@ -237,9 +238,9 @@ Client state:
 
 `server/server.ts` owns the API, an in-memory write-through runtime cache,
 session issuance, request validation, capability enforcement, and static
-serving. `server/sms.ts` resolves either the configured HTTP transport or the
-non-production console transport and never silently downgrades an explicitly
-incomplete provider.
+serving. `server/sms.ts` resolves either Messavo automatic delivery or the
+configured provider-neutral HTTP transport and never silently downgrades an
+explicitly incomplete provider.
 
 Security middleware:
 
@@ -288,10 +289,11 @@ API routes:
   `drop_session` cookie, and returns the sanitized user.
 - `POST /api/auth/otp/request` and `/api/auth/otp/verify` create purpose-bound,
   expiring phone-verification tokens for `REGISTER`, `RESET_PASSWORD`,
-  `CHANGE_PHONE`, and `SIGN_IN`. Non-production uses console delivery when
-  no channel is configured; production and incomplete explicit HTTP settings
-  fail closed. A failed send invalidates the new challenge so it creates no
-  false cooldown.
+  `CHANGE_PHONE`, `SIGN_IN`, and `REMOVE_LISTING`. The request response includes
+  the challenge ID, delivery state, and expiry. `GET /api/auth/otp/:challengeId/status`
+  polls an enumeration-safe state without returning the phone, purpose, code, or
+  message. Failed, cancelled, and expired deliveries invalidate the challenge;
+  replaced and expired queued Messavo jobs are cancelled when possible.
 - `SIGN_IN` exists for the blood request flow, where someone gives a phone
   number without first saying whether they have an account. It is the only
   purpose that works either way, and verification returns `account_exists` -
@@ -641,14 +643,16 @@ Environment:
   `MANAGE_STAFF` capability.
 - `METRICS_TOKEN` is a minimum 32-character bearer secret for the detailed
   production `/metrics` endpoint. `/api/stats` remains public and coarse.
-- `SMS_PROVIDER` selects `woven`, the legacy provider-neutral `http`, or the
-  development-only `console` transport.
-  A blank value automatically selects console only outside production.
+- `SMS_PROVIDER` selects `messavo` or the legacy provider-neutral `http`.
+  `woven` remains a one-release alias for `messavo`; blank, incomplete, unknown,
+  and `console` values fail closed.
 - `SMS_API_BASE_URL` and `SMS_API_TOKEN` are both required when
-  `SMS_PROVIDER=woven`. The adapter appends `/api/v1/messages`, sends Woven's
-  `{to, message}` contract, and requires its documented `202` response. Woven
-  places every OTP in `pending_approval`; a signed-in Woven user must approve
-  it before the connected phone sends it.
+  `SMS_PROVIDER=messavo`. The adapter appends `/api/v1/messages`, sends Messavo's
+  `{to, message}` contract with a stable idempotency key, and requires a `202`
+  automatic `ready` or `scheduled` response. A manual `pending_approval` result
+  is rejected. The private key requires `messages:send:automatic`,
+  `messages:read`, `messages:cancel`, and `device:read`; status and cancellation
+  use the existing job routes.
 - `SMS_HTTP_ENDPOINT` and `SMS_HTTP_TOKEN` are both required when
   `SMS_PROVIDER=http`; an incomplete explicit configuration fails closed.
 - `common_app_settings` persists the superadmin-controlled OTP bypass switch.
@@ -704,11 +708,9 @@ Operational endpoints and jobs:
 
 ## Current Constraints
 
-- Production registration requires either a complete Woven configuration
-  (`SMS_PROVIDER=woven`, `SMS_API_BASE_URL`, and `SMS_API_TOKEN`) or the legacy
-  complete HTTP configuration. Blank-provider console fallback and an explicit
-  console provider are non-production only. Woven's required manual approval
-  means it is not a zero-touch transactional OTP service.
+- Production registration requires either a complete Messavo automatic-send
+  configuration (`SMS_PROVIDER=messavo`, `SMS_API_BASE_URL`, and a privately
+  stored scoped `SMS_API_TOKEN`) or the legacy complete HTTP configuration.
 - OTP bypass is an explicit persisted non-production test setting, not an
   automatic fallback.
   It deliberately removes phone-ownership proof across all OTP-protected

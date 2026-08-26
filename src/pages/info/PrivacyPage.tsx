@@ -33,7 +33,7 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Verification and OTP</h2>
-        <p>Registration and password recovery normally use a short-lived, purpose-bound code. Verification confirms control of a phone number and must not be treated as identity or clinical confirmation. In non-production development environments only, if no OTP delivery channel is configured, the code is printed to protected server logs so developers can complete the flow. Production never falls back to console delivery. During controlled testing, a superadmin can explicitly enable the visibly labelled OTP bypass mode; while it is active, Drop does not prove phone ownership.</p>
+        <p>Registration and password recovery normally use a short-lived, purpose-bound code. Verification confirms control of a phone number and must not be treated as identity or clinical confirmation. Codes, recipient numbers, API keys, and message bodies are not written to application logs, and Drop fails closed when no delivery channel is configured. During controlled non-production testing, a superadmin can explicitly enable the visibly labelled OTP bypass mode; while it is active, Drop does not prove phone ownership.</p>
       </section>
       <section>
         <h2>Your choices</h2>

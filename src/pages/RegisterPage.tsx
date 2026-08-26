@@ -1,9 +1,10 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Eye, EyeOff, Phone, TerminalSquare } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Eye, EyeOff, Phone } from 'lucide-react';
 import AuthShell from '../components/AuthShell';
 import DonorAvailabilityFields, { type RegistrationAvailability } from '../components/DonorAvailabilityFields';
-import { api } from '../lib/api';
+import OtpDeliveryStatus from '../components/OtpDeliveryStatus';
+import { api, type OtpDelivery } from '../lib/api';
 import { BLOOD_GROUPS } from '../lib/blood';
 import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
 import { getSafeReturnTo } from '../lib/navigation';
@@ -30,7 +31,7 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
   const [availabilityStatus, setAvailabilityStatus] = useState<RegistrationAvailability>('');
   const [availabilityReason, setAvailabilityReason] = useState('');
   const [step, setStep] = useState<Step>('PHONE');
-  const [deliveryMode, setDeliveryMode] = useState('');
+  const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const returnTo = getSafeReturnTo(searchParams.get('returnTo'), '/profile/donor');
@@ -51,7 +52,7 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
     event.preventDefault();
     void act(async () => {
       const result = await api.requestOtp(phone, 'REGISTER');
-      setDeliveryMode(result.provider || '');
+      setDelivery(result);
       setCode('');
       if (result.bypass && result.verification_token) {
         setVerificationToken(result.verification_token);
@@ -144,12 +145,16 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
           <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-900">
             Code sent for <strong>{phone}</strong>
           </div>
-          {deliveryMode === 'console' && (
-            <div role="status" className="flex gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-              <TerminalSquare className="mt-0.5 h-5 w-5 shrink-0" />
-              <span><strong>Development mode:</strong> the OTP was printed in the server logs.</span>
-            </div>
-          )}
+          <OtpDeliveryStatus
+            delivery={delivery}
+            onDeliveryChange={setDelivery}
+            busy={loading}
+            onResend={() => void act(async () => {
+              const result = await api.requestOtp(phone, 'REGISTER');
+              setDelivery(result);
+              setCode('');
+            })}
+          />
           <Field label="Six-digit verification code">
             <input
               inputMode="numeric"
@@ -167,12 +172,13 @@ export default function RegisterPage({ onLogin }: { onLogin: () => Promise<void>
             {loading ? 'Checking code…' : <>Verify phone <CheckCircle2 className="h-5 w-5" /></>}
           </button>
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <button type="button" onClick={() => setStep('PHONE')} className="inline-flex min-h-11 items-center gap-2 font-bold text-slate-600 hover:text-primary">
+            <button type="button" onClick={() => { setDelivery(null); setCode(''); setStep('PHONE'); }} className="inline-flex min-h-11 items-center gap-2 font-bold text-slate-600 hover:text-primary">
               <ArrowLeft className="h-4 w-4" /> Change number
             </button>
             <button type="button" disabled={loading} onClick={() => void act(async () => {
               const result = await api.requestOtp(phone, 'REGISTER');
-              setDeliveryMode(result.provider || '');
+              setDelivery(result);
+              setCode('');
             })} className="min-h-11 font-bold text-primary hover:text-primary-dark disabled:opacity-50">
               Send another code
             </button>

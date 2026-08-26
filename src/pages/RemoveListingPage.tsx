@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { CheckCircle2, KeyRound, Phone, ShieldOff } from 'lucide-react';
-import { api } from '../lib/api';
+import OtpDeliveryStatus from '../components/OtpDeliveryStatus';
+import { api, type OtpDelivery } from '../lib/api';
 import { PageHeader, StatusBadge, Surface } from '../components/ui';
 
 /**
@@ -21,6 +22,7 @@ export default function RemoveListingPage() {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [removed, setRemoved] = useState(0);
+  const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -40,6 +42,7 @@ export default function RemoveListingPage() {
     event.preventDefault();
     void run(async () => {
       const result = await api.requestListingRemoval(phone);
+      setDelivery(result);
       if (result.bypass && result.verification_token) {
         const confirmed = await api.confirmListingRemoval(phone, result.verification_token);
         setRemoved(confirmed.removed || 0);
@@ -101,7 +104,7 @@ export default function RemoveListingPage() {
               inputMode="tel"
               placeholder="01XXXXXXXXX"
               value={phone}
-              onChange={event => setPhone(event.target.value)}
+              onChange={event => { setPhone(event.target.value); setDelivery(null); }}
               className="input"
             />
           </label>
@@ -117,8 +120,19 @@ export default function RemoveListingPage() {
           <StatusBadge tone="brand" icon={KeyRound}>Step 2 of 2</StatusBadge>
           <h2 className="mt-4 text-xl font-extrabold text-slate-950">Enter the code</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            If {phone} appears in the directory, a six-digit code is on its way to it.
+            A six-digit code is on its way to {phone}. We still do not reveal whether that number is listed.
           </p>
+          <div className="mt-5">
+            <OtpDeliveryStatus
+              delivery={delivery}
+              onDeliveryChange={setDelivery}
+              busy={busy}
+              onResend={() => void run(async () => {
+                setDelivery(await api.requestListingRemoval(phone));
+                setCode('');
+              })}
+            />
+          </div>
           <label className="mt-5 block">
             <span className="mb-2 block text-sm font-bold text-slate-700">Verification code</span>
             <input
@@ -137,7 +151,7 @@ export default function RemoveListingPage() {
             <button type="submit" disabled={busy} className="primary-button">
               {busy ? 'Removing...' : 'Remove my listing'}
             </button>
-            <button type="button" onClick={() => { setStep('phone'); setError(''); }} className="theme-button">
+            <button type="button" onClick={() => { setDelivery(null); setCode(''); setStep('phone'); setError(''); }} className="theme-button">
               Use a different number
             </button>
           </div>

@@ -1,122 +1,101 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getSmsProvider, isSmsConfigured, type SmsEnvironment } from './sms';
+import { getSmsProvider, isSmsConfigured, mapMessavoState, type SmsEnvironment } from './sms';
 
 function environment(values: SmsEnvironment): SmsEnvironment {
   return values;
 }
 
-test('blank provider falls back to console outside production', () => {
-  assert.equal(getSmsProvider(environment({ NODE_ENV: 'development' }))?.name, 'console');
-  assert.equal(getSmsProvider(environment({ NODE_ENV: 'test', SMS_PROVIDER: '  ' }))?.name, 'console');
-  assert.equal(isSmsConfigured(environment({ NODE_ENV: 'development' })), true);
-});
-
-test('production never falls back to console', () => {
-  assert.equal(getSmsProvider(environment({ NODE_ENV: 'production' })), null);
+test('blank, console, and unknown providers fail closed', () => {
+  assert.equal(getSmsProvider(environment({ NODE_ENV: 'development' })), null);
   assert.equal(getSmsProvider(environment({ NODE_ENV: 'production', SMS_PROVIDER: 'console' })), null);
-  assert.equal(isSmsConfigured(environment({ NODE_ENV: 'production' })), false);
+  assert.equal(getSmsProvider(environment({ SMS_PROVIDER: 'smtp' })), null);
 });
 
-test('an explicitly selected incomplete HTTP provider fails closed', () => {
-  assert.equal(getSmsProvider(environment({ NODE_ENV: 'development', SMS_PROVIDER: 'http' })), null);
-  assert.equal(getSmsProvider(environment({
-    NODE_ENV: 'development',
-    SMS_PROVIDER: 'http',
-    SMS_HTTP_ENDPOINT: 'https://sms.example.test/send'
-  })), null);
-  assert.equal(getSmsProvider(environment({
-    NODE_ENV: 'development',
-    SMS_PROVIDER: 'http',
-    SMS_HTTP_TOKEN: 'token'
-  })), null);
-});
-
-test('a complete HTTP provider resolves in every environment', () => {
-  const configured = environment({
-    NODE_ENV: 'production',
-    SMS_PROVIDER: 'http',
-    SMS_HTTP_ENDPOINT: 'https://sms.example.test/send',
-    SMS_HTTP_TOKEN: 'token'
-  });
-  assert.equal(getSmsProvider(configured)?.name, 'http');
-  assert.equal(isSmsConfigured(configured), true);
-});
-
-test('an explicitly selected incomplete Woven provider fails closed', () => {
-  assert.equal(getSmsProvider(environment({ NODE_ENV: 'production', SMS_PROVIDER: 'woven' })), null);
-  assert.equal(getSmsProvider(environment({
-    NODE_ENV: 'production',
-    SMS_PROVIDER: 'woven',
-    SMS_API_BASE_URL: 'https://woven.example.test'
-  })), null);
-  assert.equal(getSmsProvider(environment({
-    NODE_ENV: 'production',
-    SMS_PROVIDER: 'woven',
-    SMS_API_TOKEN: 'wvi_secret'
-  })), null);
-  assert.equal(getSmsProvider(environment({
-    NODE_ENV: 'production',
-    SMS_PROVIDER: 'woven',
-    SMS_API_BASE_URL: 'not a URL',
-    SMS_API_TOKEN: 'wvi_secret'
-  })), null);
-});
-
-test('Woven provider builds the v1 endpoint and maps the OTP request contract', async () => {
+test('a complete provider-neutral HTTP adapter remains supported', async () => {
   const originalFetch = globalThis.fetch;
-  let request: { url?: string; init?: RequestInit } = {};
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  try {
+    const provider = getSmsProvider(environment({
+      SMS_PROVIDER: 'http',
+      SMS_HTTP_ENDPOINT: 'https://sms.example.test/send',
+      SMS_HTTP_TOKEN: 'token'
+    }));
+    assert.equal(provider?.name, 'http');
+    assert.equal(isSmsConfigured(environment({
+      SMS_PROVIDER: 'http',
+      SMS_HTTP_ENDPOINT: 'https://sms.example.test/send',
+      SMS_HTTP_TOKEN: 'token'
+    })), true);
+    assert.deepEqual(await provider?.sendOtp('+8801712345678', '123456', 'drop-otp:test'), { status: 'sent' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('incomplete or invalid Messavo configuration fails closed', () => {
+  assert.equal(getSmsProvider(environment({ SMS_PROVIDER: 'messavo' })), null);
+  assert.equal(getSmsProvider(environment({ SMS_PROVIDER: 'messavo', SMS_API_BASE_URL: 'not a URL', SMS_API_TOKEN: 'secret' })), null);
+});
+
+test('Messavo sends with stable idempotency and supports status and cancellation', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
   globalThis.fetch = async (input, init) => {
-    request = { url: String(input), init };
-    return new Response(JSON.stringify({ id: 'message-id', status: 'pending_approval', replayed: false }), {
-      status: 202,
-      headers: { 'content-type': 'application/json' }
-    });
+    requests.push({ url: String(input), init });
+    if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+    if (!init?.method) return Response.json({ message: { status: 'delivered' } });
+    return Response.json({ id: '3be02b6c-3474-4f76-9fa8-dde7b7815345', status: 'ready', replayed: false }, { status: 202 });
   };
 
   try {
     const provider = getSmsProvider(environment({
       NODE_ENV: 'production',
-      SMS_PROVIDER: 'woven',
-      SMS_API_BASE_URL: 'https://woven.example.test/',
-      SMS_API_TOKEN: 'wvi_secret'
+      SMS_PROVIDER: 'messavo',
+      SMS_API_BASE_URL: 'https://messavo.example.test/',
+      SMS_API_TOKEN: 'private-test-token'
     }));
     assert.ok(provider);
-    assert.equal(provider.name, 'woven');
-    await provider.sendOtp('+8801712345678', '123456');
-    assert.equal(request.url, 'https://woven.example.test/api/v1/messages');
-    assert.equal(request.init?.method, 'POST');
-    assert.deepEqual(request.init?.headers, {
-      'content-type': 'application/json',
-      authorization: 'Bearer wvi_secret'
+    assert.equal(provider.name, 'messavo');
+    assert.deepEqual(await provider.sendOtp('+8801712345678', '123456', 'drop-otp:stable-id'), {
+      jobId: '3be02b6c-3474-4f76-9fa8-dde7b7815345',
+      status: 'queued'
     });
-    assert.deepEqual(JSON.parse(String(request.init?.body)), {
-      to: '+8801712345678',
-      message: 'Your Drop verification code is 123456. It expires in 10 minutes.'
-    });
+    assert.equal(requests[0].url, 'https://messavo.example.test/api/v1/messages');
+    assert.equal((requests[0].init?.headers as Record<string, string>)['idempotency-key'], 'drop-otp:stable-id');
+    assert.equal(await provider.getStatus?.('3be02b6c-3474-4f76-9fa8-dde7b7815345'), 'delivered');
+    assert.equal(await provider.cancel?.('3be02b6c-3474-4f76-9fa8-dde7b7815345'), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('Woven provider rejects a response that was not queued for approval', async () => {
+test('the woven name is a compatibility alias and manual approval is rejected', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(null, { status: 401 });
-
+  globalThis.fetch = async () => Response.json({
+    id: '3be02b6c-3474-4f76-9fa8-dde7b7815345',
+    status: 'pending_approval',
+    replayed: false
+  }, { status: 202 });
   try {
     const provider = getSmsProvider(environment({
-      NODE_ENV: 'production',
       SMS_PROVIDER: 'woven',
-      SMS_API_BASE_URL: 'https://woven.example.test',
-      SMS_API_TOKEN: 'wvi_secret'
+      SMS_API_BASE_URL: 'https://messavo.example.test',
+      SMS_API_TOKEN: 'private-test-token'
     }));
     assert.ok(provider);
-    await assert.rejects(provider.sendOtp('+8801712345678', '123456'), /returned 401/);
+    assert.equal(provider?.name, 'messavo');
+    await assert.rejects(provider.sendOtp('+8801712345678', '123456', 'drop-otp:manual-key'), /automatic-send/);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('unknown explicit providers fail closed', () => {
-  assert.equal(getSmsProvider(environment({ NODE_ENV: 'development', SMS_PROVIDER: 'smtp' })), null);
+test('Messavo states map to public delivery states without exposing provider detail', () => {
+  assert.equal(mapMessavoState('ready'), 'queued');
+  assert.equal(mapMessavoState('leased'), 'queued');
+  assert.equal(mapMessavoState('sent'), 'sent');
+  assert.equal(mapMessavoState('delivered'), 'delivered');
+  assert.equal(mapMessavoState('failed'), 'failed');
+  assert.equal(mapMessavoState('pending_approval'), null);
 });

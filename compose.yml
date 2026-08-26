@@ -52,7 +52,7 @@ services:
       APP_URL: ${APP_URL:-http://localhost:3001}
       LANCEDB_PATH: /data/lancedb
       COMMUNITY_MEDIA_PATH: /data/media/community
-      SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      SMS_PROVIDER: ${SMS_PROVIDER:-}
       SMS_API_BASE_URL: ${SMS_API_BASE_URL:-}
       SMS_API_TOKEN: ${SMS_API_TOKEN:-}
       SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}

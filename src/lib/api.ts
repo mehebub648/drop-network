@@ -39,6 +39,12 @@ async function readJsonOrThrow(res: Response, fallbackMessage: string) {
 }
 
 export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN' | 'REMOVE_LISTING';
+export type OtpDeliveryStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'canceled' | 'bypassed';
+export type OtpDelivery = {
+  challenge_id: string;
+  delivery_status: OtpDeliveryStatus;
+  expires_at: string;
+};
 
 export type SearchDonorCard = {
   donor_ref: string;
@@ -141,6 +147,14 @@ export const api = {
       method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone, purpose })
     });
     return readJsonOrThrow(res, 'Failed to send verification code');
+  },
+
+  async getOtpStatus(challengeId: string): Promise<OtpDelivery> {
+    const res = await fetch(`${API_BASE}/auth/otp/${encodeURIComponent(challengeId)}/status`, {
+      headers: getHeaders(),
+      cache: 'no-store'
+    });
+    return readJsonOrThrow(res, 'Failed to check verification delivery');
   },
 
   async verifyOtp(phone: string, purpose: OtpPurpose, code: string) {

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { HeartPulse, ShieldCheck, X } from 'lucide-react';
 import DonorAvailabilityFields, { type RegistrationAvailability } from '../DonorAvailabilityFields';
-import { api } from '../../lib/api';
+import OtpDeliveryStatus from '../OtpDeliveryStatus';
+import { api, type OtpDelivery } from '../../lib/api';
 import { BLOOD_GROUPS } from '../../lib/blood';
 import { BD_LOCATION_NAMES, getLocationByName } from '../../lib/locations';
 import { getUpazilasForDistrict } from '../../lib/upazilas';
@@ -60,6 +61,7 @@ export default function RequestGate({
   const [roleReturnStep, setRoleReturnStep] = useState<RequestStep>('patient');
   const [phone, setPhone] = useState(() => draft.requester_phone || user?.phone || '');
   const [code, setCode] = useState('');
+  const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [password, setPassword] = useState('');
   const [name, setName] = useState(() => draft.requester_role === 'PATIENT' ? draft.patient_name : draft.requester_name);
   const [token, setToken] = useState('');
@@ -146,6 +148,8 @@ export default function RequestGate({
     event.preventDefault();
     void run(async () => {
       const result = await api.requestOtp(phone, 'SIGN_IN');
+      setDelivery(result);
+      setCode('');
       if (result.bypass && result.verification_token) {
         await continueAfterVerification(result);
       } else {
@@ -248,6 +252,8 @@ export default function RequestGate({
 
   const updateVerificationPhone = (value: string) => {
     setPhone(value);
+    setDelivery(null);
+    setCode('');
     if (!user) set({ requester_phone: value });
   };
 
@@ -532,13 +538,24 @@ export default function RequestGate({
           <form onSubmit={verifyCode}>
             <h2 id="request-gate-title">Enter the code</h2>
             <p>We sent a six-digit code to {phone}.</p>
+            <OtpDeliveryStatus
+              delivery={delivery}
+              onDeliveryChange={setDelivery}
+              busy={busy}
+              onResend={() => void run(async () => {
+                const result = await api.requestOtp(phone, 'SIGN_IN');
+                setDelivery(result);
+                setCode('');
+                if (result.bypass && result.verification_token) await continueAfterVerification(result);
+              })}
+            />
             <label className="dialog-field">
               <span>Verification code</span>
               <input required autoFocus inputMode="numeric" pattern="\d{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value)} className="input tracking-[0.4em]" />
             </label>
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
-              <button type="button" onClick={() => setStep('phone')} className="button button-secondary">Change number</button>
+              <button type="button" onClick={() => { setDelivery(null); setCode(''); setStep('phone'); }} className="button button-secondary">Change number</button>
               <button type="submit" disabled={busy} className="button button-primary">{busy ? 'Checking...' : 'Verify'}</button>
             </div>
             <button type="button" onClick={() => setStep('password')} className="mt-3 text-sm font-bold text-primary underline">

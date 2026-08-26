@@ -13,7 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, replaceImportedDonor, withdrawImportedDonorsByPhone, addCallReports, queryCallReports } from './db';
 import { evaluateClaim, maskPhone, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor } from './importedDonors';
 import { getLocationByName } from './locations';
-import { getSmsProvider, isSmsConfigured } from './sms';
+import { getSmsProvider, isSmsConfigured, type SmsDeliveryStatus } from './sms';
 import { getUpazilaByName, getUpazilaVariants } from './upazilas';
 import { BLOOD_GROUPS, COMPATIBLE_DONORS, type BloodGroup } from './blood';
 import { findPendingReveal, findUnansweredReveals, parseCallOutcome, parseDonorReport, parseDonorRef, type CallReport } from './callReports';
@@ -372,6 +372,11 @@ type OtpChallenge = {
   verification_token?: string;
   verification_expires_at?: string;
   bypassed?: boolean;
+  delivery_provider?: string;
+  delivery_job_id?: string;
+  delivery_status?: SmsDeliveryStatus | 'bypassed';
+  delivery_updated_at?: string;
+  invalidated_at?: string;
 };
 
 type OtpBypassSetting = {
@@ -1369,6 +1374,7 @@ function verifiedChallenge(phone: string, purpose: OtpChallenge['purpose'], toke
     challenge.phone === phone &&
     challenge.purpose === purpose &&
     challenge.verification_token === token &&
+    !challenge.invalidated_at &&
     challenge.verification_expires_at &&
     new Date(challenge.verification_expires_at).getTime() > Date.now() &&
     (!challenge.bypassed || (
@@ -1395,7 +1401,10 @@ async function issueOtpBypass(phone: string, purpose: OtpChallenge['purpose']) {
     verified_at: now.toISOString(),
     verification_token: uuidv4(),
     verification_expires_at: new Date(now.getTime() + OTP_VERIFICATION_TTL_MS).toISOString(),
-    bypassed: true
+    bypassed: true,
+    delivery_provider: 'bypass',
+    delivery_status: 'bypassed',
+    delivery_updated_at: now.toISOString()
   };
   await saveToTable('common_otps', challenge);
   otpChallenges.push(challenge);
@@ -1821,6 +1830,50 @@ app.get('/media/community/:key', asyncRoute(async (req, res) => {
  * resend cooldown. A failed persist or send invalidates the new challenge so it
  * cannot leave the caller inside a cooldown for a code that never arrived.
  */
+async function cancelOtpChallengeDelivery(challenge: OtpChallenge, reason: 'expired' | 'replaced' | 'delivery_failed') {
+  if (challenge.invalidated_at) return;
+  const provider = getSmsProvider();
+  if (challenge.delivery_job_id && challenge.delivery_status === 'queued' && provider?.cancel) {
+    try {
+      await provider.cancel(challenge.delivery_job_id);
+    } catch {
+      // The Drop challenge is invalidated even if the provider is temporarily
+      // unavailable. A late carrier message must never revive an old code.
+    }
+  }
+  const now = new Date().toISOString();
+  challenge.invalidated_at = now;
+  challenge.delivery_updated_at = now;
+  if (reason === 'replaced') challenge.delivery_status = 'canceled';
+  if (reason === 'expired' || reason === 'delivery_failed') challenge.delivery_status = 'failed';
+  await saveToTable('common_otps', challenge);
+}
+
+async function refreshOtpDelivery(challenge: OtpChallenge) {
+  if (challenge.invalidated_at || !challenge.delivery_job_id || ['sent', 'delivered', 'failed', 'canceled'].includes(challenge.delivery_status || '')) {
+    return challenge;
+  }
+  const provider = getSmsProvider();
+  if (!provider?.getStatus || provider.name !== challenge.delivery_provider) return challenge;
+  const status = await provider.getStatus(challenge.delivery_job_id);
+  if (status !== challenge.delivery_status) {
+    challenge.delivery_status = status;
+    challenge.delivery_updated_at = new Date().toISOString();
+    if (status === 'failed' || status === 'canceled') challenge.invalidated_at = challenge.delivery_updated_at;
+    await saveToTable('common_otps', challenge);
+  }
+  return challenge;
+}
+
+async function expireOtpChallenges() {
+  const expired = otpChallenges.filter(challenge =>
+    !challenge.verified_at &&
+    !challenge.invalidated_at &&
+    new Date(challenge.expires_at).getTime() <= Date.now()
+  );
+  for (const challenge of expired) await cancelOtpChallengeDelivery(challenge, 'expired');
+}
+
 async function issueOtpChallenge(
   phone: string,
   purpose: OtpChallenge['purpose'],
@@ -1828,10 +1881,18 @@ async function issueOtpChallenge(
 ) {
   const recent = otpChallenges.find(challenge =>
     challenge.phone === phone && challenge.purpose === purpose &&
+    !challenge.invalidated_at &&
     new Date(challenge.expires_at).getTime() > Date.now() &&
     Date.now() - new Date(challenge.created_at).getTime() < 60_000
   );
   if (recent) return { error: 'Wait before requesting another code', status: 429 } as const;
+
+  const superseded = otpChallenges.filter(challenge =>
+    challenge.phone === phone && challenge.purpose === purpose &&
+    !challenge.verified_at && !challenge.invalidated_at &&
+    new Date(challenge.expires_at).getTime() > Date.now()
+  );
+  for (const challenge of superseded) await cancelOtpChallengeDelivery(challenge, 'replaced');
 
   const code = String(randomInt(100000, 1_000_000));
   const now = Date.now();
@@ -1840,14 +1901,17 @@ async function issueOtpChallenge(
     code_hash: await bcrypt.hash(code, BCRYPT_ROUNDS),
     created_at: new Date(now).toISOString(),
     expires_at: new Date(now + OTP_TTL_MS).toISOString(),
-    attempts: 0
+    attempts: 0,
+    delivery_provider: provider.name,
+    delivery_status: 'queued',
+    delivery_updated_at: new Date(now).toISOString()
   };
   otpChallenges.push(challenge);
 
   const invalidate = async () => {
-    otpChallenges = otpChallenges.filter(item => item.id !== challenge.id);
-    challenge.expires_at = new Date(0).toISOString();
-    challenge.verification_expires_at = new Date(0).toISOString();
+    challenge.invalidated_at = new Date().toISOString();
+    challenge.delivery_status = 'failed';
+    challenge.delivery_updated_at = challenge.invalidated_at;
     try {
       await saveToTable('common_otps', challenge);
     } catch {
@@ -1864,19 +1928,39 @@ async function issueOtpChallenge(
   }
 
   try {
-    await provider.sendOtp(phone, code);
+    const delivery = await provider.sendOtp(phone, code, `drop-otp:${challenge.id}`);
+    challenge.delivery_job_id = delivery.jobId;
+    challenge.delivery_status = delivery.status;
+    challenge.delivery_updated_at = new Date().toISOString();
+    await saveToTable('common_otps', challenge);
   } catch {
+    if (challenge.delivery_job_id && challenge.delivery_status === 'queued' && provider.cancel) {
+      try {
+        await provider.cancel(challenge.delivery_job_id);
+      } catch {
+        // The challenge is still invalidated below. Never expose provider
+        // internals or allow a persistence failure to make the code usable.
+      }
+    }
     await invalidate();
     return {
       error: 'Verification code delivery failed; please try again',
-      status: provider.name === 'console' ? 503 : 502
+      status: 502
     } as const;
   }
 
   return { challenge } as const;
 }
 
-app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
+function otpDeliveryPayload(challenge: OtpChallenge) {
+  return {
+    challenge_id: challenge.id,
+    delivery_status: challenge.delivery_status || 'queued',
+    expires_at: challenge.expires_at
+  };
+}
+
+app.post('/api/auth/otp/request', authLimiter, asyncRoute(async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const purpose = req.body?.purpose;
   if (!phone || !isOneOf(purpose, OTP_PURPOSES)) {
@@ -1892,6 +1976,7 @@ app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
         success: true,
         provider: 'bypass',
         bypass: true,
+        ...otpDeliveryPayload(challenge),
         ...otpVerificationPayload(phone, purpose, challenge.verification_token!)
       });
     } catch {
@@ -1900,10 +1985,9 @@ app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
   }
   const provider = getSmsProvider();
   if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
-  if (purpose === 'RESET_PASSWORD' && !users.some(user => user.phone === phone)) {
-    // Do not disclose account existence.
-    return res.json({ success: true });
-  }
+  // Password recovery deliberately sends the same challenge and returns the
+  // same shape whether or not an account exists. Account existence is checked
+  // only after the caller proves control of the number.
   // SIGN_IN takes neither branch on purpose. It has to work whether or not the
   // number has an account, and the answer is only disclosed once the caller has
   // entered the code sent to that number - so they learn about their own phone
@@ -1911,10 +1995,32 @@ app.post('/api/auth/otp/request', authLimiter, async (req, res) => {
 
   const issued = await issueOtpChallenge(phone, purpose, provider);
   if ('error' in issued) return res.status(issued.status).json({ error: issued.error });
-  res.json({ success: true, provider: provider.name });
-});
+  res.json({ success: true, provider: provider.name, ...otpDeliveryPayload(issued.challenge) });
+}));
 
-app.post('/api/auth/otp/verify', authLimiter, async (req, res) => {
+app.get('/api/auth/otp/:challengeId/status', authLimiter, asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const challengeId = cleanString(req.params.challengeId, 36);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challengeId)) {
+    return res.status(404).json({ error: 'Verification challenge not found' });
+  }
+  const challenge = otpChallenges.find(item => item.id === challengeId);
+  if (!challenge) return res.status(404).json({ error: 'Verification challenge not found' });
+
+  if (!challenge.invalidated_at && !challenge.verified_at && new Date(challenge.expires_at).getTime() <= Date.now()) {
+    await cancelOtpChallengeDelivery(challenge, 'expired');
+  } else if (!challenge.invalidated_at) {
+    try {
+      await refreshOtpDelivery(challenge);
+    } catch {
+      // Keep the last safe delivery state. Provider details and transient
+      // outages are intentionally not exposed by this enumeration-safe route.
+    }
+  }
+  res.json(otpDeliveryPayload(challenge));
+}));
+
+app.post('/api/auth/otp/verify', authLimiter, asyncRoute(async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const purpose = req.body?.purpose;
   const code = cleanString(req.body?.code, 6);
@@ -1922,9 +2028,19 @@ app.post('/api/auth/otp/verify', authLimiter, async (req, res) => {
     return validationError(res, 'Valid phone, purpose, and six-digit code are required');
   }
   const challenge = [...otpChallenges].reverse().find(item =>
-    item.phone === phone && item.purpose === purpose && !item.verified_at && new Date(item.expires_at).getTime() > Date.now()
+    item.phone === phone && item.purpose === purpose && !item.verified_at && !item.invalidated_at &&
+    !['failed', 'canceled'].includes(item.delivery_status || '') &&
+    new Date(item.expires_at).getTime() > Date.now()
   );
   if (!challenge || challenge.attempts >= 5) return res.status(400).json({ error: 'Code is invalid or expired' });
+  try {
+    await refreshOtpDelivery(challenge);
+  } catch {
+    return res.status(503).json({ error: 'Verification status is temporarily unavailable' });
+  }
+  if (challenge.invalidated_at || ['failed', 'canceled'].includes(challenge.delivery_status || '')) {
+    return res.status(400).json({ error: 'Code is invalid or expired' });
+  }
   challenge.attempts += 1;
   if (!(await bcrypt.compare(code, challenge.code_hash))) {
     await saveToTable('common_otps', challenge);
@@ -1943,7 +2059,7 @@ app.post('/api/auth/otp/verify', authLimiter, async (req, res) => {
   }
 
   res.json({ verification_token: challenge.verification_token });
-});
+}));
 
 /**
  * Signs in with a verified `SIGN_IN` challenge instead of a password. The
@@ -3753,20 +3869,19 @@ app.get('/api/directory/:id', async (req, res) => {
  * answers the same way, exactly like password recovery, so this cannot be used
  * to test which numbers are in the directory.
  */
-app.post('/api/directory/removals/request', authLimiter, async (req, res) => {
+app.post('/api/directory/removals/request', authLimiter, asyncRoute(async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
-
-  let listed = 0;
-  try {
-    listed = await countImportedDonors({ phone });
-  } catch {
-    return res.status(503).json({ error: 'The directory is temporarily unavailable' });
-  }
   if (isOtpBypassEnabled()) {
     try {
       const challenge = await issueOtpBypass(phone, 'REMOVE_LISTING');
-      return res.json({ success: true, provider: 'bypass', bypass: true, verification_token: challenge.verification_token });
+      return res.json({
+        success: true,
+        provider: 'bypass',
+        bypass: true,
+        verification_token: challenge.verification_token,
+        ...otpDeliveryPayload(challenge)
+      });
     } catch {
       return res.status(503).json({ error: 'Test verification is temporarily unavailable' });
     }
@@ -3774,13 +3889,11 @@ app.post('/api/directory/removals/request', authLimiter, async (req, res) => {
 
   const provider = getSmsProvider();
   if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
-  // Answer identically whether or not anything is listed.
-  if (listed === 0) return res.json({ success: true });
 
   const issued = await issueOtpChallenge(phone, 'REMOVE_LISTING', provider);
   if ('error' in issued) return res.status(issued.status).json({ error: issued.error });
-  res.json({ success: true, provider: provider.name });
-});
+  res.json({ success: true, provider: provider.name, ...otpDeliveryPayload(issued.challenge) });
+}));
 
 app.post('/api/directory/removals/confirm', authLimiter, async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
@@ -4140,6 +4253,7 @@ async function startServer() {
   await initDbData();
   await enforceExpiredRequests();
   await enforceStaleAvailability();
+  await expireOtpChallenges();
   // Prepare the imported directory before reporting ready. It is otherwise
   // prepared lazily on first access, and after a schema change that means the
   // first donor search blocks behind a full-table migration while /ready has
@@ -4154,6 +4268,7 @@ async function startServer() {
   const maintenanceTimer = setInterval(() => {
     void enforceExpiredRequests();
     void enforceStaleAvailability();
+    void expireOtpChallenges();
   }, 5 * 60_000);
   maintenanceTimer.unref();
 

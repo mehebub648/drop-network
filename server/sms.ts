@@ -1,15 +1,26 @@
+export type SmsDeliveryStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'canceled';
+
+export type SmsSendResult = {
+  jobId?: string;
+  status: SmsDeliveryStatus;
+};
+
 export interface SmsProvider {
   name: string;
-  sendOtp(phone: string, code: string): Promise<void>;
+  sendOtp(phone: string, code: string, idempotencyKey: string): Promise<SmsSendResult>;
+  getStatus?(jobId: string): Promise<SmsDeliveryStatus>;
+  cancel?(jobId: string): Promise<boolean>;
 }
 
 export type SmsEnvironment = Readonly<Record<string, string | undefined>>;
 
+function otpMessage(code: string) {
+  return `Your Drop verification code is ${code}. It expires in 10 minutes.`;
+}
+
 /**
- * Provider-neutral HTTP gateway. The configured endpoint receives a JSON body
- * containing `phone`, `code`, and `message`. Authentication is sent through a
- * bearer token so deployments can use a small gateway adapter for their
- * preferred Bangladesh SMS vendor without coupling the app to one SDK.
+ * Provider-neutral HTTP gateway retained for deployments that already use a
+ * small private adapter. It has no delivery-status or cancellation contract.
  */
 function createHttpProvider(environment: SmsEnvironment): SmsProvider | null {
   const endpoint = environment.SMS_HTTP_ENDPOINT?.trim();
@@ -25,82 +36,119 @@ function createHttpProvider(environment: SmsEnvironment): SmsProvider | null {
           'content-type': 'application/json',
           authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          phone,
-          code,
-          message: `Your Drop verification code is ${code}. It expires in 10 minutes.`
-        })
+        body: JSON.stringify({ phone, code, message: otpMessage(code) })
       });
       if (!response.ok) throw new Error(`SMS gateway returned ${response.status}`);
+      return { status: 'sent' };
     }
   };
 }
 
-/**
- * Woven/Messavo automation transport. The deployment config stores only the
- * installation base URL; the stable v1 messages path is owned here so an
- * environment can move between Woven installations without editing code.
- */
-function createWovenProvider(environment: SmsEnvironment): SmsProvider | null {
+type MessavoState = 'pending_approval' | 'scheduled' | 'ready' | 'leased' | 'sent' | 'delivered' | 'failed' | 'canceled';
+
+export function mapMessavoState(state: unknown): SmsDeliveryStatus | null {
+  switch (state as MessavoState) {
+    case 'scheduled':
+    case 'ready':
+    case 'leased':
+      return 'queued';
+    case 'sent':
+      return 'sent';
+    case 'delivered':
+      return 'delivered';
+    case 'failed':
+      return 'failed';
+    case 'canceled':
+      return 'canceled';
+    default:
+      return null;
+  }
+}
+
+function createMessavoProvider(environment: SmsEnvironment): SmsProvider | null {
   const configuredBaseUrl = environment.SMS_API_BASE_URL?.trim();
   const token = environment.SMS_API_TOKEN?.trim();
   if (!configuredBaseUrl || !token) return null;
 
-  let endpoint: URL;
+  let messagesEndpoint: URL;
   try {
-    endpoint = new URL(configuredBaseUrl);
+    messagesEndpoint = new URL(configuredBaseUrl);
   } catch {
     return null;
   }
-  if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+  if (!['http:', 'https:'].includes(messagesEndpoint.protocol) || messagesEndpoint.username || messagesEndpoint.password || messagesEndpoint.search || messagesEndpoint.hash) {
     return null;
   }
-  endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, '')}/api/v1/messages`;
+  messagesEndpoint.pathname = `${messagesEndpoint.pathname.replace(/\/+$/, '')}/api/v1/messages`;
 
-  return {
-    name: 'woven',
-    async sendOtp(phone, code) {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          to: phone,
-          message: `Your Drop verification code is ${code}. It expires in 10 minutes.`
-        })
-      });
-      if (response.status !== 202) throw new Error(`Woven SMS API returned ${response.status}`);
-    }
+  const headers = {
+    'content-type': 'application/json',
+    authorization: `Bearer ${token}`
   };
-}
+  const jobEndpoint = (jobId: string) => new URL(`${messagesEndpoint.toString().replace(/\/+$/, '')}/${encodeURIComponent(jobId)}`);
 
-function createDevelopmentConsoleProvider(environment: SmsEnvironment): SmsProvider | null {
-  if (environment.NODE_ENV === 'production') return null;
   return {
-    name: 'console',
-    async sendOtp(phone, code) {
-      console.info(JSON.stringify({ event: 'development_otp', phone, code }));
+    name: 'messavo',
+    async sendOtp(phone, code, idempotencyKey) {
+      const response = await fetch(messagesEndpoint, {
+        method: 'POST',
+        headers: { ...headers, 'idempotency-key': idempotencyKey },
+        body: JSON.stringify({ to: phone, message: otpMessage(code) })
+      });
+      if (response.status !== 202) throw new Error(`Messavo SMS API returned ${response.status}`);
+      const result = await response.json().catch(() => null) as { id?: unknown; status?: unknown } | null;
+      const jobId = typeof result?.id === 'string' ? result.id : '';
+      if (!jobId) throw new Error('Messavo SMS API returned an invalid job');
+      if (result?.status === 'pending_approval') {
+        try {
+          await fetch(jobEndpoint(jobId), {
+            method: 'DELETE',
+            headers: { authorization: headers.authorization }
+          });
+        } catch {
+          // A manual key is never accepted for OTP. Best-effort cancellation
+          // prevents a later human approval from sending an invalidated code.
+        }
+        throw new Error('Messavo automatic-send permission is required');
+      }
+      const status = mapMessavoState(result?.status);
+      if (!status || status === 'failed' || status === 'canceled') {
+        throw new Error('Messavo SMS API did not queue the message');
+      }
+      return { jobId, status };
+    },
+    async getStatus(jobId) {
+      const response = await fetch(jobEndpoint(jobId), {
+        headers: { authorization: headers.authorization }
+      });
+      if (!response.ok) throw new Error(`Messavo status API returned ${response.status}`);
+      const result = await response.json().catch(() => null) as { message?: { status?: unknown } } | null;
+      const status = mapMessavoState(result?.message?.status);
+      if (!status) throw new Error('Messavo status API returned an invalid state');
+      return status;
+    },
+    async cancel(jobId) {
+      const response = await fetch(jobEndpoint(jobId), {
+        method: 'DELETE',
+        headers: { authorization: headers.authorization }
+      });
+      if (response.status === 204) return true;
+      if (response.status === 404 || response.status === 409) return false;
+      throw new Error(`Messavo cancellation API returned ${response.status}`);
     }
   };
 }
 
 export function getSmsProvider(environment: SmsEnvironment = process.env): SmsProvider | null {
   const configuredProvider = (environment.SMS_PROVIDER || '').trim().toLowerCase();
-
-  // Development remains a real OTP flow even without an external channel:
-  // codes go to the process console. Production must always fail closed.
-  if (!configuredProvider) return createDevelopmentConsoleProvider(environment);
-
   switch (configuredProvider) {
+    case 'messavo':
     case 'woven':
-      return createWovenProvider(environment);
+      // `woven` is a one-release configuration alias only. Public responses
+      // and operational surfaces consistently name the provider Messavo.
+      return createMessavoProvider(environment);
     case 'http':
-      // An explicitly selected HTTP provider is never silently downgraded.
       return createHttpProvider(environment);
-    case 'console':
-      return createDevelopmentConsoleProvider(environment);
     default:
       return null;
   }
