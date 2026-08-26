@@ -95,8 +95,14 @@ export default function LandingPage({ user }: { user: any }) {
         <section className="landing-hero px-5 py-7 sm:px-8 sm:py-9 lg:px-10 lg:py-12 xl:px-12">
           <div className="landing-hero-layout relative">
             <div className="landing-hero-copy min-w-0">
+              <div className="landing-hero-mark" aria-hidden="true">
+                <span className="landing-hero-mark-icon">
+                  <HeartHandshake className="h-5 w-5" />
+                </span>
+                <span className="landing-hero-mark-line" />
+              </div>
               <h1 className="max-w-2xl text-4xl font-extrabold leading-[1.02] tracking-[-0.045em] text-slate-950 sm:text-5xl lg:text-[3.65rem]">
-                Find the right blood donor <span className="text-primary">when it matters most.</span>
+                Find the right blood donor <span className="landing-hero-emphasis text-primary">when it matters most.</span>
               </h1>
               <p className="mt-5 max-w-2xl text-base font-semibold leading-7 text-slate-600 sm:text-lg sm:leading-8">
                 Search by blood group and collection area. Donor phone numbers stay private until you confirm a genuine request.
@@ -114,7 +120,9 @@ export default function LandingPage({ user }: { user: any }) {
               />
             </div>
 
-            <BloodBagDoodle className="landing-doodle w-full" />
+            <div className="landing-hero-art" aria-hidden="true">
+              <BloodBagDoodle className="landing-doodle w-full" />
+            </div>
           </div>
         </section>
 
