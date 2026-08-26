@@ -13,6 +13,28 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            const moduleId = id.replaceAll('\\', '/');
+            if (
+              moduleId.includes('/node_modules/react/') ||
+              moduleId.includes('/node_modules/react-dom/') ||
+              moduleId.includes('/node_modules/react-router/') ||
+              moduleId.includes('/node_modules/scheduler/')
+            ) return 'react-vendor';
+            if (
+              moduleId.includes('/node_modules/motion/') ||
+              moduleId.includes('/node_modules/motion-dom/') ||
+              moduleId.includes('/node_modules/motion-utils/')
+            ) return 'motion-vendor';
+            if (moduleId.includes('/node_modules/lucide-react/')) return 'icons-vendor';
+            if (moduleId.includes('/node_modules/date-fns/')) return 'date-vendor';
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       hmr: process.env.DISABLE_HMR !== 'true',

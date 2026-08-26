@@ -3253,7 +3253,10 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
       upazilas,
       excludeUserId: auth.user.id
     }, auth.user)) {
-      card = registeredDonorCard(donor, request.blood_group);
+      card = registeredDonorCard(donor, request.blood_group, {
+        district: request.location.area_name,
+        upazilas
+      });
     }
   } else {
     const donor = await getImportedDonor(reference.id);
