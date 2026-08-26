@@ -151,30 +151,38 @@ export default function DonorResultCard({
         </div>
       )}
 
-      <div className="mt-5 flex min-h-20 flex-1 flex-col justify-center gap-3 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-slate-950 sm:flex-row sm:items-center sm:justify-between">
-        <p className="flex items-center gap-2 font-semibold tabular-nums text-slate-700">
-          <LockKeyhole className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-          {donor.has_phone ? donor.phone_masked : 'No number published'}
-        </p>
-        {donor.is_current_user ? (
-          <Link
-            to="/profile/donor"
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark"
-          >
-            <UserRound className="h-4 w-4" aria-hidden="true" />
-            Open my profile
-          </Link>
-        ) : (
-          <button
-            type="button"
-            disabled={!donor.has_phone || busy}
-            onClick={() => onSelect(donor)}
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Phone className="h-4 w-4" aria-hidden="true" />
-            {busy ? 'Opening...' : 'Request contact'}
-          </button>
-        )}
+      <div className="mt-auto pt-5">
+        <div className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2.5 text-slate-950 sm:px-4">
+          <p className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold tabular-nums text-slate-700 sm:text-base">
+            <LockKeyhole className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            {donor.has_phone ? donor.phone_masked : 'No number published'}
+          </p>
+          {donor.is_current_user ? (
+            <Link
+              to="/profile/donor"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark sm:px-4"
+            >
+              <UserRound className="h-4 w-4" aria-hidden="true" />
+              <span className="sm:hidden">My profile</span>
+              <span className="hidden sm:inline">Open my profile</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled={!donor.has_phone || busy}
+              onClick={() => onSelect(donor)}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
+            >
+              <Phone className="h-4 w-4" aria-hidden="true" />
+              {busy ? 'Opening...' : (
+                <>
+                  <span className="sm:hidden">Contact</span>
+                  <span className="hidden sm:inline">Request contact</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );
