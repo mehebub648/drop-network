@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { AlertCircle, ArrowLeft, BookOpenText, Flag, HeartHandshake, LoaderCircle, PenLine, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ArrowLeft, BookOpenText, Check, Copy, ExternalLink, Flag, HeartHandshake, LoaderCircle, MessageCircle, PenLine, Share2, ShieldCheck } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 import MarkdownContent from '../components/community/MarkdownContent';
 import { api, type PublicCommunityPostDetail } from '../lib/api';
@@ -123,6 +123,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
   const [reportDetails, setReportDetails] = useState('');
   const [reportBusy, setReportBusy] = useState(false);
   const [reportMessage, setReportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [shareMessage, setShareMessage] = useState('');
   useCommunityPostMetadata(post);
 
   useEffect(() => {
@@ -165,6 +166,33 @@ export default function CommunityPostPage({ user }: { user: any }) {
     }
   };
 
+  const copyShareLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const input = document.createElement('textarea');
+      input.value = url;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+    setShareMessage('Link copied');
+  };
+
+  const nativeShare = async (url: string) => {
+    if (!navigator.share || !post) return copyShareLink(url);
+    try {
+      await navigator.share({ title: post.title, text: post.excerpt, url });
+      setShareMessage('Share sheet opened');
+    } catch (reason) {
+      if ((reason as DOMException)?.name !== 'AbortError') setShareMessage('Could not open the share sheet');
+    }
+  };
+
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl" role="status" aria-label="Loading community post">
@@ -200,6 +228,8 @@ export default function CommunityPostPage({ user }: { user: any }) {
   }
 
   const TypeIcon = post.type === 'DONATION_STORY' ? HeartHandshake : BookOpenText;
+  const shareUrl = `${PUBLIC_SITE_URL}/community/${encodeURIComponent(post.slug)}`;
+  const encodedShareText = encodeURIComponent(`${post.title}\n${shareUrl}`);
 
   return (
     <article className="mx-auto max-w-4xl" itemScope itemType="https://schema.org/BlogPosting">
@@ -242,6 +272,21 @@ export default function CommunityPostPage({ user }: { user: any }) {
       <div className="theme-card mt-8 border border-slate-100 p-6 sm:p-10" itemProp="articleBody">
         <MarkdownContent markdown={post.body_markdown} />
       </div>
+
+      {post.type === 'DONATION_STORY' && (
+        <section className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-5" aria-labelledby="share-donation-story">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><h2 id="share-donation-story" className="font-extrabold text-slate-950">Share this donation story</h2><p className="mt-1 text-xs leading-5 text-slate-600">This permanent link uses only the public details reviewed by the donor.</p></div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => nativeShare(shareUrl)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-white hover:bg-primary-dark"><Share2 className="h-4 w-4" /> Share</button>
+              <a href={`https://wa.me/?text=${encodedShareText}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-bold text-slate-700 hover:border-rose-300"><MessageCircle className="h-4 w-4" /> WhatsApp</a>
+              <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-bold text-slate-700 hover:border-rose-300"><ExternalLink className="h-4 w-4" /> Facebook</a>
+              <button type="button" onClick={() => copyShareLink(shareUrl)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-bold text-slate-700 hover:border-rose-300">{shareMessage === 'Link copied' ? <Check className="h-4 w-4 text-green-700" /> : <Copy className="h-4 w-4" />} Copy link</button>
+            </div>
+          </div>
+          {shareMessage && <p className="mt-3 text-xs font-bold text-slate-600" role="status">{shareMessage}</p>}
+        </section>
+      )}
 
       {post.type === 'HEALTH_SUGGESTION' && (
         <aside className="mt-6 flex gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">

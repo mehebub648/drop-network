@@ -100,9 +100,11 @@ test('validation rejects public phone numbers and images on health suggestions',
 test('published posts persist with filter columns and keep their first slug', async () => {
   const published = await community.saveCommunityPost(draft({
     status: 'PUBLISHED',
+    source_donation_id: 'donation-private-0001',
     published_at: '2026-07-02T08:00:00.000Z'
   }));
   assert.ok(published.slug);
+  assert.equal(published.source_donation_id, 'donation-private-0001');
 
   const table = await community.ensureCommunityPostTable();
   const schema = await table.schema();
@@ -184,6 +186,8 @@ test('public projections expose only supplied author display data', async () => 
   assert.equal('author_id' in summary, false);
   assert.equal('status' in summary, false);
   assert.equal('body_markdown' in summary, false);
+  assert.equal('source_donation_id' in summary, false);
+  assert.equal('source_donation_id' in detail, false);
   assert.equal(detail.author.name, 'Drop member');
   assert.equal(detail.body_markdown, post.body_markdown);
 });

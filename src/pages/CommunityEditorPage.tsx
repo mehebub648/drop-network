@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, BookOpenText, ChevronLeft, ChevronRight, FileImage, HeartHandshake, ImagePlus, LoaderCircle, Send, Trash2 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import MarkdownContent from '../components/community/MarkdownContent';
 import {
   api,
@@ -34,6 +34,8 @@ function countCharacters(value: string) {
 
 export default function CommunityEditorPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedDraftId = searchParams.get('draft') || '';
   const [type, setType] = useState<CommunityPostType>('DONATION_STORY');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -50,6 +52,7 @@ export default function CommunityEditorPage() {
   const [ownerError, setOwnerError] = useState('');
   const [ownerReloadKey, setOwnerReloadKey] = useState(0);
   const [deletingId, setDeletingId] = useState('');
+  const [requestedDraftLoaded, setRequestedDraftLoaded] = useState(false);
 
   useEffect(() => {
     if (!image) {
@@ -79,6 +82,30 @@ export default function CommunityEditorPage() {
       active = false;
     };
   }, [ownerPage, ownerReloadKey]);
+
+  useEffect(() => {
+    if (!requestedDraftId || requestedDraftLoaded) return;
+    let active = true;
+    api.getMyCommunityPost(requestedDraftId)
+      .then(post => {
+        if (!active || post.status !== 'DRAFT') return;
+        setType(post.type);
+        setTitle(post.title);
+        setBody(post.body_markdown);
+        setImage(null);
+        setImageAlt('');
+        setConsent(false);
+        setCreatedDraft(post);
+        setMessage({ type: 'info', text: 'Donation story draft reopened. Review every public detail and explicitly consent before publishing.' });
+      })
+      .catch(reason => {
+        if (active) setMessage({ type: 'error', text: reason instanceof Error ? reason.message : 'Could not load that draft.' });
+      })
+      .finally(() => {
+        if (active) setRequestedDraftLoaded(true);
+      });
+    return () => { active = false; };
+  }, [requestedDraftId, requestedDraftLoaded]);
 
   const changeType = (nextType: CommunityPostType) => {
     if (createdDraft) return;

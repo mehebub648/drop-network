@@ -15,6 +15,7 @@ export function donorProfilePayload(user: ProfileUser, changes: Partial<DonorPro
     // Pages send last_donation only when it changes; omission preserves the
     // server-stamped reported_at value on unrelated profile updates.
     donation_count: user.donor_profile?.donation_count,
+    donations_before_history: user.donor_profile?.donations_before_history,
     last_donation_date: user.donor_profile?.last_donation_date,
     deferral_status: user.donor_profile?.deferral_status || 'NONE',
     deferred_until: user.donor_profile?.deferred_until,

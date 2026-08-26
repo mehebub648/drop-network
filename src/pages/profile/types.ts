@@ -6,6 +6,10 @@ export type DonationRecord = {
   id: string;
   date: string;
   organization: string;
+  /** Private owner-only note. */
+  note?: string;
+  /** Private link to a confirmed Drop request. */
+  request_id?: string;
 };
 
 export type AvailabilityHistoryEntry = {
@@ -27,6 +31,7 @@ export type DonorProfileData = {
   blood_group: string;
   last_donation?: LastDonationDeclaration;
   donation_count?: number;
+  donations_before_history?: number;
   /** Legacy normalized value retained for eligibility and older profiles. */
   last_donation_date?: string;
   location: { lat: number; lng: number; area_name: string };

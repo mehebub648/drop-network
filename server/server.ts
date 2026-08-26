@@ -84,6 +84,7 @@ import { inspectStaticAssets, type StaticAssetHealth } from './staticAssets';
 import { parseAvailabilityReason, parseMedicalConditions, parseRegistrationAvailability } from './donorProfile';
 import { DAILY_UNIQUE_SEARCH_LIMIT, DailySearchBudget } from './searchBudget';
 import { isTrustedCookieMutation, secureBearerMatches } from './httpSecurity';
+import { migrateDonationLedger, resolveDonationLedger } from './donationLedger';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -233,6 +234,10 @@ type DonationRecord = {
   id: string;
   date: string;
   organization: string;
+  /** Owner-only context. Never projected into search or community stories. */
+  note?: string;
+  /** Optional private link to a confirmed Drop blood request. */
+  request_id?: string;
 };
 
 type AvailabilityHistoryEntry = {
@@ -245,8 +250,10 @@ type DonorProfile = DonorPreferences & {
   /** Structured self-report; legacy profiles may have only last_donation_date. */
   last_donation?: LastDonationDeclaration;
   last_donation_date?: string;
-  /** Self-reported lifetime count. Never inferred from detailed history alone. */
+  /** Compatibility total, always derived from the baseline plus history. */
   donation_count?: number;
+  /** Donations declared before the owner began keeping detailed Drop history. */
+  donations_before_history?: number;
   location: { lat: number, lng: number, area_name: string };
   /**
    * Upazila/thana within `location.area_name`. Optional because profiles
@@ -591,16 +598,39 @@ function parseDonationHistory(value: unknown) {
   if (!Array.isArray(value) || value.length > 100) return null;
 
   const records: DonationRecord[] = [];
+  const recordIds = new Set<string>();
+  const linkedRequestIds = new Set<string>();
   for (const item of value) {
     if (!isPlainObject(item)) return null;
     const id = optionalCleanString(item.id, 80) || uuidv4();
     const date = parseDate(item.date);
     const organization = cleanString(item.organization, 120);
+    const note = optionalCleanString(item.note, 500);
+    const requestId = optionalCleanString(item.request_id, 80);
     if (!date || !organization) return null;
+    if ((item.note !== undefined && item.note !== '' && !note) || (item.request_id !== undefined && item.request_id !== '' && !requestId)) return null;
     if (new Date(date).getTime() > Date.now()) return null;
-    records.push({ id, date: date.slice(0, 10), organization });
+    if (recordIds.has(id) || (requestId && linkedRequestIds.has(requestId))) return null;
+    recordIds.add(id);
+    if (requestId) linkedRequestIds.add(requestId);
+    records.push({
+      id,
+      date: date.slice(0, 10),
+      organization,
+      ...(note ? { note } : {}),
+      ...(requestId ? { request_id: requestId } : {})
+    });
   }
   return records;
+}
+
+function donationHistoryRequestsBelongToDonor(records: DonationRecord[], userId: string) {
+  return records.every(record => !record.request_id || donorResponses.some(response =>
+    response.request_id === record.request_id &&
+    response.donor_id === userId &&
+    response.status === 'DONATED' &&
+    Boolean(response.donor_confirmed_at && response.requester_confirmed_at)
+  ));
 }
 
 function latestDonationHistoryDate(records: DonationRecord[]) {
@@ -616,7 +646,7 @@ function resolveDonationDetails(
   existingProfile: DonorProfile | undefined,
   donationHistory: DonationRecord[],
   now = new Date()
-): { value: Pick<DonorProfile, 'last_donation' | 'last_donation_date' | 'donation_count'> } | { error: string } {
+): { value: Pick<DonorProfile, 'last_donation' | 'last_donation_date' | 'donation_count' | 'donations_before_history'> } | { error: string } {
   const parsedDeclaration = parseLastDonationDeclaration(body.last_donation, now);
   if (parsedDeclaration === null) return { error: 'Choose an exact date, an approximate time, or never donated' };
 
@@ -633,7 +663,10 @@ function resolveDonationDetails(
     declaration = { kind: 'EXACT', date: legacyDate, reported_at: now.toISOString() };
   }
 
-  const parsedCount = parseDonationCount(body.donation_count, declaration, donationHistory.length);
+  // History-only edits deliberately send the previously visible total plus a
+  // stable baseline. Validate declaration compatibility here; the ledger
+  // below decides whether an explicitly changed total can cover all records.
+  const parsedCount = parseDonationCount(body.donation_count, declaration, 0);
   if (parsedCount === null) {
     return { error: 'Donation count must match the donation timing and cannot be below saved history' };
   }
@@ -649,7 +682,7 @@ function resolveDonationDetails(
   if (parsedDeclaration && parsedDeclaration.kind !== 'NEVER' && donationCount === undefined) {
     return { error: 'Enter how many times you have donated' };
   }
-  if (donationCount !== undefined && parseDonationCount(donationCount, declaration, donationHistory.length) === null) {
+  if (donationCount !== undefined && parseDonationCount(donationCount, declaration, 0) === null) {
     return { error: 'Donation count must match the donation timing and cannot be below saved history' };
   }
   if (donationCount !== undefined && !declaration && !legacyDate && donationHistory.length === 0) {
@@ -667,11 +700,29 @@ function resolveDonationDetails(
     }
   }
 
+  const requestedBeforeHistory = body.donations_before_history === undefined
+    ? undefined
+    : parseOptionalInteger(body.donations_before_history, 0, 10_000);
+  if (requestedBeforeHistory === null) {
+    return { error: 'Donations before detailed history must be a whole number' };
+  }
+  const ledger = resolveDonationLedger({
+    requestedTotal: parsedCount,
+    requestedBeforeHistory,
+    existingTotal: existingProfile?.donation_count,
+    existingBeforeHistory: existingProfile?.donations_before_history,
+    existingHistoryLength: existingProfile?.donation_history?.length || 0,
+    nextHistoryLength: donationHistory.length
+  });
+  if (!ledger) return { error: 'Donation count cannot be below saved history' };
+  donationCount = ledger.donation_count;
+
   return {
     value: {
       last_donation: declaration,
       last_donation_date: canonicalLastDonationDate(declaration),
-      donation_count: donationCount
+      donation_count: donationCount,
+      donations_before_history: ledger.donations_before_history
     }
   };
 }
@@ -723,7 +774,16 @@ async function initDbData() {
     const migratedStaffRole = user.staff_role || legacyStaffRole(user.roles);
     const migratedRoles = [...new Set((user.roles || ['MEMBER']).filter(role => !legacyStaffTokens.has(role)))];
     if (!migratedRoles.includes('MEMBER')) migratedRoles.unshift('MEMBER');
-    if (user.staff_role !== migratedStaffRole || JSON.stringify(user.roles || []) !== JSON.stringify(migratedRoles)) {
+    const donationLedger = user.donor_profile ? migrateDonationLedger(user.donor_profile) : undefined;
+    const ledgerChanged = Boolean(user.donor_profile && (
+      user.donor_profile.donations_before_history !== donationLedger!.donations_before_history ||
+      user.donor_profile.donation_count !== donationLedger!.donation_count
+    ));
+    if (user.donor_profile && donationLedger) {
+      user.donor_profile.donations_before_history = donationLedger.donations_before_history;
+      user.donor_profile.donation_count = donationLedger.donation_count;
+    }
+    if (ledgerChanged || user.staff_role !== migratedStaffRole || JSON.stringify(user.roles || []) !== JSON.stringify(migratedRoles)) {
       user.staff_role = migratedStaffRole;
       user.roles = migratedRoles;
       await saveToTable('common_users', user);
@@ -1914,6 +1974,88 @@ app.get('/api/me/community', asyncRoute(async (req, res) => {
   });
 }));
 
+app.get('/api/me/community/:id', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const post = await getCommunityPostById(req.params.id);
+  if (!post || post.author_id !== auth.user.id || post.status === 'DELETED') {
+    return res.status(404).json({ error: 'Community post not found' });
+  }
+  res.set('Cache-Control', 'private, no-store');
+  res.json(ownerCommunityPost(post));
+}));
+
+app.post('/api/me/donations/:id/share-draft', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Log in to prepare a donation story' });
+  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before preparing a donation story' });
+  const profile = auth.user.donor_profile;
+  const record = profile?.donation_history?.find(item => item.id === req.params.id);
+  if (!record) return res.status(404).json({ error: 'Donation record not found' });
+
+  const title = cleanString(req.body?.title, 120);
+  const storyText = cleanString(req.body?.text, 5_000);
+  const includeText = req.body?.include_text === true;
+  const includeDate = req.body?.include_date === true;
+  const includeOrganization = req.body?.include_organization === true;
+  const includeTotal = req.body?.include_total === true;
+  if (!title) return validationError(res, 'Add a title in 120 characters or fewer');
+  if (!includeText && !includeDate && !includeOrganization && !includeTotal) {
+    return validationError(res, 'Choose at least one story detail to include');
+  }
+  if (includeText && !storyText) return validationError(res, 'Add the story text you want to publish');
+
+  const facts = [
+    ...(includeDate ? [`- Donation date: ${record.date}`] : []),
+    ...(includeOrganization ? [`- Organization or facility: ${record.organization.replace(/[\\`*_{}\[\]()#+.!|>-]/g, '\\$&')}`] : []),
+    ...(includeTotal ? [`- Total donations recorded: ${profile?.donation_count || 0}`] : [])
+  ];
+  const bodyMarkdown = [
+    ...(includeText && storyText ? [storyText] : []),
+    ...(facts.length ? ['## Donation details', ...facts] : [])
+  ].join('\n\n');
+  const validation = validateCommunityPostInput({
+    type: 'DONATION_STORY',
+    title,
+    body_markdown: bodyMarkdown
+  });
+  if (validation.ok === false) return validationError(res, validation.errors.join('. '));
+
+  const draftId = `donation-story-${createHash('sha256').update(`${auth.user.id}:${record.id}`).digest('hex').slice(0, 32)}`;
+  const existing = await getCommunityPostById(draftId);
+  if (existing) {
+    if (existing.author_id !== auth.user.id || existing.source_donation_id !== record.id) {
+      return res.status(409).json({ error: 'This donation story address is already in use' });
+    }
+    if (existing.status !== 'DRAFT') {
+      return res.status(409).json({ error: 'A story for this donation has already been published', post: ownerCommunityPost(existing) });
+    }
+    const updated = await saveCommunityPost({
+      ...existing,
+      ...validation.value,
+      updated_at: new Date().toISOString()
+    });
+    await audit(auth.user.id, 'DONATION_STORY_DRAFT_UPDATED', 'POST', updated.id, { donation_id: record.id });
+    return res.json(ownerCommunityPost(updated));
+  }
+
+  const now = new Date().toISOString();
+  const post = await saveCommunityPost({
+    id: draftId,
+    author_id: auth.user.id,
+    source_donation_id: record.id,
+    status: 'DRAFT',
+    ...validation.value,
+    created_at: now,
+    updated_at: now
+  });
+  await audit(auth.user.id, 'DONATION_STORY_DRAFTED', 'POST', post.id, {
+    donation_id: record.id,
+    included: { text: includeText, date: includeDate, organization: includeOrganization, total: includeTotal }
+  });
+  res.status(201).json(ownerCommunityPost(post));
+}));
+
 app.post('/api/community', asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Log in to write a community post' });
@@ -2416,6 +2558,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     ...(donationDetails.value.last_donation ? { last_donation: donationDetails.value.last_donation } : {}),
     ...(donationDetails.value.last_donation_date ? { last_donation_date: donationDetails.value.last_donation_date } : {}),
     ...(donationDetails.value.donation_count !== undefined ? { donation_count: donationDetails.value.donation_count } : {}),
+    donations_before_history: donationDetails.value.donations_before_history,
     availability_status,
     ...(availability_reason ? { availability_reason } : {}),
     ...(availability_status === 'AVAILABLE' ? { availability_confirmed_at: registeredAt } : {}),
@@ -2758,6 +2901,9 @@ app.post('/api/me/donor-profile', async (req, res) => {
   if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
   if (medical_conditions === null) return validationError(res, 'Medical condition or sickness must be 500 characters or fewer');
   if (donation_history === null) return validationError(res, 'Valid donation history is required');
+  if (!donationHistoryRequestsBelongToDonor(resolvedHistory, auth.user.id)) {
+    return validationError(res, 'A linked request must be one of your confirmed donations');
+  }
   if ('error' in donationDetails) return validationError(res, donationDetails.error);
   if ('error' in donorPreferences) return validationError(res, donorPreferences.error);
   if (!isOneOf(deferral_status, DEFERRAL_STATUSES)) return validationError(res, 'Valid deferral status is required');
@@ -2805,6 +2951,7 @@ app.post('/api/me/donor-profile', async (req, res) => {
       last_donation: donationDetails.value.last_donation,
       last_donation_date: donationDetails.value.last_donation_date,
       donation_count: donationDetails.value.donation_count,
+      donations_before_history: donationDetails.value.donations_before_history,
       deferral_status,
       deferred_until,
       availability_confirmed_at: availability_status === 'AVAILABLE' ? new Date().toISOString() : existingProfile?.availability_confirmed_at,
@@ -3357,9 +3504,13 @@ app.post('/api/requests/:id/donor-reports', async (req, res) => {
       const date = donatedOn.slice(0, 10);
       auth.user.donor_profile.last_donation = { kind: 'EXACT', date, reported_at: now };
       auth.user.donor_profile.last_donation_date = date;
-      if (auth.user.donor_profile.donation_count === undefined) {
-        auth.user.donor_profile.donation_count = Math.max(1, auth.user.donor_profile.donation_history?.length || 0);
+      const ledger = migrateDonationLedger(auth.user.donor_profile);
+      if (ledger.donation_count === 0) {
+        ledger.donations_before_history = 1;
+        ledger.donation_count = 1;
       }
+      auth.user.donor_profile.donations_before_history = ledger.donations_before_history;
+      auth.user.donor_profile.donation_count = ledger.donation_count;
       await saveToTable('common_users', auth.user);
       await removeDonorFromAllPartitions(auth.user.id);
     }
@@ -3577,12 +3728,17 @@ app.post('/api/responses/:id/confirm-donation', async (req, res) => {
       };
       donor.donor_profile.last_donation_date = date;
       donor.donor_profile.availability_status = 'NOT_AVAILABLE';
-      donor.donor_profile.donation_history = [...previousHistory, {
-        id: response.id, date, organization: request.hospital_name || 'Receiving hospital'
-      }];
-      donor.donor_profile.donation_count = donor.donor_profile.donation_count === undefined
-        ? donor.donor_profile.donation_history.length
-        : Math.max(donor.donor_profile.donation_count + 1, donor.donor_profile.donation_history.length);
+      if (!previousHistory.some(record => record.id === response.id)) {
+        donor.donor_profile.donation_history = [...previousHistory, {
+          id: response.id,
+          date,
+          organization: request.hospital_name || 'Receiving hospital',
+          request_id: request.id
+        }];
+      }
+      const ledger = migrateDonationLedger(donor.donor_profile);
+      donor.donor_profile.donations_before_history = ledger.donations_before_history;
+      donor.donor_profile.donation_count = ledger.donation_count;
       await saveToTable('common_users', donor);
       await removeDonorFromAllPartitions(donor.id);
       await recomputeRequestProgress(request);

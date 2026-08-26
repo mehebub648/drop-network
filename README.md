@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.88`
+Current version: `0.0.89`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -146,8 +146,11 @@ Refresh the district facility files from the public DGHS registry with:
 - `/community` publishes member donation stories and Markdown-formatted health
   suggestions. A story may carry one processed image; health suggestions are
   text-only. Every published post has a stable URL, safe Markdown rendering,
-  article metadata, and sitemap entry, while drafts and hidden posts are not
-  indexed.
+  article metadata, social share actions, and sitemap entry, while drafts and
+  hidden posts are not indexed. Donation history uses a preserved pre-history
+  baseline plus the number of detailed private records; an owner can prepare a
+  reviewable story draft from one record without copying its private note,
+  linked request, patient details, or contacts.
 
 The datastore starts empty in every environment; no demo data is generated.
 

@@ -31,6 +31,8 @@ export type CommunityPost = {
   moderated_by?: string;
   moderated_at?: string;
   moderation_reason?: string;
+  /** Private owner/audit linkage. Never included in public projections. */
+  source_donation_id?: string;
 };
 
 export type CommunityPostInput = {
@@ -445,7 +447,10 @@ export async function saveCommunityPost(post: Omit<CommunityPost, 'excerpt'> & {
     ...(publishedAt ? { published_at: publishedAt } : {}),
     ...(post.moderated_by ? { moderated_by: post.moderated_by } : {}),
     ...(post.moderated_at ? { moderated_at: parseIsoDate(post.moderated_at, 'moderated_at') } : {}),
-    ...(post.moderation_reason ? { moderation_reason: cleanText(post.moderation_reason, 1, 1000) || undefined } : {})
+    ...(post.moderation_reason ? { moderation_reason: cleanText(post.moderation_reason, 1, 1000) || undefined } : {}),
+    ...(post.source_donation_id
+      ? { source_donation_id: cleanText(post.source_donation_id, 1, 80) || undefined }
+      : {})
   };
 
   const table = await ensureCommunityPostTable();

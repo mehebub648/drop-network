@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.88`
+Current application version: `0.0.89`
 
 ## Overview
 
@@ -209,7 +209,10 @@ Routes:
 - `/community` lists bounded pages of published donation stories and health
   suggestions. `/community/:slug` is a stable public article URL.
 - `/community/new` lets an authenticated member publish a Markdown donation
-  story with at most one image, or a text-only health suggestion.
+  story with at most one image, or a text-only health suggestion. A donor can
+  start from `/profile/history`; Drop creates a private `DONATION_STORY` draft
+  containing only the date, organization, lifetime total, original text, and
+  optional image the donor explicitly selects before review and publication.
 - `/about` explains the service mission, matching model, and limitations.
 - `/contact` submits validated support, privacy, safety, and partnership
   tickets to the protected operations queue.
@@ -284,8 +287,10 @@ Security middleware:
 Main data types:
 
 - `User`
-- `DonorProfile`, including a structured last-donation declaration, lifetime
-  donation count, private detailed donation history, availability history,
+- `DonorProfile`, including a structured last-donation declaration, a
+  `donations_before_history + donation_history.length` lifetime total, private
+  detailed records with optional owner note and confirmed-request link,
+  availability history,
   preferred areas/facilities, travel willingness, recurring windows, and a
   private coordination note
 - `RecipientProfile`
@@ -403,6 +408,10 @@ API routes:
 - `GET /api/me/invitations`, `PATCH /api/responses/:id`, and
   `POST /api/responses/:id/confirm-donation` coordinate acceptance, arrival,
   mutual confirmation, partial fulfillment, and donation history.
+- `POST /api/me/donations/:id/share-draft` creates or refreshes the private,
+  deterministic story draft for an owned donation record. It ignores private
+  notes and request data, and never publishes. `GET /api/me/community/:id`
+  reopens that owner-only draft for explicit review, image choice, and consent.
 - `GET /api/me/notifications` and its read endpoint provide persisted in-app
   delivery; external SMS/push delivery remains provider work.
 - `POST /api/reports`, `POST /api/me/blocks/:userId`, and
@@ -477,7 +486,9 @@ Tables:
   campaign records.
 - `community_posts` stores posts on demand with real filter columns for ID,
   slug, author, type, status, publish/update times, and image key; it is never
-  loaded into the boot-time cache.
+  loaded into the boot-time cache. A private `source_donation_id` in the JSON
+  document makes donation-story draft creation idempotent and is never exposed
+  by a public projection.
 - `donors_<district>_<blood_group>` stores searchable donor partitions.
 - `imported_donors` stores claimable donor stubs imported from other
   organisations' public listings. Unlike every other table it is never loaded

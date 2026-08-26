@@ -128,6 +128,15 @@ export type CommunityPostInput = {
   body_markdown: string;
 };
 
+export type DonationShareDraftInput = {
+  title: string;
+  text: string;
+  include_text: boolean;
+  include_date: boolean;
+  include_organization: boolean;
+  include_total: boolean;
+};
+
 export const api = {
   async login(phone: string, password?: string) {
     const res = await fetch(`${API_BASE}/auth/login`, {
@@ -502,6 +511,11 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load your community posts');
   },
 
+  async getMyCommunityPost(id: string): Promise<CommunityOwnerPost> {
+    const res = await fetch(`${API_BASE}/me/community/${encodeURIComponent(id)}`, { headers: getHeaders() });
+    return readJsonOrThrow(res, 'Failed to load your community draft');
+  },
+
   async deleteCommunityPost(id: string) {
     const res = await fetch(`${API_BASE}/community/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -554,6 +568,15 @@ export const api = {
     if (params.collection_facility_code) query.set('collection_facility_code', params.collection_facility_code);
     const res = await fetch(`${API_BASE}/search/donors?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to search donors');
+  },
+
+  async createDonationShareDraft(id: string, input: DonationShareDraftInput): Promise<CommunityOwnerPost> {
+    const res = await fetch(`${API_BASE}/me/donations/${encodeURIComponent(id)}/share-draft`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(input)
+    });
+    return readJsonOrThrow(res, 'Failed to prepare the donation story draft');
   },
 
   async getAdminCallReports() {
