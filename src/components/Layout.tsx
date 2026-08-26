@@ -4,10 +4,8 @@ import { Droplet, Heart, LogOut, MapPin, Menu, Plus, ShieldCheck, Sparkles, User
 import Footer from './Footer';
 
 const navigation = [
-  { label: 'Find donors', to: '/directory', end: true },
   { label: 'Live requests', to: '/requests' },
   { label: 'Community', to: '/community' },
-  { label: 'Partners', to: '/partners' },
   { label: 'About', to: '/about' }
 ];
 

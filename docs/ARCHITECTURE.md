@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.81`
+Current application version: `0.0.82`
 
 ## Overview
 
@@ -91,7 +91,9 @@ Entry points:
   by the landing and authentication surfaces. Optimized transparent WebP
   doodles under `public/images/doodles/` support the landing sections and the
   shared footer without entering application or API data flow.
-- The shared layout supplies the site header and institutional footer. The
+- The shared layout supplies the site header and institutional footer. Primary
+  navigation is limited to Live requests, Community, and About; donor search,
+  account, authentication, and staff tools remain contextual actions. The
   footer links product, company, legal, and safety routes.
 - `src/lib/urgency.ts` and `src/lib/utils.ts` contain shared frontend
   utilities. `src/lib/collectionFacilities.ts` loads the selected district's
