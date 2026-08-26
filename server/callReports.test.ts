@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseCallOutcome, parseDonorReport, parseDonorRef } from './callReports';
+import { findPendingReveal, parseCallOutcome, parseDonorReport, parseDonorRef, type CallReport } from './callReports';
 
 function error(input: Parameters<typeof parseCallOutcome>[0]) {
   const result = parseCallOutcome(input);
@@ -59,4 +59,14 @@ test('donor references distinguish accounts from directory listings', () => {
   assert.deepEqual(parseDonorRef('imp:imp_abc'), { kind: 'IMPORTED', id: 'imp_abc' });
   assert.equal(parseDonorRef('reg:'), null);
   assert.equal(parseDonorRef('user-1'), null);
+});
+
+test('the oldest unanswered reveal is pending across every request', () => {
+  const reports: CallReport[] = [
+    { id: 'newer', kind: 'REVEAL', request_id: 'request-2', actor_id: 'user-1', donor_ref: 'reg:2', donor_kind: 'REGISTERED', created_at: '2026-08-26T12:02:00.000Z' },
+    { id: 'pending', kind: 'REVEAL', request_id: 'request-3', actor_id: 'user-1', donor_ref: 'reg:3', donor_kind: 'REGISTERED', created_at: '2026-08-26T12:01:30.000Z' },
+    { id: 'older', kind: 'REVEAL', request_id: 'request-1', actor_id: 'user-1', donor_ref: 'reg:1', donor_kind: 'REGISTERED', created_at: '2026-08-26T12:01:00.000Z' },
+    { id: 'answered', kind: 'CALL_OUTCOME', request_id: 'request-1', actor_id: 'user-1', donor_ref: 'reg:1', donor_kind: 'REGISTERED', reveal_id: 'older', outcome: 'NO_ANSWER', created_at: '2026-08-26T12:03:00.000Z' }
+  ];
+  assert.equal(findPendingReveal(reports)?.id, 'pending');
 });

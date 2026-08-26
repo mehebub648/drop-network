@@ -31,7 +31,7 @@ const metadata: Record<string, [string, string]> = {
   '/terms': ['Terms of Use — Drop Network', 'Rules and safety expectations for using Drop responsibly.'],
   '/directory': ['Find blood donors near you — Drop Network', 'Search donors by blood group, district and upazila. Numbers stay masked until you say who needs blood.'],
   '/directory/imported': ['Claim an imported donor profile — Drop Network', 'Verify ownership of an imported donor record and bring it under your control.'],
-  '/directory/call': ['Call a donor — Drop Network', 'Contact one donor for your published blood request and record how the call went.'],
+  '/directory/call': ['Report a donor call — Drop Network', 'Complete the required outcome for a previously revealed donor contact.'],
   '/directory/remove': ['Remove your number from the directory — Drop Network', 'Take a publicly imported donor listing off Drop by verifying the number. No account needed.'],
   '/profile': ['My Drop account', 'Manage your donor profile, requests, invitations, history, security, and privacy settings.'],
   '/admin': ['Drop operations workspace', 'Role-aware administration for Drop Network operations.']
@@ -47,8 +47,8 @@ export default function RouteMetadata() {
         ? '/community'
         : pathname.startsWith('/request/')
           ? '/requests'
-          // The call page carries a revealed contact number, so it gets its own
-          // title rather than inheriting the claim page's.
+          // Old call links redirect to search, but retain private metadata while
+          // that compatibility route is resolving.
           : pathname.startsWith('/directory/call/')
             ? '/directory/call'
           : pathname === '/directory/remove'
@@ -79,7 +79,7 @@ export default function RouteMetadata() {
     setMeta('og:title', title); setMeta('og:description', description); setMeta('og:url', canonicalUrl);
     let robots = document.querySelector('meta[name="robots"]');
     if (!robots) { robots = document.createElement('meta'); robots.setAttribute('name', 'robots'); document.head.appendChild(robots); }
-    // A call page carries a revealed contact number, so it must never be indexed.
+    // Legacy call links and imported-record ownership pages remain private.
     const privatePage = pathname === '/community/new' || pathname.startsWith('/profile') || pathname.startsWith('/admin') || pathname.startsWith('/directory/call/') || pathname.startsWith('/directory/imported/');
     robots.setAttribute('content', privatePage ? 'noindex, nofollow' : 'index, follow');
     let canonical = document.querySelector('link[rel="canonical"]');

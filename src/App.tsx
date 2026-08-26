@@ -31,7 +31,7 @@ import PartnersPage from './pages/PartnersPage';
 import ClaimProfilePage from './pages/ClaimProfilePage';
 import RemoveListingPage from './pages/RemoveListingPage';
 import DonorSearchPage from './pages/DonorSearchPage';
-import CallDonorPage from './pages/CallDonorPage';
+import CallOutcomeGate from './components/CallOutcomeGate';
 import { getSafeReturnTo } from './lib/navigation';
 
 const CommunityEditorPage = lazy(() => import('./pages/CommunityEditorPage'));
@@ -95,7 +95,7 @@ export default function App() {
             <Route path="/community/new" element={loading ? <RouteLoading /> : user ? <CommunityRoute><CommunityEditorPage /></CommunityRoute> : <Navigate to="/login?returnTo=%2Fcommunity%2Fnew" replace />} />
             <Route path="/community/:slug" element={<CommunityRoute><CommunityPostPage user={user} /></CommunityRoute>} />
             <Route path="/directory" element={<DonorSearchPage user={user} onLogin={fetchUser} />} />
-            <Route path="/directory/call/:requestId/:donorRef" element={requireUser(<CallDonorPage />)} />
+            <Route path="/directory/call/:requestId/:donorRef" element={requireUser(<Navigate to="/directory" replace />)} />
             <Route path="/directory/imported" element={<Navigate to="/directory" replace />} />
             {/* Deliberately account-free: removal must not require somebody to
                 claim a profile and sign up just to take imported data down. */}
@@ -125,6 +125,7 @@ export default function App() {
             <Route path="/admin" element={loading ? <RouteLoading /> : isStaff ? <AdminPage user={user} onOtpBypassChange={setOtpBypassEnabled} /> : <Navigate to="/" replace />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
+          <CallOutcomeGate user={user} />
         </Layout>
       </ErrorBoundary>
     </BrowserRouter>

@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.79`
+Current version: `0.0.80`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -74,12 +74,14 @@ Refresh the district facility files from the public DGHS registry with:
   without stage labels, progress graphics, or repeated instructions.
   Registered, opted-in donors are ranked first and explicitly labelled before
   attributed public listings. Every result stays masked until the protected
-  request and one-at-a-time reveal workflow opens a contact; requesters can
-  refine the same answers without leaving the result page. Results are paged
-  in groups of 24. Each account and IP may use at most three districts, three
-  blood groups, and nine unique searches per Dhaka day; paging an unchanged
-  search does not consume another unique search, while the standard API rate
-  limit still applies.
+  request and one-at-a-time reveal workflow opens a contact. Opening a contact
+  displays a non-dismissible call-outcome dialog over the current page; the
+  rest of Drop remains unavailable across navigation and reloads until that
+  outcome is saved. Requesters can refine the same answers without leaving the
+  result page. Results are paged in groups of 24. Each account and IP may use
+  at most three districts, three blood groups, and nine unique searches per
+  Dhaka day; paging an unchanged search does not consume another unique search,
+  while the standard API rate limit still applies.
 - Registered donors can self-report an exact last-donation date, an approximate
   number of days, months, or years ago, or that they have never donated, plus a
   lifetime donation count. Search cards show that bounded summary when present;

@@ -71,6 +71,19 @@ export type CallReport = {
   created_at: string;
 };
 
+export function findUnansweredReveals(reports: CallReport[]) {
+  const answered = new Set(
+    reports.filter(report => report.kind === 'CALL_OUTCOME').map(report => report.reveal_id)
+  );
+  return reports
+    .filter(report => report.kind === 'REVEAL' && !answered.has(report.id))
+    .sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
+}
+
+export function findPendingReveal(reports: CallReport[]) {
+  return findUnansweredReveals(reports)[0] || null;
+}
+
 const NOTE_MAX_LENGTH = 300;
 
 export type CallOutcomeInput = {

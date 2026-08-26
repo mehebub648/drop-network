@@ -16,7 +16,7 @@ import { getLocationByName } from './locations';
 import { getSmsProvider, isSmsConfigured } from './sms';
 import { getUpazilaByName, getUpazilaVariants } from './upazilas';
 import { BLOOD_GROUPS, COMPATIBLE_DONORS, type BloodGroup } from './blood';
-import { parseCallOutcome, parseDonorReport, parseDonorRef, type CallReport } from './callReports';
+import { findPendingReveal, findUnansweredReveals, parseCallOutcome, parseDonorReport, parseDonorRef, type CallReport } from './callReports';
 import {
   AVAILABILITY_TTL_DAYS,
   DONATION_INTERVAL_DAYS,
@@ -2554,33 +2554,13 @@ const revealLimiter = rateLimit({
   message: { error: 'Too many contact reveals, please try again later' }
 });
 
-/** A reveal is only "unreported" once the caller has had time to dial. */
+/** Bounded reads for request-specific history and account-wide call enforcement. */
 async function requestCallReports(requestId: string, actorId?: string) {
   return await queryCallReports<CallReport>({ requestId, actorId, limit: 1_000 });
 }
 
-function unansweredReveals(reports: CallReport[]) {
-  const answered = new Set(
-    reports.filter(report => report.kind === 'CALL_OUTCOME').map(report => report.reveal_id)
-  );
-  return reports
-    .filter(report => report.kind === 'REVEAL' && !answered.has(report.id))
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-}
-
-/**
- * The reveal a requester owes an answer for.
- *
- * There is no grace period. An earlier version ignored reveals younger than a
- * minute so the prompt would not appear while the caller was still on the call
- * page, but that also meant the "one call at a time" rule did nothing for
- * anyone clicking quickly - a requester could open a screenful of numbers
- * inside the window without answering for any of them. Reopening the *same*
- * donor is handled by reusing the open reveal instead, which is what the call
- * page actually needs.
- */
-function pendingReveal(reports: CallReport[]) {
-  return unansweredReveals(reports)[0] || null;
+async function actorCallReports(actorId: string) {
+  return await queryCallReports<CallReport>({ actorId, limit: 10_000 });
 }
 
 /**
@@ -2609,22 +2589,28 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
   const reference = donorRef ? parseDonorRef(donorRef) : null;
   if (!donorRef || !reference) return validationError(res, 'A donor reference is required');
 
-  // One open call at a time. Leaving the call page without answering does not
-  // skip the question, it defers it - and this is what makes that true.
-  const reports = await requestCallReports(request.id, auth.user.id);
-  const pending = pendingReveal(reports);
-  if (pending && pending.donor_ref !== donorRef) {
+  // One open call at a time. Navigating away without answering does not skip
+  // the question, and the check covers every request owned by this account.
+  const [reports, actorReports] = await Promise.all([
+    requestCallReports(request.id, auth.user.id),
+    actorCallReports(auth.user.id)
+  ]);
+  const pending = findPendingReveal(actorReports);
+  if (pending && (pending.request_id !== request.id || pending.donor_ref !== donorRef)) {
     return res.status(409).json({
       error: 'Report how your last call went before asking for another number',
       pending_reveal_id: pending.id,
-      pending_donor_ref: pending.donor_ref
+      pending_donor_ref: pending.donor_ref,
+      pending_request_id: pending.request_id
     });
   }
 
   // Reopening the same donor - going back to finish a call - must reuse the
   // open reveal. Writing a second one would leave the first unanswered, and the
   // requester would then be blocked by a reveal they can no longer report on.
-  const openForDonor = unansweredReveals(reports).find(report => report.donor_ref === donorRef);
+  const openForDonor = findUnansweredReveals(actorReports).find(report =>
+    report.request_id === request.id && report.donor_ref === donorRef
+  );
 
   const compatibleGroups = COMPATIBLE_DONORS[request.blood_group as BloodGroup] || [request.blood_group];
   const upazilas = getUpazilaVariants(request.location.area_name, request.upazila);
@@ -2712,10 +2698,30 @@ app.get('/api/requests/:id/reveals/pending', async (req, res) => {
   if (!request) return res.status(404).json({ error: 'Request not found' });
   if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can see these contacts' });
 
-  const pending = pendingReveal(await requestCallReports(request.id, auth.user.id));
+  const pending = findPendingReveal(await requestCallReports(request.id, auth.user.id));
   res.json({
     pending: pending
       ? { reveal_id: pending.id, donor_ref: pending.donor_ref, created_at: pending.created_at }
+      : null
+  });
+});
+
+/** The one call outcome this account must submit before continuing. */
+app.get('/api/me/reveals/pending', async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const pending = findPendingReveal(await actorCallReports(auth.user.id));
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({
+    pending: pending
+      ? {
+          reveal_id: pending.id,
+          request_id: pending.request_id,
+          donor_ref: pending.donor_ref,
+          donor_kind: pending.donor_kind,
+          created_at: pending.created_at
+        }
       : null
   });
 });

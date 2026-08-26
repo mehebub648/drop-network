@@ -537,8 +537,8 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load the contact number');
   },
 
-  async getPendingReveal(requestId: string) {
-    const res = await fetch(`${API_BASE}/requests/${requestId}/reveals/pending`, { headers: getHeaders() });
+  async getPendingCallOutcome() {
+    const res = await fetch(`${API_BASE}/me/reveals/pending`, { headers: getHeaders(), cache: 'no-store' });
     return readJsonOrThrow(res, 'Failed to check your last call');
   },
 

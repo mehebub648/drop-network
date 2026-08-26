@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   Building2,
   ChevronLeft,
   ChevronRight,
   MapPin,
-  PhoneCall,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
@@ -24,6 +23,7 @@ import {
   type RequesterRole,
   type SearchDraft
 } from '../lib/searchDraft';
+import { announcePendingCall } from '../lib/callOutcome';
 
 type SearchResponse = {
   registered: SearchDonorCard[];
@@ -48,7 +48,6 @@ export default function DonorSearchPage({
   onLogin: () => Promise<void> | void;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [draft, setDraft] = useState<SearchDraft>(() => {
     const stored = readSearchDraft();
     return {
@@ -64,7 +63,6 @@ export default function DonorSearchPage({
   const [selected, setSelected] = useState<SearchDonorCard | null>(null);
   const [gateOpen, setGateOpen] = useState(false);
   const [busyRef, setBusyRef] = useState('');
-  const [pendingCall, setPendingCall] = useState<{ reveal_id: string; donor_ref: string } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [refineOpen, setRefineOpen] = useState(() => !(
     searchParams.get('blood_group') && searchParams.get('district') && searchParams.get('upazila')
@@ -114,24 +112,6 @@ export default function DonorSearchPage({
     if (!hasQuery || !contextComplete) setRefineOpen(true);
   }, [hasQuery, contextComplete]);
 
-  // A call that was opened but never answered for blocks the next reveal, so
-  // surface it here rather than letting the next click fail with a 409.
-  useEffect(() => {
-    const requestId = draft.request_id;
-    if (!user || !requestId) return setPendingCall(null);
-    let cancelled = false;
-    api.getPendingReveal(requestId)
-      .then(response => {
-        if (!cancelled) setPendingCall(response.pending || null);
-      })
-      .catch(() => {
-        if (!cancelled) setPendingCall(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user, draft.request_id, reloadKey]);
-
   const runSearch = () => {
     writeSearchDraft(draft);
     setSearchParams({
@@ -150,7 +130,7 @@ export default function DonorSearchPage({
     document.getElementById('search-results-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  /** Publishes the request if needed, unmasks the number, opens the call page. */
+  /** Publishes the request if needed, unmasks one number, and opens the global outcome dialog. */
   const openCall = useCallback(async (donor: SearchDonorCard) => {
     const current = draftRef.current;
     let requestId = current.request_id;
@@ -159,9 +139,9 @@ export default function DonorSearchPage({
       requestId = created.request.id;
       updateDraft({ ...current, request_id: requestId });
     }
-    await api.revealDonorPhone(requestId!, donor.donor_ref);
-    navigate(`/directory/call/${requestId}/${encodeURIComponent(donor.donor_ref)}`);
-  }, [navigate, updateDraft]);
+    const reveal = await api.revealDonorPhone(requestId!, donor.donor_ref);
+    announcePendingCall({ requestId: requestId!, reveal });
+  }, [updateDraft]);
 
   const selectDonor = async (donor: SearchDonorCard) => {
     setError('');
@@ -181,7 +161,7 @@ export default function DonorSearchPage({
     } catch (cause: any) {
       setError(cause?.message || 'We could not open that contact.');
       if (cause?.status === 409 && cause?.data?.pending_reveal_id) {
-        setPendingCall({ reveal_id: cause.data.pending_reveal_id, donor_ref: cause.data.pending_donor_ref });
+        announcePendingCall();
       }
     } finally {
       setBusyRef('');
@@ -318,21 +298,6 @@ export default function DonorSearchPage({
               </span>
             )}
           </div>
-
-          {pendingCall && draft.request_id && (
-            <div role="alert" className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-semibold leading-6 text-amber-900">
-                You opened a number but never said how the call went. Tell us, and the next number opens.
-              </p>
-              <Link
-                to={`/directory/call/${draft.request_id}/${encodeURIComponent(pendingCall.donor_ref)}`}
-                className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-900 px-4 text-sm font-extrabold text-white"
-              >
-                <PhoneCall className="h-4 w-4" aria-hidden="true" />
-                Finish that call
-              </Link>
-            </div>
-          )}
 
           {error && (
             <div role="alert" className="alert alert-error mb-5">{error}</div>

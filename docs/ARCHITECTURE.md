@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.79`
+Current application version: `0.0.80`
 
 ## Overview
 
@@ -54,8 +54,8 @@ Entry points:
 - `src/main.tsx` mounts React into `#root`.
 - `src/App.tsx` owns application auth state and wires the route tree.
 - `src/pages/` contains route-level screens, including `DonorSearchPage` (the
-  combined donor search and blood request flow), `CallDonorPage`, and
-  `AdminPage` for role-aware operations.
+  combined donor search and blood request flow) and `AdminPage` for role-aware
+  operations.
 - `CommunityPage`, `CommunityPostPage`, and `CommunityEditorPage` provide the
   public feed, public article, and authenticated publishing flow.
 - `src/components/community/` renders semantic post cards and Markdown through
@@ -74,7 +74,14 @@ Entry points:
 - `src/components/DonationExperienceFields.tsx` and `src/lib/donation.ts` share
   the exact/approximate/never-donated form model between registration and donor
   profile editing. The server remains authoritative for dates and validation.
-- `src/components/` contains shared layout, authentication shell,
+- `src/components/CallOutcomeGate.tsx` is mounted once in the authenticated app
+  shell. It checks for the account's oldest unanswered reveal on initial load,
+  navigation, focus, visibility changes, and a bounded polling interval. While
+  one exists, its portal renders a non-dismissible dialog and marks `#root`
+  inert so pointer, keyboard, and assistive-technology interaction cannot reach
+  the page behind it. The contact and required report form therefore follow the
+  member across routes and reloads rather than living on a separate page.
+- `src/components/` also contains shared layout, authentication shell,
   error-boundary, metadata, and status UI. `src/components/ui.tsx` supplies the
   reusable page heading, surface, status, notice, metric, and empty-state
   primitives used to keep public, member, and staff screens visually aligned.
@@ -147,13 +154,13 @@ Routes:
   (Medical Library)`, orders the selected upazila first, and retains manual
   entry when no suggestion matches. Registry inclusion is not proof of current
   service availability.
-- `/directory/call/:requestId/:donorRef` shows one revealed number with a copy
-  button and a `tel:` link, and requires the outcome of that call before another
-  number can be opened. The page has no exit control, but the enforcement is on
-  the server: leaving without answering defers the question rather than escaping
-  it. A hard client-side lock is impossible - the tab can always be closed - so
-  the page does not pretend otherwise. `beforeunload` is suppressed around the
-  `tel:` tap, which would otherwise prompt on every call attempt on a phone.
+- Revealing a donor from `/directory` opens the global call-outcome dialog over
+  the current page with copy and `tel:` controls. The page behind it is inert,
+  the dialog cannot be dismissed, and navigation, reload, focus, or another
+  open tab restores the same pending report until it is saved. The server also
+  refuses another reveal while any request owned by the account has an
+  unanswered one. `/directory/call/:requestId/:donorRef` is now only a private
+  compatibility route that redirects old links to `/directory`.
 - `/profile/donor-requests` is the donor's side: open requests their blood group
   can answer in their upazila, with the requester's number masked until they
   respond that they can help.
@@ -208,7 +215,8 @@ Client state:
 - Donor search masks every phone number, for guests and signed-in members
   alike. A number is unmasked only by an explicit, recorded reveal against a
   published request, and only for a donor still in that request's own results.
-  A call page carries a revealed number, so those routes are `noindex`.
+  The revealed contact is held in the global call-outcome dialog, not a route.
+  Legacy call URLs remain `noindex` while they redirect to search.
 - Account and donor-match UI shows phone verification state. Registration and
   recovery display a development-only notice when OTPs use console delivery;
   production stays closed unless a complete external SMS provider is configured.
@@ -317,9 +325,14 @@ API routes:
   verified session, ownership of an active request, and - the check that matters
   - that the donor is still in that request's freshly recomputed results.
   Without that, one published request would be a bulk lookup oracle for the
-  whole imported directory. It also refuses while an earlier reveal has no
-  reported outcome, which is what actually enforces "answer before calling
-  someone else". Rate-limited separately at 60 per 15 minutes.
+  whole imported directory. It also refuses while any earlier reveal by the
+  account, across all of its requests, has no reported outcome. This closes the
+  separate-request loophole in "answer before calling someone else". The route
+  is rate-limited separately at 60 per 15 minutes.
+- `GET /api/me/reveals/pending` returns the oldest unanswered reveal across all
+  requests owned by the authenticated account. `CallOutcomeGate` uses it to
+  restore the blocking dialog after navigation, reload, focus, and cross-tab
+  changes without putting the revealed phone number into the URL.
 - `POST /api/requests/:id/call-reports` records what happened on the call.
   Nothing there changes the donor's own record: a requester saying a donor is
   ill or recently donated is an unverified third-party claim, and acting on it
@@ -529,10 +542,10 @@ account:
   truncate the moderation trail.
 - These people did not sign up here, which is a real asymmetry and not one the
   code can resolve on its own. What the code does do: label every imported
-  result with the organisation that published it, say plainly on the call page
-  that the person is not expecting the call, never show an invented availability
-  status, and require an outcome for each call so wrong and dead numbers get
-  found.
+  result with the organisation that published it, say plainly in the call-outcome
+  dialog that the person is not expecting the call, never show an invented
+  availability status, and require an outcome for each call so wrong and dead
+  numbers get found.
 - **Anyone listed can remove themselves at `/directory/remove`, with no
   account.** Requiring one would mean signing up in order to leave. Control of
   the number is proved by SMS code (`REMOVE_LISTING`), and
