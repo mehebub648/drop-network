@@ -41,6 +41,7 @@ RUN npm ci --omit=dev
 
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node server ./server
+COPY --chown=node:node src/lib/facilityIdentity.ts ./src/lib/facilityIdentity.ts
 COPY docker-entrypoint.sh ./
 
 # Create the writable data directories for the unprivileged "node" user. The
