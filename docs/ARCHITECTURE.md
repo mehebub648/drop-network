@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.101`
+Current application version: `0.0.102`
 
 ## Overview
 
@@ -103,7 +103,9 @@ Entry points:
   footer links product, company, legal, and safety routes.
 - `src/lib/urgency.ts` and `src/lib/utils.ts` contain shared frontend
   utilities. `src/lib/collectionFacilities.ts` loads the selected district's
-  generated DGHS facility file from `public/collection-facilities/`.
+  generated DGHS facility file from `public/collection-facilities/`, merges
+  duplicate registry rows by canonical name and locality, and retains every
+  source code as an alias. Branches in different localities remain separate.
 - `src/lib/api.ts` wraps all fetch calls to `/api`.
 - `src/lib/searchDraft.ts` keeps the in-progress request in `localStorage`. The
   inline sign-in does not navigate, so this is not about surviving a route
@@ -151,7 +153,8 @@ Routes:
   a search, the page continues with a compact summary of the carried
   criteria and an in-place refine panel instead of repeating the initial hero.
   A shared URL without request context opens that panel automatically before a
-  contact can be requested. Results show every number masked. The imported-
+  contact can be requested. Results show the masked phone directly beneath
+  each donor's name; the full number still requires the recorded reveal flow. The imported-
   listing claim option is shown only to guests, because signed-in members
   already have a donor profile. An eligible signed-in member's own donor
   profile appears first with “Your profile” and “Phone verified” labels; its
@@ -165,7 +168,8 @@ Routes:
   facility combobox preloads and searches only the selected district. The
   generated snapshot includes every DGHS registry function except the two
   `Administration` values, `Administrative`, and `Knowledge Management
-  (Medical Library)`, orders the selected upazila first, and retains manual
+  (Medical Library)`, consolidates duplicate codes for the same facility and
+  locality, orders the selected upazila first, and retains manual
   entry when no suggestion matches. Registry inclusion is not proof of current
   service availability.
 - Revealing a donor from `/directory` opens the global call-outcome dialog over
@@ -359,8 +363,8 @@ API routes:
   the shuffled order remains stable across pagination. Explicit name sorting
   stays alphabetical. Alternative sorts retain the verified-member tier. Optional collection
   facility context adds a safe match reason without returning raw preferences.
-  Result cards stay compact with separate “View profile” and “Request contact”
-  actions. The search-scoped profile summary shows the masked number, safe
+  Result cards show the masked phone beneath the donor name and keep separate
+  “View profile” and “Request contact” actions. The search-scoped profile summary shows the masked number, safe
   donation summary, match reasons, attribution, and active contact summary
   without creating a browsable donor-profile route. Guests also see the short
   claim route for unclaimed imports; signed-in members do not. Authenticated searches include

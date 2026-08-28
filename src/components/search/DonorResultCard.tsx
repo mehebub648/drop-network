@@ -57,6 +57,10 @@ export default function DonorResultCard({
               </span>
             )}
           </div>
+          <p className="mt-1 flex items-center gap-1.5 font-mono text-sm font-semibold text-slate-600">
+            <Phone className="h-4 w-4 text-primary" aria-hidden="true" />
+            {donor.phone_masked || 'No phone published'}
+          </p>
           <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-slate-600">
             <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
             {donor.upazila ? `${donor.upazila}, ${donor.district}` : donor.district}

@@ -65,7 +65,7 @@ export default function DonorPreferencesFields({
     if (!query) return [];
     return facilities
       .filter(facility => normalized(`${facility.name} ${facility.locality}`).includes(query))
-      .filter(facility => !value.preferredFacilities.some(selected => selected.registry_code === facility.registryCode))
+      .filter(facility => !value.preferredFacilities.some(selected => facility.registryCodes.includes(selected.registry_code)))
       .sort((a, b) => a.name.localeCompare(b.name, 'en'))
       .slice(0, 8);
   }, [facilities, facilityQuery, value.preferredFacilities]);

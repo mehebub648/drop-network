@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { BD_LOCATION_NAMES } from '../server/locations';
+import { deduplicateRegisteredCollectionFacilities } from '../src/lib/collectionFacilities';
 
 const REGISTRY_ENDPOINT =
   'https://hrm.dghs.gov.bd/index.php/public/facility-registry/facilities/datatable/json';
@@ -51,7 +52,7 @@ type RegistryResponse = {
   recordsFiltered?: number;
 };
 
-type CompactFacility = [registryCode: string, name: string, locality: string];
+type CompactFacility = [registryCode: string, name: string, locality: string, registryCodes?: string[]];
 
 function districtSlug(district: string) {
   return district
@@ -158,12 +159,23 @@ for (const row of facilities) {
 await mkdir(OUTPUT_DIRECTORY, { recursive: true });
 
 let written = 0;
+let merged = 0;
 for (const [district, rows] of rowsByDistrict) {
-  rows.sort((a, b) => a[1].localeCompare(b[1], 'en') || a[0].localeCompare(b[0], 'en'));
-  written += rows.length;
+  const uniqueRows = deduplicateRegisteredCollectionFacilities(rows.map(([registryCode, name, locality, registryCodes]) => ({
+    registryCode,
+    registryCodes: registryCodes?.length ? registryCodes : [registryCode],
+    name,
+    district,
+    locality
+  }))).map((facility): CompactFacility => facility.registryCodes.length > 1
+    ? [facility.registryCode, facility.name, facility.locality, facility.registryCodes]
+    : [facility.registryCode, facility.name, facility.locality]);
+  uniqueRows.sort((a, b) => a[1].localeCompare(b[1], 'en') || a[0].localeCompare(b[0], 'en'));
+  written += uniqueRows.length;
+  merged += rows.length - uniqueRows.length;
   await writeFile(
     path.join(OUTPUT_DIRECTORY, `${districtSlug(district)}.json`),
-    `${JSON.stringify(rows)}\n`,
+    `${JSON.stringify(uniqueRows)}\n`,
     'utf8'
   );
 }
@@ -171,6 +183,7 @@ for (const [district, rows] of rowsByDistrict) {
 console.log(JSON.stringify({
   fetched: facilities.length,
   written,
+  merged,
   skipped,
   districts: rowsByDistrict.size,
   skippedDistricts: Object.fromEntries(

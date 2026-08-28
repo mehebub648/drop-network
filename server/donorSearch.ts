@@ -11,6 +11,7 @@ import type {
   DonorPreferences,
   RecurringContactWindow
 } from './donorPreferences';
+import { sameFacilityName } from '../src/lib/facilityIdentity';
 
 export const DONATION_INTERVAL_DAYS = Math.max(1, Number(process.env.DONATION_INTERVAL_DAYS || 120));
 export const AVAILABILITY_TTL_DAYS = Math.max(1, Number(process.env.AVAILABILITY_TTL_DAYS || 14));
@@ -184,7 +185,7 @@ export function donorPreferenceMatch(
   const facility = (profile.preferred_facilities || []).find(item =>
     Boolean(search.facilityCode) && item.registry_code === search.facilityCode
   ) || (profile.preferred_facilities || []).find(item =>
-    sameText(item.name, search.facilityName)
+    sameFacilityName(item.name, search.facilityName)
   );
   if (facility) {
     reasons.push('Preferred collection facility');

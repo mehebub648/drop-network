@@ -34,7 +34,7 @@ export type DonorPreferences = {
   private_coordination_note?: string;
 };
 
-type FacilityRow = [registryCode: string, name: string, locality: string];
+type FacilityRow = [registryCode: string, name: string, locality: string, registryCodes?: string[]];
 
 const facilityCache = new Map<string, Promise<FacilityRow[]>>();
 
@@ -73,7 +73,10 @@ async function registeredFacilities(district: string): Promise<FacilityRow[]> {
         const payload: unknown = JSON.parse(await readFile(candidate, 'utf8'));
         if (!Array.isArray(payload)) continue;
         return payload.filter((row): row is FacilityRow =>
-          Array.isArray(row) && row.length === 3 && row.every(item => typeof item === 'string')
+          Array.isArray(row)
+          && (row.length === 3 || row.length === 4)
+          && row.slice(0, 3).every(item => typeof item === 'string')
+          && (row[3] === undefined || (Array.isArray(row[3]) && row[3].every(item => typeof item === 'string')))
         );
       } catch {
         // Development and production keep the generated registry in different
@@ -121,7 +124,7 @@ async function parseFacilities(value: unknown): Promise<PreferredCollectionFacil
       return null;
     }
     const rows = await registeredFacilities(canonicalDistrict);
-    const registered = rows.find(row => row[0] === registryCode);
+    const registered = rows.find(row => row[0] === registryCode || row[3]?.includes(registryCode));
     if (!registered) return null;
     seen.add(registryCode);
     parsed.push({

@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.101`
+Current version: `0.0.102`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -95,8 +95,9 @@ Refresh the district facility files from the public DGHS registry with:
   and can limit results to the exact group or phone-verified profiles. Donors
   tied on every active priority field are shuffled using an opaque stable
   `order_seed`, avoiding repeated or missing results across pages; explicit
-  name sorting remains alphabetical. Cards
-  explain area, facility, or current-time preference matches without exposing
+  name sorting remains alphabetical. Cards show the masked phone directly
+  beneath the donor's name while full contact remains behind the recorded
+  request-and-reveal flow. Cards also explain area, facility, or current-time preference matches without exposing
   a donor's stored schedule. Every result stays masked until the protected
   request and one-at-a-time reveal workflow opens a contact. Opening a contact
   displays a non-dismissible call-outcome dialog over the current page; the
@@ -127,7 +128,9 @@ Refresh the district facility files from the public DGHS registry with:
   collection facility and address, patient-reference details, a future required
   time, a verified contact, and explicit review/consent before publication.
   The searchable facility picker loads only the selected district from a
-  33,799-entry DGHS registry snapshot. The snapshot excludes the two
+  33,799-entry DGHS registry snapshot. Duplicate registry codes with the same
+  canonical facility name and locality are consolidated for display while all
+  source codes remain valid aliases and different branches stay separate. The snapshot excludes the two
   `Administration` functions plus `Administrative` and `Knowledge Management
   (Medical Library)`, while manual entry remains available. Registry inclusion
   is not proof that transfusion is currently available; requesters must confirm

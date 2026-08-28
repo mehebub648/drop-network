@@ -119,6 +119,18 @@ test('preference reasons expose the match, not the private preference data', () 
   assert.equal(match.score, 9);
 });
 
+test('facility preference matching accepts canonical aliases from older registry rows', () => {
+  const match = donorPreferenceMatch(profile({
+    preferred_facilities: [{ registry_code: '10017223', name: 'East West Medical College', district: 'Dhaka', locality: 'Turag' }]
+  }), {
+    district: 'Dhaka',
+    upazilas: ['Banani'],
+    facilityCode: '10028939',
+    facilityName: 'EAST-WEST MEDICAL COLLEGE & HOSPITAL LIMITED'
+  });
+  assert.ok(match.reasons.includes('Preferred collection facility'));
+});
+
 test('every public sort is deterministic and keeps verified registered donors above imports', () => {
   const donors = [
     { donor_ref: 'imp:1', donor_kind: 'IMPORTED' as const, blood_group: 'A+', name: 'A Imported', is_exact_group: true, ranking: { donation_total: 99, location_match_score: 9 } },

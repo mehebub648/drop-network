@@ -27,10 +27,38 @@ test('loads and scopes generated facility rows to the requested district', async
     assert.equal(requestedUrl, '/collection-facilities/meherpur.json');
     assert.deepEqual(facilities, [{
       registryCode: '10001898',
+      registryCodes: ['10001898'],
       name: 'Meherpur 250 bed District Hospital',
       district: 'Meherpur',
       locality: 'Meherpur Sadar'
     }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('merges duplicate registry rows while retaining every source code', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify([
+    ['10017223', 'East West Medical College', ''],
+    ['10031505', 'EAST- WEST MEDICAL COLLEGE & HOSPITAL LIMITED', 'Turag'],
+    ['10028939', 'EAST-WEST MEDICAL COLLEGE & HOSPITAL LIMITED', 'Turag'],
+    ['10031204', 'EAST-WEST MEDICAL COLLEGE & HOSPITAL LIMITED', 'Turag'],
+    ['20000001', 'Example Hospital Ltd.', 'Turag'],
+    ['20000002', 'EXAMPLE HOSPITAL LIMITED', 'Savar']
+  ]))) as typeof fetch;
+
+  try {
+    const facilities = await loadRegisteredCollectionFacilities('Dhaka');
+    assert.equal(facilities.length, 3);
+    assert.deepEqual(facilities[0], {
+      registryCode: '10017223',
+      registryCodes: ['10017223', '10028939', '10031204', '10031505'],
+      name: 'East-West Medical College & Hospital Limited',
+      district: 'Dhaka',
+      locality: 'Turag'
+    });
+    assert.deepEqual(facilities.slice(1).map(facility => facility.locality).sort(), ['Savar', 'Turag']);
   } finally {
     globalThis.fetch = originalFetch;
   }
