@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.100`
+Current version: `0.0.101`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -74,6 +74,9 @@ Refresh the district facility files from the public DGHS registry with:
   the call; without consent the same follow-up remains in-app. Reminder links
   carry the private token only in the URL fragment and message text contains no
   patient, blood-group, hospital, or request details.
+- The production origin publishes Android App Link ownership at
+  `/.well-known/assetlinks.json` for the signed
+  `com.mehebub.drop_network` release.
 - A superadmin can turn on the persisted **OTP bypass test mode** outside
   production from
   **Operations → System**. While active, every phone-protected activity skips

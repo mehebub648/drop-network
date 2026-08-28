@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mehebub.drop_network",
+      "sha256_cert_fingerprints": [
+        "BB:CF:FB:A8:08:2B:9D:A6:97:B8:8B:97:81:88:06:F1:98:B2:FF:2E:D1:BB:C3:22:81:32:8C:1B:2B:8C:58:07"
+      ]
+    }
+  }
+]

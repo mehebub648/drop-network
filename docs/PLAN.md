@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.100`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.101`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -69,10 +69,6 @@ These cannot be finished by editing code alone.
 - [ ] **Follow-up production credential.** Create a dedicated Messavo automatic
   send key for `SMS_FOLLOWUP_API_TOKEN`, configure a separate 32+ character
   `FOLLOW_UP_LINK_SECRET`, and verify the provider contract before deployment.
-- [ ] **Android release identity and App Links.** Put `drop-android` under durable
-  Git source control, configure private release signing, then publish the
-  production certificate SHA-256 fingerprint at
-  `/.well-known/assetlinks.json`. Do not ship the debug-signed build.
 - [ ] **Partner operating agreements and clinical confirmation.** Organization
   applications, verification, directory listing, roles, and campaigns exist;
   real partners still need contracts, reviewer ownership, and a process for
