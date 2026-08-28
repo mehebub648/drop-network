@@ -290,22 +290,7 @@ export default function DonorSearchPage({
                     </div>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setRefineOpen(open => !open)}
-                  aria-expanded={refineOpen}
-                  className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-stretch rounded-xl border border-rose-200 bg-white px-4 text-sm font-extrabold text-rose-800 shadow-sm transition-colors hover:bg-rose-50 lg:self-auto"
-                >
-                  <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-                  {refineOpen ? 'Close search details' : 'Refine search'}
-                </button>
               </div>
-
-              <p className="mt-5 max-w-3xl text-sm font-medium leading-6 text-slate-600">
-                Your home-page search is still here. Choose a match below, or refine these details without
-                losing the request information you already added.
-              </p>
 
               {!contextComplete && (
                 <div role="status" className="mt-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -315,18 +300,6 @@ export default function DonorSearchPage({
                   <button type="button" onClick={() => setRefineOpen(true)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-amber-900 px-4 text-xs font-extrabold text-white">
                     Complete search details
                   </button>
-                </div>
-              )}
-
-              {refineOpen && (
-                <div className="fade-in mt-6 border-t border-rose-100 pt-6">
-                  <SearchCriteriaForm
-                    value={criteria}
-                    onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
-                    onSubmit={runSearch}
-                    submitting={loading}
-                    submitLabel="Update donor matches"
-                  />
                 </div>
               )}
             </div>
@@ -342,36 +315,54 @@ export default function DonorSearchPage({
               <h2 id="search-results-heading" className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
                 Choose who to contact
               </h2>
-              {!loading && !error && results && (
-                <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-600">
-                  {results.totals.registered} registered member{results.totals.registered === 1 ? '' : 's'} and{' '}
-                  {results.totals.directory} attributed public listing{results.totals.directory === 1 ? '' : 's'} match{' '}
-                  {bloodGroup} in {upazila}, {district}. Registered donors appear first.
-                </p>
-              )}
             </div>
-            {!loading && results && (
-              <span className="inline-flex min-h-9 items-center self-start rounded-full border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-800 sm:self-auto">
-                {results.pagination.total} match{results.pagination.total === 1 ? '' : 'es'}
-              </span>
-            )}
+            <div className="flex w-full items-center gap-2 sm:w-auto sm:self-auto">
+              {!loading && results && (
+                <span className="inline-flex min-h-11 items-center rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-800">
+                  {results.pagination.total} match{results.pagination.total === 1 ? '' : 'es'}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setRefineOpen(open => !open)}
+                aria-expanded={refineOpen}
+                aria-controls="sort-and-refine-panel"
+                className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-800 shadow-sm transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800 sm:flex-none"
+              >
+                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                {refineOpen ? 'Close sort & refine' : 'Sort & refine'}
+              </button>
+            </div>
           </div>
 
-          {!loading && !error && results && (
-            <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:items-end">
-              <label className="text-sm font-extrabold text-slate-800">Sort donor matches
-                <select value={sort} onChange={event => updateSearchOption('sort', event.target.value)} className="input mt-1.5">
-                  {SEARCH_SORTS.map(option => <option key={option} value={option}>{SORT_LABELS[option]}</option>)}
-                </select>
-              </label>
-              <label className="flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
-                <input type="checkbox" checked={exactGroupOnly} onChange={event => updateSearchOption('exact_group', event.target.checked)} className="h-4 w-4 accent-red-600" />
-                Exact blood group only
-              </label>
-              <label className="flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
-                <input type="checkbox" checked={phoneVerifiedOnly} onChange={event => updateSearchOption('phone_verified_only', event.target.checked)} className="h-4 w-4 accent-red-600" />
-                Phone verified only
-              </label>
+          {refineOpen && (
+            <div id="sort-and-refine-panel" className="fade-in mb-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+              {!loading && !error && results && (
+                <div className="grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:items-end">
+                  <label className="text-sm font-extrabold text-slate-800">Sort donor matches
+                    <select value={sort} onChange={event => updateSearchOption('sort', event.target.value)} className="input mt-1.5">
+                      {SEARCH_SORTS.map(option => <option key={option} value={option}>{SORT_LABELS[option]}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    <input type="checkbox" checked={exactGroupOnly} onChange={event => updateSearchOption('exact_group', event.target.checked)} className="h-4 w-4 accent-red-600" />
+                    Exact blood group only
+                  </label>
+                  <label className="flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    <input type="checkbox" checked={phoneVerifiedOnly} onChange={event => updateSearchOption('phone_verified_only', event.target.checked)} className="h-4 w-4 accent-red-600" />
+                    Phone verified only
+                  </label>
+                </div>
+              )}
+              <div className={`${!loading && !error && results ? 'mt-5 border-t border-slate-100 pt-5' : ''}`}>
+                <SearchCriteriaForm
+                  value={criteria}
+                  onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
+                  onSubmit={runSearch}
+                  submitting={loading}
+                  submitLabel="Update donor matches"
+                />
+              </div>
             </div>
           )}
 
