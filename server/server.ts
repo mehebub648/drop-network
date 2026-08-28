@@ -2369,7 +2369,10 @@ app.post('/api/auth/otp/request', authLimiter, asyncRoute(async (req, res) => {
   res.json({ success: true, provider: provider.name, ...otpDeliveryPayload(issued.challenge) });
 }));
 
-app.get('/api/auth/otp/:challengeId/status', authLimiter, asyncRoute(async (req, res) => {
+// Delivery polling is a read-only lookup already protected by the global API
+// limiter. It must not consume the much smaller authentication-attempt budget,
+// otherwise ordinary polling can block the caller before they submit the code.
+app.get('/api/auth/otp/:challengeId/status', asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const challengeId = cleanString(req.params.challengeId, 36);
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challengeId)) {

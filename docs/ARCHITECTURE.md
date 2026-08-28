@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.96`
+Current application version: `0.0.97`
 
 ## Overview
 
@@ -248,7 +248,8 @@ Client state:
   Legacy call URLs remain `noindex` while they redirect to search.
 - Account and donor-match UI shows phone verification state. Registration,
   recovery, request ownership, and listing removal display safe Messavo delivery
-  progress and a resend action after failed or cancelled jobs.
+  progress and a resend action after failed or cancelled jobs. Client polling
+  stops once Messavo hands the SMS to the mobile network.
 - A React error boundary displays a fallback if a route render fails.
 - The interface uses consistent English production copy; no translation
   provider or unfinished language control is exposed.
@@ -318,7 +319,9 @@ API routes:
   `CHANGE_PHONE`, `SIGN_IN`, and `REMOVE_LISTING`. The request response includes
   the challenge ID, delivery state, and expiry. `GET /api/auth/otp/:challengeId/status`
   polls an enumeration-safe state without returning the phone, purpose, code, or
-  message. Failed, cancelled, and expired deliveries invalidate the challenge;
+  message. This read-only status route uses the global API budget rather than
+  consuming the smaller authentication-attempt budget. Failed, cancelled, and
+  expired deliveries invalidate the challenge;
   replaced and expired queued Messavo jobs are cancelled when possible.
 - `SIGN_IN` exists for the blood request flow, where someone gives a phone
   number without first saying whether they have an account. It is the only

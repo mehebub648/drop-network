@@ -2,7 +2,10 @@ import { useEffect } from 'react';
 import { CheckCircle2, Clock3, RefreshCw, TriangleAlert } from 'lucide-react';
 import { api, type OtpDelivery } from '../lib/api';
 
-const TERMINAL_STATES = new Set(['delivered', 'failed', 'canceled', 'bypassed']);
+// Once the provider has handed the message to the mobile network, further
+// delivery polling does not help the caller enter the code and only spends API
+// capacity. Verification still refreshes the provider state before accepting it.
+const TERMINAL_STATES = new Set(['sent', 'delivered', 'failed', 'canceled', 'bypassed']);
 
 const STATUS_COPY = {
   queued: 'Your code is queued for secure delivery.',

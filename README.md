@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.96`
+Current version: `0.0.97`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -64,9 +64,11 @@ Refresh the district facility files from the public DGHS registry with:
   `messages:send:automatic`, `messages:read`, `messages:cancel`, and `device:read`
   permissions.
   Drop assigns every challenge a stable idempotency key, records the Messavo
-  job ID, polls a safe delivery status, and cancels unsent replaced or expired
-  jobs. The former `woven` provider name is accepted for this release as a
-  configuration alias; public responses consistently say `messavo`.
+  job ID, polls a safe delivery status without spending the authentication-
+  attempt budget, stops polling after mobile-network handoff, and cancels unsent
+  replaced or expired jobs. The former `woven` provider name is accepted for
+  this release as a configuration alias; public responses consistently say
+  `messavo`.
 - A superadmin can turn on the persisted **OTP bypass test mode** outside
   production from
   **Operations → System**. While active, every phone-protected activity skips
