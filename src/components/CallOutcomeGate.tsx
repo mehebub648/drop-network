@@ -298,11 +298,19 @@ export default function CallOutcomeGate({ user }: { user: any }) {
                 <header className="call-outcome-header">
                   <span className="dialog-icon"><PhoneCall className="h-5 w-5" aria-hidden="true" /></span>
                   <div>
-                    <span className="call-outcome-kicker">One quick update</span>
-                    <h2 id="call-outcome-title">How did the call go?</h2>
-                    <p id="call-outcome-description">Choose what happened so you can continue using Drop.</p>
+                    <span className="call-outcome-kicker">Required before continuing</span>
+                    <h2 id="call-outcome-title">Report your last call to continue</h2>
+                    <p id="call-outcome-description">Tell us how the call went, then save the report to continue using Drop.</p>
                   </div>
                 </header>
+
+                <aside className="call-outcome-requirement">
+                  <ShieldAlert className="h-5 w-5 shrink-0" aria-hidden="true" />
+                  <p>
+                    <strong>The website is temporarily paused.</strong>
+                    <span>You must report your last donor call before you can use the rest of Drop.</span>
+                  </p>
+                </aside>
 
                 {reveal && (
                   <section className="call-contact-card" aria-label="Donor contact">
@@ -338,44 +346,49 @@ export default function CallOutcomeGate({ user }: { user: any }) {
 
                 {contactError && <div role="status" className="call-contact-error">{contactError}</div>}
 
-                <fieldset className="call-outcome-section">
-                  <legend>What happened?</legend>
-                  <div className="call-outcome-options">
-                    {OUTCOMES.map(option => (
-                      <label key={option.value} className="call-outcome-option">
-                        <input type="radio" name="outcome" value={option.value} checked={outcome === option.value} onChange={() => { setOutcome(option.value); setReason(''); setDetail(''); }} />
-                        <span>{option.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
+                <label className="call-outcome-field call-outcome-section">
+                  <span>What happened?</span>
+                  <select
+                    name="outcome"
+                    value={outcome}
+                    required
+                    onChange={event => {
+                      setOutcome(event.target.value);
+                      setReason('');
+                      setDetail('');
+                    }}
+                  >
+                    <option value="" disabled>Select what happened</option>
+                    {OUTCOMES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
 
                 {outcome === 'DECLINED' && (
-                  <fieldset className="call-outcome-followup fade-in">
-                    <legend>Why not?</legend>
-                    <div className="call-outcome-options">
-                      {DECLINE_REASONS.map(option => (
-                        <label key={option.value} className="call-outcome-option">
-                          <input type="radio" name="reason" value={option.value} checked={reason === option.value} onChange={() => { setReason(option.value); setDetail(''); }} />
-                          <span>{option.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
+                  <label className="call-outcome-field call-outcome-followup fade-in">
+                    <span>Why not?</span>
+                    <select
+                      name="reason"
+                      value={reason}
+                      required
+                      onChange={event => {
+                        setReason(event.target.value);
+                        setDetail('');
+                      }}
+                    >
+                      <option value="" disabled>Select a reason</option>
+                      {DECLINE_REASONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
                 )}
 
                 {outcome === 'DECLINED' && reason === 'LOCATION_FAR' && (
-                  <fieldset className="call-outcome-followup fade-in">
-                    <legend>What made the location difficult?</legend>
-                    <div className="call-outcome-options is-single-column">
-                      {FAR_DETAILS.map(option => (
-                        <label key={option.value} className="call-outcome-option">
-                          <input type="radio" name="detail" value={option.value} checked={detail === option.value} onChange={() => setDetail(option.value)} />
-                          <span>{option.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
+                  <label className="call-outcome-field call-outcome-followup fade-in">
+                    <span>What made the location difficult?</span>
+                    <select name="detail" value={detail} required onChange={event => setDetail(event.target.value)}>
+                      <option value="" disabled>Select the location issue</option>
+                      {FAR_DETAILS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
                 )}
 
                 {outcome && (
@@ -389,7 +402,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
               </div>
 
               <footer className="call-outcome-footer">
-                <p>{outcome ? 'Your answer helps keep donor information reliable.' : 'Select one answer to continue.'}</p>
+                <p>{outcome ? 'Your answer helps keep donor information reliable.' : 'Report your last call to unlock the rest of the website.'}</p>
                 <button type="submit" disabled={!canSubmit || busy} className="primary-button disabled:cursor-not-allowed disabled:opacity-60">
                   {busy ? 'Saving…' : 'Save and continue'}
                 </button>
