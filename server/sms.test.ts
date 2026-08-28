@@ -70,7 +70,7 @@ test('Messavo sends with stable idempotency and supports status and cancellation
   }
 });
 
-test('the woven name is a compatibility alias and manual approval is rejected', async () => {
+test('the woven name is a compatibility alias and an unexpected manual approval is rejected', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({
     id: '3be02b6c-3474-4f76-9fa8-dde7b7815345',
@@ -85,7 +85,7 @@ test('the woven name is a compatibility alias and manual approval is rejected', 
     }));
     assert.ok(provider);
     assert.equal(provider?.name, 'messavo');
-    await assert.rejects(provider.sendOtp('+8801712345678', '123456', 'drop-otp:manual-key'), /automatic-send/);
+    await assert.rejects(provider.sendOtp('+8801712345678', '123456', 'drop-otp:manual-key'), /did not queue/);
   } finally {
     globalThis.fetch = originalFetch;
   }

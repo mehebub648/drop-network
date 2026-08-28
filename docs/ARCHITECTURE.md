@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.98`
+Current application version: `0.0.99`
 
 ## Overview
 
@@ -17,7 +17,7 @@ Drop Network is a single Node.js application for urgent blood donation matching.
 - Docker targets for development, build, and production runtime.
 
 The app is currently self-contained. There is no external auth provider or
-hosted database integration. `server/sms.ts` can call Messavo's scoped automatic
+hosted database integration. `server/sms.ts` can call Messavo's scoped
 automation API or a provider-neutral HTTP SMS gateway. Missing or incomplete
 delivery configuration fails closed in every environment, and codes are never
 written to application logs.
@@ -726,15 +726,15 @@ Environment:
 - `METRICS_TOKEN` is a minimum 32-character bearer secret for the detailed
   production `/metrics` endpoint. `/api/stats` remains public and coarse.
 - `SMS_PROVIDER` selects `messavo` or the legacy provider-neutral `http`.
-  `woven` remains a one-release alias for `messavo`; blank, incomplete, unknown,
+  `woven` remains a compatibility alias for `messavo`; blank, incomplete, unknown,
   and `console` values fail closed.
 - `SMS_API_BASE_URL` and `SMS_API_TOKEN` are both required when
   `SMS_PROVIDER=messavo`. The adapter appends `/api/v1/messages`, sends Messavo's
   `{to, message}` contract with a stable idempotency key, and requires a `202`
-  automatic `ready` or `scheduled` response. A manual `pending_approval` result
-  is rejected. The private key requires `messages:send:automatic`,
-  `messages:read`, `messages:cancel`, and `device:read`; status and cancellation
-  use the existing job routes.
+  queued response. An unexpected manual `pending_approval` result is rejected.
+  The private key requires `messages:send`, `messages:read`, and
+  `messages:cancel`; status and cancellation use the existing job routes. The
+  canonical hosted API base URL is `https://messavo.cloud`.
 - `SMS_HTTP_ENDPOINT` and `SMS_HTTP_TOKEN` are both required when
   `SMS_PROVIDER=http`; an incomplete explicit configuration fails closed.
 - `common_app_settings` persists the superadmin-controlled OTP bypass switch.
@@ -790,7 +790,7 @@ Operational endpoints and jobs:
 
 ## Current Constraints
 
-- Production registration requires either a complete Messavo automatic-send
+- Production registration requires either a complete Messavo API
   configuration (`SMS_PROVIDER=messavo`, `SMS_API_BASE_URL`, and a privately
   stored scoped `SMS_API_TOKEN`) or the legacy complete HTTP configuration.
 - OTP bypass is an explicit persisted non-production test setting, not an

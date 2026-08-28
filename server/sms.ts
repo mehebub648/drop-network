@@ -109,7 +109,7 @@ function createMessavoProvider(environment: SmsEnvironment): SmsProvider | null 
           // A manual key is never accepted for OTP. Best-effort cancellation
           // prevents a later human approval from sending an invalidated code.
         }
-        throw new Error('Messavo automatic-send permission is required');
+        throw new Error('Messavo SMS API did not queue the message');
       }
       const status = mapMessavoState(result?.status);
       if (!status || status === 'failed' || status === 'canceled') {
@@ -144,7 +144,7 @@ export function getSmsProvider(environment: SmsEnvironment = process.env): SmsPr
   switch (configuredProvider) {
     case 'messavo':
     case 'woven':
-      // `woven` is a one-release configuration alias only. Public responses
+      // `woven` is a compatibility alias only. Public responses
       // and operational surfaces consistently name the provider Messavo.
       return createMessavoProvider(environment);
     case 'http':
