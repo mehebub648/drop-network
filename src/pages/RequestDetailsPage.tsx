@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Flag, Heart, Hospital, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, User as UserIcon, Users, Zap } from 'lucide-react';
-import { api, BROWSER_FINGERPRINT } from '../lib/api';
+import { api, BROWSER_FINGERPRINT, type ContactedDonorSummary } from '../lib/api';
 import { BLOOD_GROUPS, compatibleDonorsFor, DONATION_INTERVAL_DAYS, getEligibility, getUrgency, URGENCY_ORDER } from '../lib/blood';
 import {
   loadRegisteredCollectionFacilities,
@@ -21,6 +21,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [contactedDonors, setContactedDonors] = useState<ContactedDonorSummary[]>([]);
   
   // UI States
   const [inviting, setInviting] = useState('');
@@ -85,6 +86,10 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       try {
         const payload = await api.getRequestDetails(id);
         setData(payload);
+        if (user?.id === payload.request.user_id) {
+          const contacted = await api.getContactedDonors(id).catch(() => ({ items: [] }));
+          setContactedDonors(contacted.items);
+        }
         setEditData({
           patient_name: payload.request.patient_name || '',
           requester_name: payload.request.requester_name || '',
@@ -103,7 +108,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       }
     }
     load();
-  }, [id, navigate]);
+  }, [id, navigate, user?.id]);
 
   const handleUpdateStatus = async (status: string) => {
     if (data?.request) {
@@ -355,6 +360,15 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           </div>
         )}
       </div>
+
+      {isOwner && (
+        <section className="theme-card border border-slate-100 p-6 shadow-sm">
+          <div className="flex items-center justify-between gap-3"><div><h3 className="text-lg font-bold text-slate-900">Contacted donors</h3><p className="mt-1 text-sm text-slate-500">Numbers stay masked here. Reopen an active contact through donor search when needed.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{contactedDonors.length}</span></div>
+          {contactedDonors.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">No donor has been contacted for this request yet.</p> : <div className="mt-5 divide-y divide-slate-100">
+            {contactedDonors.map(donor => <div key={donor.donor_ref} className="grid gap-3 py-4 sm:grid-cols-[1.2fr_1fr_1fr] sm:items-center"><div><p className="font-extrabold">{donor.name}</p><p className="mt-1 font-mono text-xs text-slate-500">{donor.phone_masked || 'Masked'} · {donor.donor_kind === 'IMPORTED' ? 'Directory listing' : 'Registered donor'}</p></div><div className="text-sm"><p className="font-bold">{donor.latest_call_outcome?.replaceAll('_', ' ') || 'Contacted'}</p><p className="mt-1 text-xs text-slate-500">Reminder: {donor.reminder_state.replaceAll('_', ' ')}</p></div><div className="text-sm sm:text-right"><p className="font-bold text-primary">{donor.next_action}</p>{donor.final_state && <p className="mt-1 text-xs text-slate-500">{donor.final_state.replaceAll('_', ' ')}</p>}</div></div>)}
+          </div>}
+        </section>
+      )}
 
       {/* Patient & Contact Details Section */}
       <div className="theme-card p-6 border border-slate-100 shadow-sm relative">

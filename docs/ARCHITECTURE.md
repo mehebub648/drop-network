@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.99`
+Current application version: `0.0.100`
 
 ## Overview
 
@@ -190,8 +190,13 @@ Routes:
   collection facility makes the final decision. Without an upazila a donor
   does not appear in upazila search, and the form says so.
 - `/profile/requests` filters and updates requests owned by the member.
-- `/profile/invitations` manages private invitations, donor responses, mutual
-  donation confirmation, purpose-limited contacts, and in-app notifications.
+- `/profile/responses` presents invitations and the persisted two-party
+  donation follow-up timeline. `/profile/invitations` remains a compatible
+  alias.
+- `/follow-up` opens fragment-token reminder links without sending the token to
+  the server during initial navigation. Registered donors authenticate normally
+  or with `DONATION_FOLLOW_UP` OTP; imported donors verify the listed number and
+  continue through the existing claim/create-account flow.
 - `/profile/contact-reports` is the donor's private remediation inbox. It shows
   aggregate categories without reporter identities or notes, supports current-
   phone Messavo reverification, links to corrective profile actions, and accepts
@@ -304,7 +309,8 @@ Main data types:
 - `Comment`
 - `ContactDetail`
 - `AuthSession`
-- `DonorResponse` and `AppNotification`
+- `DonorResponse`, `DonationFollowUp`, `FollowUpDelivery`,
+  `ContactedDonorSummary`, and `AppNotification`
 - `ModerationReport`, `SupportTicket`, and `AuditEvent`
 - `Organization`, including verification state and public campaigns
 - `CommunityPost`, stored as a draft, published, hidden, or deleted document
@@ -340,16 +346,18 @@ API routes:
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `POST /api/auth/reset-password` consumes a verified recovery challenge,
   changes the password, and revokes every existing session.
-- `GET /api/search/donors?blood_group&district&upazila&page&sort&exact_group&phone_verified_only`
+- `GET /api/search/donors?blood_group&district&upazila&page&sort&exact_group&phone_verified_only&order_seed`
   is the search behind the
   blood request flow. It is open to everyone and **masked for everyone**,
   including signed-in members. It returns `{ query, registered, directory,
   totals, pagination, contact_access: 'masked' }` in pages of 24: registered
   members who opted in, then attributed imported listings. Compatible blood
-  groups are included. The recommended order is deterministic: phone-verified
+  groups are included. Priority is deterministic: phone-verified
   registered profiles, exact group, area/facility/current-time preference fit,
-  recent availability confirmation, fewer active contact issues, then name.
-  Alternative sorts retain the verified-member tier. Optional collection
+  recent availability confirmation, then fewer active contact issues. Donors
+  tied on every active priority field use the returned opaque `order_seed`, so
+  the shuffled order remains stable across pagination. Explicit name sorting
+  stays alphabetical. Alternative sorts retain the verified-member tier. Optional collection
   facility context adds a safe match reason without returning raw preferences.
   Result cards stay compact with separate “View profile” and “Request contact”
   actions. The search-scoped profile summary shows the masked number, safe
@@ -417,17 +425,25 @@ API routes:
   travel willingness, and a 500-character private coordination note.
 - `POST /api/requests` creates a complete private draft for a verified owner;
   `POST /api/requests/:id/publish` records consent and activates it.
+- Both request-creation paths deduplicate open requests by normalized
+  patient-side phone, blood group, district, and upazila. Owners receive their
+  existing request; another account receives only `DUPLICATE_ACTIVE_REQUEST`.
 - `POST /api/requests/:id/invitations` privately invites a currently eligible
   matched donor without disclosing either party's phone.
 - `GET /api/me/invitations`, `PATCH /api/responses/:id`, and
-  `POST /api/responses/:id/confirm-donation` coordinate acceptance, arrival,
-  mutual confirmation, partial fulfillment, and donation history.
+  `POST /api/responses/:id/confirm-donation` remain compatibility interfaces
+  for acceptance, arrival, and mutual confirmation.
+- `GET /api/requests/:id/contacted-donors` returns the owner's masked contact
+  ledger. `POST /api/donation-follow-ups/open`, `/verify`, and
+  `/:id/outcome` handle fragment tokens, purpose-bound OTP, and independent
+  donor/requester outcomes.
 - `POST /api/me/donations/:id/share-draft` creates or refreshes the private,
   deterministic story draft for an owned donation record. It ignores private
   notes and request data, and never publishes. `GET /api/me/community/:id`
   reopens that owner-only draft for explicit review, image choice, and consent.
 - `GET /api/me/notifications` and its read endpoint provide persisted in-app
-  delivery; external SMS/push delivery remains provider work.
+  delivery. Consented donation follow-ups use transactional SMS; push and email
+  remain future provider work.
 - `POST /api/reports`, `POST /api/me/blocks/:userId`, and
   `POST /api/support/tickets` provide member safety and public support entry
   points. Admin routes under `/api/admin` expose capability-gated overview,
@@ -542,7 +558,7 @@ Important helpers:
 - `server/donorPreferences.ts` validates canonical areas, facility registry
   membership, schedule bounds, travel willingness, and private note length.
   `server/donorSearch.ts` owns preference-aware place eligibility, safe match
-  reasons, and every deterministic result sort.
+  reasons, deterministic priority fields, and the stable seeded tie-breaker.
 - `removeDonorFromAllPartitions()` clears stale donor rows before profile resync.
 - `getAllFromTable()` loads saved JSON documents.
 - `saveToTable()` replaces a document by `id` using escaped ID filters.
@@ -777,11 +793,14 @@ Operational endpoints and jobs:
   manifest, icon, doodles, and hashed JavaScript/CSS files before reporting
   healthy. Production startup fails when that asset set is missing, empty, or
   unreadable, and the Compose health check calls `/health`. `/ready` also
-  requires completed datastore initialization, configured SMS, disabled OTP
-  bypass, and a protected metrics token. `/metrics` exposes low-cardinality
+  requires completed datastore initialization, configured OTP and follow-up
+  SMS credentials, a dedicated follow-up link secret, disabled OTP bypass, and
+  a protected metrics token. `/metrics` exposes low-cardinality
   Prometheus gauges only to a valid bearer token in production.
-- A five-minute background job expires overdue requests and automatically
-  pauses stale donor availability while creating an in-app reconfirmation notice.
+- A five-minute background job expires overdue requests, automatically pauses
+  stale donor availability, and resumes persisted follow-up delivery after a
+  restart. Follow-ups run outside 9 PM-8 AM Asia/Dhaka quiet hours, retry at
+  most three times, and permit one donor-selected next-day reminder.
 - `.github/workflows/ci.yml` runs Docker-based type checking, tests, bundle
   creation, dependency audit, and secret scanning.
 - `/robots.txt` and `/sitemap.xml` are generated from the deployed request
@@ -793,6 +812,9 @@ Operational endpoints and jobs:
 - Production registration requires either a complete Messavo API
   configuration (`SMS_PROVIDER=messavo`, `SMS_API_BASE_URL`, and a privately
   stored scoped `SMS_API_TOKEN`) or the legacy complete HTTP configuration.
+- Production follow-ups additionally require a dedicated automatic-send
+  `SMS_FOLLOWUP_API_TOKEN` and a separate 32+ character
+  `FOLLOW_UP_LINK_SECRET`.
 - OTP bypass is an explicit persisted non-production test setting, not an
   automatic fallback.
   It deliberately removes phone-ownership proof across all OTP-protected

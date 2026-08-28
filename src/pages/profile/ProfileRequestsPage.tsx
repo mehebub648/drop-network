@@ -78,6 +78,11 @@ export default function ProfileRequestsPage() {
                     <span className="text-xs text-slate-400">{formatDistanceToNow(new Date(request.created_at), { addSuffix: true })}</span>
                   </div>
                   <p className="font-bold mt-2 flex items-center gap-1.5"><MapPin className="w-4 h-4 text-slate-400" /> {request.location.area_name}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">{request.contacted_donor_count || 0} contacted</span>
+                    <span className="rounded-full bg-green-50 px-2.5 py-1 text-green-800">{request.agreed_donor_count || 0} agreed</span>
+                    {Boolean(request.follow_up_action_count) && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-900">{request.follow_up_action_count} action needed</span>}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <select aria-label={`Status for ${request.blood_group} request`} value={request.status} disabled={updating === request.id} onChange={event => updateStatus(request.id, event.target.value as RequestStatus)} className="px-3 py-2.5 bg-slate-50 rounded-xl text-sm font-bold outline-none">

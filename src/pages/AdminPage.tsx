@@ -110,6 +110,8 @@ const countLabels: Record<string, string> = {
   open_reports: 'Open reports',
   open_tickets: 'Open tickets',
   confirmed_donations: 'Confirmed donations',
+  failed_follow_up_reminders: 'Failed follow-up reminders',
+  disputed_donations: 'Disputed donations',
   verified_organizations: 'Verified partners',
   pending_organizations: 'Partner reviews',
   pending_directory_claims: 'Profile claims'

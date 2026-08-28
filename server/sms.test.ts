@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getSmsProvider, isSmsConfigured, mapMessavoState, type SmsEnvironment } from './sms';
+import { getFollowUpSmsProvider, getSmsProvider, isSmsConfigured, mapMessavoState, type SmsEnvironment } from './sms';
 
 function environment(values: SmsEnvironment): SmsEnvironment {
   return values;
@@ -98,4 +98,22 @@ test('Messavo states map to public delivery states without exposing provider det
   assert.equal(mapMessavoState('delivered'), 'delivered');
   assert.equal(mapMessavoState('failed'), 'failed');
   assert.equal(mapMessavoState('pending_approval'), null);
+});
+
+test('follow-up delivery requires and uses its separate credential', async () => {
+  const originalFetch = globalThis.fetch;
+  let authorization = '';
+  globalThis.fetch = async (_input, init) => {
+    authorization = (init?.headers as Record<string, string>).authorization;
+    return Response.json({ id: '3be02b6c-3474-4f76-9fa8-dde7b7815345', status: 'ready' }, { status: 202 });
+  };
+  try {
+    const values = environment({ SMS_PROVIDER: 'messavo', SMS_API_BASE_URL: 'https://messavo.example.test', SMS_API_TOKEN: 'otp-token' });
+    assert.equal(getFollowUpSmsProvider(values), null);
+    const provider = getFollowUpSmsProvider({ ...values, SMS_FOLLOWUP_API_TOKEN: 'follow-up-token' });
+    await provider?.sendMessage('+8801712345678', 'Privacy-safe follow-up', 'drop-follow-up:stable');
+    assert.equal(authorization, 'Bearer follow-up-token');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

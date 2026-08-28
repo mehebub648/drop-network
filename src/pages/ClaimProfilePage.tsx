@@ -132,6 +132,7 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
 
   if (step === 'done') {
     const claimed = result === 'CLAIMED';
+    const followUpToken = sessionStorage.getItem('drop_follow_up_token') || '';
     return (
       <Surface className="mx-auto max-w-2xl border-green-200 bg-green-50/60 p-8 text-center">
         <CheckCircle2 className="mx-auto h-12 w-12 text-green-700" aria-hidden="true" />
@@ -141,7 +142,7 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
             ? 'The verified number matched this listing, so it now belongs to your Drop account.'
             : 'This number belongs to a different person, so we created or updated your own profile and left the original listing unclaimed.'}
         </p>
-        <Link to="/profile/donor" className="primary-button mt-6">Open my donor profile</Link>
+        <Link to={followUpToken ? `/follow-up#token=${followUpToken}` : '/profile/donor'} onClick={() => sessionStorage.removeItem('drop_follow_up_token')} className="primary-button mt-6">{followUpToken ? 'Continue donation update' : 'Open my donor profile'}</Link>
       </Surface>
     );
   }

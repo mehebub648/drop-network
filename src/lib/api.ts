@@ -38,7 +38,7 @@ async function readJsonOrThrow(res: Response, fallbackMessage: string) {
   return result;
 }
 
-export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN' | 'REMOVE_LISTING' | 'CLAIM_PROFILE';
+export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN' | 'REMOVE_LISTING' | 'CLAIM_PROFILE' | 'DONATION_FOLLOW_UP';
 export type OtpDeliveryStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'canceled' | 'bypassed';
 export type OtpDelivery = {
   challenge_id: string;
@@ -65,6 +65,36 @@ export type SearchDonorCard = {
   claim_path?: string;
   preference_match_reasons?: string[];
   donation_total?: number;
+};
+
+export type DonationOutcome = 'DONATED' | 'NOT_DONATED' | 'REMIND_LATER';
+export type DonationFollowUp = {
+  id: string;
+  request_id: string;
+  role: 'DONOR' | 'REQUESTER';
+  state: 'FOLLOW_UP_DUE' | 'AWAITING_DONOR' | 'AWAITING_REQUESTER' | 'CONFIRMED' | 'NOT_DONATED' | 'DISPUTED';
+  due_at: string;
+  reminder_count: number;
+  donor_outcome?: Exclude<DonationOutcome, 'REMIND_LATER'>;
+  requester_outcome?: Exclude<DonationOutcome, 'REMIND_LATER'>;
+  donated_on?: string;
+  delivery: { status: string; attempts: number };
+  request: { blood_group: string; facility?: string; district: string; upazila?: string } | null;
+};
+
+export type ContactedDonorSummary = {
+  donor_ref: string;
+  donor_kind: 'REGISTERED' | 'IMPORTED';
+  name: string;
+  phone_masked: string;
+  latest_call_outcome?: string;
+  agreed: boolean;
+  reminder_state: string;
+  donor_outcome?: string;
+  requester_outcome?: string;
+  final_state?: string;
+  next_action: string;
+  contacted_at: string;
 };
 
 export type CommunityPostType = 'DONATION_STORY' | 'HEALTH_SUGGESTION';
@@ -362,6 +392,35 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load admin overview');
   },
 
+  async getDonationFollowUps(): Promise<DonationFollowUp[]> {
+    const res = await fetch(`${API_BASE}/me/donation-follow-ups`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load donation follow-ups');
+  },
+
+  async getContactedDonors(requestId: string): Promise<{ items: ContactedDonorSummary[] }> {
+    const res = await fetch(`${API_BASE}/requests/${encodeURIComponent(requestId)}/contacted-donors`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load contacted donors');
+  },
+
+  async openDonationFollowUp(token: string) {
+    const res = await fetch(`${API_BASE}/donation-follow-ups/open`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ token }) });
+    return readJsonOrThrow(res, 'Failed to open this donation follow-up');
+  },
+
+  async verifyDonationFollowUp(token: string, phone: string, verificationToken: string) {
+    const res = await fetch(`${API_BASE}/donation-follow-ups/verify`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ token, phone, verification_token: verificationToken })
+    });
+    return readJsonOrThrow(res, 'Failed to verify this donation follow-up');
+  },
+
+  async submitDonationFollowUp(id: string, outcome: DonationOutcome, donatedOn?: string) {
+    const res = await fetch(`${API_BASE}/donation-follow-ups/${encodeURIComponent(id)}/outcome`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ outcome, donated_on: donatedOn })
+    });
+    return readJsonOrThrow(res, 'Failed to update the donation follow-up');
+  },
+
   async updateOtpBypass(enabled: boolean, reason: string) {
     const res = await fetch(`${API_BASE}/admin/settings/otp-bypass`, {
       method: 'PATCH',
@@ -555,6 +614,7 @@ export const api = {
     phone_verified_only?: boolean;
     collection_facility?: string;
     collection_facility_code?: string;
+    order_seed?: string;
   }) {
     const query = new URLSearchParams({
       blood_group: params.blood_group,
@@ -567,6 +627,7 @@ export const api = {
     if (params.phone_verified_only) query.set('phone_verified_only', 'true');
     if (params.collection_facility) query.set('collection_facility', params.collection_facility);
     if (params.collection_facility_code) query.set('collection_facility_code', params.collection_facility_code);
+    if (params.order_seed) query.set('order_seed', params.order_seed);
     const res = await fetch(`${API_BASE}/search/donors?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to search donors');
   },
@@ -630,7 +691,7 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to check your last call');
   },
 
-  async reportCall(requestId: string, body: { reveal_id: string; outcome: string; reason?: string; detail?: string; note?: string }) {
+  async reportCall(requestId: string, body: { reveal_id: string; outcome: string; reason?: string; detail?: string; note?: string; sms_consent?: boolean }) {
     const res = await fetch(`${API_BASE}/requests/${requestId}/call-reports`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
     });

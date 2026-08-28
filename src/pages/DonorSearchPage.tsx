@@ -27,6 +27,7 @@ import {
 import { announcePendingCall } from '../lib/callOutcome';
 
 type SearchResponse = {
+  order_seed: string;
   registered: SearchDonorCard[];
   directory: SearchDonorCard[];
   totals: { registered: number; directory: number };
@@ -93,11 +94,19 @@ export default function DonorSearchPage({
   const phoneVerifiedOnly = searchParams.get('phone_verified_only') === 'true';
   const collectionFacility = searchParams.get('collection_facility') || '';
   const collectionFacilityCode = searchParams.get('collection_facility_code') || '';
+  const orderSeed = searchParams.get('order_seed') || '';
   const userId = user?.id || '';
   const hasQuery = Boolean(bloodGroup && district && upazila);
   const contextComplete = Boolean(draft.collection_facility.trim() && draft.requester_role);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+
+  useEffect(() => {
+    if (!hasQuery || orderSeed) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('order_seed', crypto.randomUUID().replaceAll('-', ''));
+    setSearchParams(next, { replace: true });
+  }, [hasQuery, orderSeed, searchParams, setSearchParams]);
 
   const updateDraft = useCallback((next: SearchDraft) => {
     setDraft(next);
@@ -105,7 +114,7 @@ export default function DonorSearchPage({
   }, []);
 
   useEffect(() => {
-    if (!hasQuery) {
+    if (!hasQuery || !orderSeed) {
       setResults(null);
       return;
     }
@@ -121,7 +130,8 @@ export default function DonorSearchPage({
       exact_group: exactGroupOnly,
       phone_verified_only: phoneVerifiedOnly,
       collection_facility: collectionFacility,
-      collection_facility_code: collectionFacilityCode
+      collection_facility_code: collectionFacilityCode,
+      order_seed: orderSeed
     })
       .then(response => {
         if (!cancelled) setResults(response);
@@ -138,7 +148,7 @@ export default function DonorSearchPage({
     return () => {
       cancelled = true;
     };
-  }, [bloodGroup, district, upazila, page, sort, exactGroupOnly, phoneVerifiedOnly, collectionFacility, collectionFacilityCode, hasQuery, reloadKey, userId]);
+  }, [bloodGroup, district, upazila, page, sort, exactGroupOnly, phoneVerifiedOnly, collectionFacility, collectionFacilityCode, orderSeed, hasQuery, reloadKey, userId]);
 
   useEffect(() => {
     if (!hasQuery || !contextComplete) setRefineOpen(true);
@@ -156,6 +166,7 @@ export default function DonorSearchPage({
     if (sort !== 'recommended') next.sort = sort;
     if (exactGroupOnly) next.exact_group = 'true';
     if (phoneVerifiedOnly) next.phone_verified_only = 'true';
+    next.order_seed = crypto.randomUUID().replaceAll('-', '');
     setSearchParams(next);
     setRefineOpen(false);
   };

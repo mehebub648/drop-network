@@ -10,6 +10,8 @@ export type DonationRecord = {
   note?: string;
   /** Private link to a confirmed Drop request. */
   request_id?: string;
+  source?: 'SELF_REPORTED' | 'DROP_REQUEST';
+  confirmation_status?: 'SELF_REPORTED' | 'PENDING_REQUESTER' | 'CONFIRMED' | 'DISPUTED';
 };
 
 export type AvailabilityHistoryEntry = {

@@ -35,7 +35,8 @@ const metadata: Record<string, [string, string]> = {
   '/directory/remove': ['Remove your number from the directory — Drop Network', 'Take a publicly imported donor listing off Drop by verifying the number. No account needed.'],
   '/contribute': ['Suggest a blood donor privately — Drop Network', 'Create a private, expiring claim link that only the verified phone owner can publish.'],
   '/claim': ['Claim a donor profile — Drop Network', 'Verify your phone, confirm every detail, and control your Drop donor profile.'],
-  '/profile': ['My Drop account', 'Manage your donor profile, requests, invitations, history, security, and privacy settings.'],
+  '/profile': ['My Drop account', 'Manage your donor profile, requests, responses, follow-ups, history, security, and privacy settings.'],
+  '/follow-up': ['Donation follow-up', 'Privately update whether a planned blood donation was completed.'],
   '/admin': ['Drop operations workspace', 'Role-aware administration for Drop Network operations.']
 };
 
@@ -84,7 +85,7 @@ export default function RouteMetadata() {
     let robots = document.querySelector('meta[name="robots"]');
     if (!robots) { robots = document.createElement('meta'); robots.setAttribute('name', 'robots'); document.head.appendChild(robots); }
     // Legacy call links and imported-record ownership pages remain private.
-    const privatePage = pathname === '/community/new' || pathname.startsWith('/profile') || pathname.startsWith('/admin') || pathname.startsWith('/directory/call/') || pathname.startsWith('/directory/imported/') || pathname.startsWith('/c/');
+    const privatePage = pathname === '/community/new' || pathname.startsWith('/profile') || pathname.startsWith('/follow-up') || pathname.startsWith('/admin') || pathname.startsWith('/directory/call/') || pathname.startsWith('/directory/imported/') || pathname.startsWith('/c/');
     robots.setAttribute('content', privatePage ? 'noindex, nofollow' : 'index, follow');
     let canonical = document.querySelector('link[rel="canonical"]');
     if (!canonical) { canonical = document.createElement('link'); canonical.setAttribute('rel', 'canonical'); document.head.appendChild(canonical); }

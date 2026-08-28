@@ -142,3 +142,21 @@ test('the signed-in donor stays first in every sort when eligible for their own 
     assert.equal(rankDonorResults(donors, 'A+', sort)[0]?.donor_ref, 'reg:me', `${sort} did not keep the current donor first`);
   }
 });
+
+test('seeded ordering randomizes only exact ties and remains stable for pagination', () => {
+  const donors = Array.from({ length: 12 }, (_, index) => ({
+    donor_ref: `reg:${index}`,
+    donor_kind: 'REGISTERED' as const,
+    blood_group: 'A+',
+    name: `Donor ${String(index).padStart(2, '0')}`,
+    is_verified: true,
+    ranking: { location_match_score: 4, contact_issue_total: 0, donation_total: 1, availability_confirmed_at: '2026-08-01T00:00:00.000Z' }
+  }));
+  const first = rankDonorResults(donors, 'A+', 'recommended', 'stable-seed-one');
+  const repeat = rankDonorResults(donors, 'A+', 'recommended', 'stable-seed-one');
+  const different = rankDonorResults(donors, 'A+', 'recommended', 'stable-seed-two');
+  assert.deepEqual(first.map(item => item.donor_ref), repeat.map(item => item.donor_ref));
+  assert.notDeepEqual(first.map(item => item.donor_ref), different.map(item => item.donor_ref));
+  assert.equal(new Set(first.map(item => item.donor_ref)).size, donors.length);
+  assert.deepEqual(first.slice(0, 5).concat(first.slice(5)).map(item => item.donor_ref), first.map(item => item.donor_ref));
+});

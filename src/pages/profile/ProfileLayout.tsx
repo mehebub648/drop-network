@@ -17,7 +17,7 @@ const groups = [
     items: [
       { to: '/profile/donor-requests', label: 'Requests near you', icon: Siren },
       { to: '/profile/requests', label: 'My requests', icon: Clock3 },
-      { to: '/profile/invitations', label: 'Invitations', icon: BellRing },
+      { to: '/profile/responses', label: 'Responses & follow-ups', icon: BellRing },
       { to: '/profile/contact-reports', label: 'Contact reports', icon: ShieldAlert },
       { to: '/profile/history', label: 'Donation history', icon: FileClock }
     ]

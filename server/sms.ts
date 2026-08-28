@@ -7,6 +7,7 @@ export type SmsSendResult = {
 
 export interface SmsProvider {
   name: string;
+  sendMessage(phone: string, message: string, idempotencyKey: string): Promise<SmsSendResult>;
   sendOtp(phone: string, code: string, idempotencyKey: string): Promise<SmsSendResult>;
   getStatus?(jobId: string): Promise<SmsDeliveryStatus>;
   cancel?(jobId: string): Promise<boolean>;
@@ -29,6 +30,18 @@ function createHttpProvider(environment: SmsEnvironment): SmsProvider | null {
 
   return {
     name: 'http',
+    async sendMessage(phone, message) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ phone, message })
+      });
+      if (!response.ok) throw new Error(`SMS gateway returned ${response.status}`);
+      return { status: 'sent' };
+    },
     async sendOtp(phone, code) {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -86,36 +99,34 @@ function createMessavoProvider(environment: SmsEnvironment): SmsProvider | null 
     authorization: `Bearer ${token}`
   };
   const jobEndpoint = (jobId: string) => new URL(`${messagesEndpoint.toString().replace(/\/+$/, '')}/${encodeURIComponent(jobId)}`);
+  const sendMessage = async (phone: string, message: string, idempotencyKey: string) => {
+    const response = await fetch(messagesEndpoint, {
+      method: 'POST',
+      headers: { ...headers, 'idempotency-key': idempotencyKey },
+      body: JSON.stringify({ to: phone, message })
+    });
+    if (response.status !== 202) throw new Error(`Messavo SMS API returned ${response.status}`);
+    const result = await response.json().catch(() => null) as { id?: unknown; status?: unknown } | null;
+    const jobId = typeof result?.id === 'string' ? result.id : '';
+    if (!jobId) throw new Error('Messavo SMS API returned an invalid job');
+    if (result?.status === 'pending_approval') {
+      try {
+        await fetch(jobEndpoint(jobId), { method: 'DELETE', headers: { authorization: headers.authorization } });
+      } catch {
+        // A manual key is never accepted for automatic messages.
+      }
+      throw new Error('Messavo SMS API did not queue the message');
+    }
+    const status = mapMessavoState(result?.status);
+    if (!status || status === 'failed' || status === 'canceled') throw new Error('Messavo SMS API did not queue the message');
+    return { jobId, status };
+  };
 
   return {
     name: 'messavo',
+    sendMessage,
     async sendOtp(phone, code, idempotencyKey) {
-      const response = await fetch(messagesEndpoint, {
-        method: 'POST',
-        headers: { ...headers, 'idempotency-key': idempotencyKey },
-        body: JSON.stringify({ to: phone, message: otpMessage(code) })
-      });
-      if (response.status !== 202) throw new Error(`Messavo SMS API returned ${response.status}`);
-      const result = await response.json().catch(() => null) as { id?: unknown; status?: unknown } | null;
-      const jobId = typeof result?.id === 'string' ? result.id : '';
-      if (!jobId) throw new Error('Messavo SMS API returned an invalid job');
-      if (result?.status === 'pending_approval') {
-        try {
-          await fetch(jobEndpoint(jobId), {
-            method: 'DELETE',
-            headers: { authorization: headers.authorization }
-          });
-        } catch {
-          // A manual key is never accepted for OTP. Best-effort cancellation
-          // prevents a later human approval from sending an invalidated code.
-        }
-        throw new Error('Messavo SMS API did not queue the message');
-      }
-      const status = mapMessavoState(result?.status);
-      if (!status || status === 'failed' || status === 'canceled') {
-        throw new Error('Messavo SMS API did not queue the message');
-      }
-      return { jobId, status };
+      return sendMessage(phone, otpMessage(code), idempotencyKey);
     },
     async getStatus(jobId) {
       const response = await fetch(jobEndpoint(jobId), {
@@ -156,4 +167,21 @@ export function getSmsProvider(environment: SmsEnvironment = process.env): SmsPr
 
 export function isSmsConfigured(environment: SmsEnvironment = process.env): boolean {
   return getSmsProvider(environment) !== null;
+}
+
+/** Uses a dedicated automatic-send credential when configured. */
+export function getFollowUpSmsProvider(environment: SmsEnvironment = process.env): SmsProvider | null {
+  const followUpToken = environment.SMS_FOLLOWUP_API_TOKEN?.trim();
+  if (!followUpToken) return null;
+  return getSmsProvider({
+    ...environment,
+    SMS_API_TOKEN: followUpToken,
+    SMS_API_BASE_URL: environment.SMS_FOLLOWUP_API_BASE_URL?.trim() || environment.SMS_API_BASE_URL,
+    SMS_HTTP_TOKEN: followUpToken,
+    SMS_HTTP_ENDPOINT: environment.SMS_FOLLOWUP_HTTP_ENDPOINT?.trim() || environment.SMS_HTTP_ENDPOINT
+  });
+}
+
+export function isFollowUpSmsConfigured(environment: SmsEnvironment = process.env) {
+  return getFollowUpSmsProvider(environment) !== null;
 }

@@ -54,6 +54,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
   const [reason, setReason] = useState('');
   const [detail, setDetail] = useState('');
   const [note, setNote] = useState('');
+  const [smsConsent, setSmsConsent] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -71,6 +72,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
     setReason('');
     setDetail('');
     setNote('');
+    setSmsConsent('');
     setError('');
   }, []);
 
@@ -234,6 +236,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
   };
 
   const canSubmit = Boolean(outcome) &&
+    (outcome !== 'WILL_DONATE' || Boolean(smsConsent)) &&
     (outcome !== 'DECLINED' || Boolean(reason)) &&
     (reason !== 'LOCATION_FAR' || Boolean(detail)) &&
     (reason !== 'OTHER' || Boolean(note.trim()));
@@ -249,7 +252,8 @@ export default function CallOutcomeGate({ user }: { user: any }) {
         outcome,
         reason: outcome === 'DECLINED' ? reason : undefined,
         detail: outcome === 'DECLINED' && reason === 'LOCATION_FAR' ? detail : undefined,
-        note: note.trim() || undefined
+        note: note.trim() || undefined,
+        sms_consent: outcome === 'WILL_DONATE' ? smsConsent === 'YES' : undefined
       });
       await loadPending();
       announcePendingCall();
@@ -356,6 +360,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
                       setOutcome(event.target.value);
                       setReason('');
                       setDetail('');
+                      setSmsConsent('');
                     }}
                   >
                     <option value="" disabled>Select what happened</option>
@@ -387,6 +392,17 @@ export default function CallOutcomeGate({ user }: { user: any }) {
                     <select name="detail" value={detail} required onChange={event => setDetail(event.target.value)}>
                       <option value="" disabled>Select the location issue</option>
                       {FAR_DETAILS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                )}
+
+                {outcome === 'WILL_DONATE' && (
+                  <label className="call-outcome-field call-outcome-followup fade-in">
+                    <span>Did the donor agree to one follow-up SMS?</span>
+                    <select name="sms_consent" value={smsConsent} required onChange={event => setSmsConsent(event.target.value)}>
+                      <option value="" disabled>Select yes or no</option>
+                      <option value="YES">Yes, the donor agreed</option>
+                      <option value="NO">No — keep the follow-up in the app</option>
                     </select>
                   </label>
                 )}

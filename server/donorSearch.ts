@@ -6,6 +6,7 @@
 // in `server/upazilas.ts` - there is no radius and none should be invented.
 
 import { canDonateTo, compatibleDonorsFor, type BloodGroup } from './blood';
+import { createHash } from 'node:crypto';
 import type {
   DonorPreferences,
   RecurringContactWindow
@@ -221,7 +222,7 @@ export type RankableDonor = {
  *    donor is still useful, just less certain to be what the hospital asked for;
  * 4. name, so the order is stable between reloads.
  */
-export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGroup: string, sort: SearchSort = 'recommended'): T[] {
+export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGroup: string, sort: SearchSort = 'recommended', orderSeed = ''): T[] {
   const currentUserTier = (donor: T) => donor.is_current_user ? 0 : 1;
   const verifiedTier = (donor: T) => donor.donor_kind === 'REGISTERED' && donor.is_verified !== false ? 0 : 1;
   const exactTier = (donor: T) => (donor.is_exact_group ?? donor.blood_group === exactGroup) ? 0 : 1;
@@ -231,6 +232,12 @@ export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGrou
   const issues = (donor: T) => donor.ranking?.contact_issue_total || 0;
   const stableName = (a: T, b: T) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
     || (a.donor_ref || '').localeCompare(b.donor_ref || '', 'en');
+  const seededKey = (donor: T) => createHash('sha256')
+    .update(`${orderSeed}:${donor.donor_ref || donor.name}`)
+    .digest('hex');
+  const stableTie = (a: T, b: T) => orderSeed
+    ? seededKey(a).localeCompare(seededKey(b), 'en') || stableName(a, b)
+    : stableName(a, b);
   return [...donors].sort((a, b) => {
     const currentUser = currentUserTier(a) - currentUserTier(b);
     if (currentUser) return currentUser;
@@ -238,22 +245,22 @@ export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGrou
     if (tier) return tier;
     if (sort === 'name') return stableName(a, b);
     if (sort === 'recently_confirmed') {
-      return confirmed(b) - confirmed(a) || exactTier(a) - exactTier(b) || stableName(a, b);
+      return confirmed(b) - confirmed(a) || exactTier(a) - exactTier(b) || stableTie(a, b);
     }
     if (sort === 'best_location') {
-      return location(b) - location(a) || exactTier(a) - exactTier(b) || confirmed(b) - confirmed(a) || stableName(a, b);
+      return location(b) - location(a) || exactTier(a) - exactTier(b) || confirmed(b) - confirmed(a) || stableTie(a, b);
     }
     if (sort === 'most_donations') {
-      return donations(b) - donations(a) || exactTier(a) - exactTier(b) || location(b) - location(a) || stableName(a, b);
+      return donations(b) - donations(a) || exactTier(a) - exactTier(b) || location(b) - location(a) || stableTie(a, b);
     }
     if (sort === 'fewest_contact_issues') {
-      return issues(a) - issues(b) || exactTier(a) - exactTier(b) || location(b) - location(a) || stableName(a, b);
+      return issues(a) - issues(b) || exactTier(a) - exactTier(b) || location(b) - location(a) || stableTie(a, b);
     }
     return exactTier(a) - exactTier(b)
       || location(b) - location(a)
       || confirmed(b) - confirmed(a)
       || issues(a) - issues(b)
-      || stableName(a, b);
+      || stableTie(a, b);
   });
 }
 

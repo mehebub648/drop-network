@@ -7,13 +7,13 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
-import { createHash, randomInt } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports } from './db';
 import { claimSlugForPublicId, evaluateClaim, maskPhone, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
 import { getLocationByName } from './locations';
-import { getSmsProvider, isSmsConfigured, type SmsDeliveryStatus } from './sms';
+import { getFollowUpSmsProvider, getSmsProvider, isFollowUpSmsConfigured, isSmsConfigured, type SmsDeliveryStatus } from './sms';
 import { getUpazilaByName, getUpazilaVariants } from './upazilas';
 import { BLOOD_GROUPS, COMPATIBLE_DONORS, type BloodGroup } from './blood';
 import {
@@ -85,6 +85,17 @@ import { parseAvailabilityReason, parseMedicalConditions, parseRegistrationAvail
 import { DAILY_UNIQUE_SEARCH_LIMIT, DailySearchBudget } from './searchBudget';
 import { isTrustedCookieMutation, secureBearerMatches } from './httpSecurity';
 import { migrateDonationLedger, resolveDonationLedger } from './donationLedger';
+import { findDuplicateActiveRequest } from './requestDeduplication';
+import {
+  DONATION_OUTCOMES,
+  deriveFollowUpState,
+  followUpDueAt,
+  followUpNextAction,
+  remindTomorrowAt,
+  type ContactedDonorSummary,
+  type DonationFollowUp,
+  type DonationOutcome
+} from './donationFollowUps';
 
 const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -124,7 +135,7 @@ const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
 // REMOVE_LISTING lets someone who never signed up take their scraped number off
 // the directory. It needs no account, which is the point: requiring one would
 // mean opting in to opt out.
-const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'SIGN_IN', 'REMOVE_LISTING', 'CLAIM_PROFILE'] as const;
+const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'SIGN_IN', 'REMOVE_LISTING', 'CLAIM_PROFILE', 'DONATION_FOLLOW_UP'] as const;
 const allowedCorsOrigins = new Set(
   (process.env.CORS_ORIGIN || process.env.APP_URL || '')
     .split(',')
@@ -238,6 +249,8 @@ type DonationRecord = {
   note?: string;
   /** Optional private link to a confirmed Drop blood request. */
   request_id?: string;
+  source?: 'SELF_REPORTED' | 'DROP_REQUEST';
+  confirmation_status?: 'SELF_REPORTED' | 'PENDING_REQUESTER' | 'CONFIRMED' | 'DISPUTED';
 };
 
 type AvailabilityHistoryEntry = {
@@ -607,6 +620,10 @@ function parseDonationHistory(value: unknown) {
     const organization = cleanString(item.organization, 120);
     const note = optionalCleanString(item.note, 500);
     const requestId = optionalCleanString(item.request_id, 80);
+    const source = isOneOf(item.source, ['SELF_REPORTED', 'DROP_REQUEST'] as const) ? item.source : undefined;
+    const confirmationStatus = isOneOf(item.confirmation_status, ['SELF_REPORTED', 'PENDING_REQUESTER', 'CONFIRMED', 'DISPUTED'] as const)
+      ? item.confirmation_status
+      : undefined;
     if (!date || !organization) return null;
     if ((item.note !== undefined && item.note !== '' && !note) || (item.request_id !== undefined && item.request_id !== '' && !requestId)) return null;
     if (new Date(date).getTime() > Date.now()) return null;
@@ -618,19 +635,26 @@ function parseDonationHistory(value: unknown) {
       date: date.slice(0, 10),
       organization,
       ...(note ? { note } : {}),
-      ...(requestId ? { request_id: requestId } : {})
+      ...(requestId ? { request_id: requestId } : {}),
+      ...(source ? { source } : {}),
+      ...(confirmationStatus ? { confirmation_status: confirmationStatus } : {})
     });
   }
   return records;
 }
 
 function donationHistoryRequestsBelongToDonor(records: DonationRecord[], userId: string) {
-  return records.every(record => !record.request_id || donorResponses.some(response =>
-    response.request_id === record.request_id &&
-    response.donor_id === userId &&
-    response.status === 'DONATED' &&
-    Boolean(response.donor_confirmed_at && response.requester_confirmed_at)
-  ));
+  return records.every(record => !record.request_id ||
+    donorResponses.some(response =>
+      response.request_id === record.request_id &&
+      response.donor_id === userId &&
+      response.status === 'DONATED' &&
+      Boolean(response.donor_confirmed_at && response.requester_confirmed_at)
+    ) || donationFollowUps.some(followUp =>
+      followUp.request_id === record.request_id &&
+      (followUp.donor_ref === `reg:${userId}` || followUp.donor_user_id === userId) &&
+      followUp.donor_outcome === 'DONATED'
+    ));
 }
 
 function latestDonationHistoryDate(records: DonationRecord[]) {
@@ -740,6 +764,7 @@ let sessions: AuthSession[] = [];
 const sessionsByToken = new Map<string, AuthSession>();
 let otpChallenges: OtpChallenge[] = [];
 let donorResponses: DonorResponse[] = [];
+let donationFollowUps: DonationFollowUp[] = [];
 let notifications: AppNotification[] = [];
 let moderationReports: ModerationReport[] = [];
 let supportTickets: SupportTicket[] = [];
@@ -754,6 +779,7 @@ async function initDbData() {
   for (const session of sessions) sessionsByToken.set(session.token, session);
   otpChallenges = await getAllFromTable('common_otps');
   donorResponses = await getAllFromTable('common_responses');
+  donationFollowUps = await getAllFromTable('common_donation_followups');
   notifications = await getAllFromTable('common_notifications');
   moderationReports = await getAllFromTable('common_reports');
   supportTickets = await getAllFromTable('common_support_tickets');
@@ -1355,6 +1381,7 @@ async function findRequestDonors(params: {
   phoneVerifiedOnly?: boolean;
   facilityCode?: string;
   facilityName?: string;
+  orderSeed?: string;
 }) {
   const compatibleGroups = COMPATIBLE_DONORS[params.bloodGroup] || [params.bloodGroup];
   const upazilas = getUpazilaVariants(params.district, params.upazila);
@@ -1417,7 +1444,7 @@ async function findRequestDonors(params: {
     // must not hide otherwise eligible donors.
   }
 
-  allCards = rankDonorResults(allCards, params.bloodGroup, params.sort || 'recommended');
+  allCards = rankDonorResults(allCards, params.bloodGroup, params.sort || 'recommended', params.orderSeed);
   const registeredTotal = allCards.filter(donor => donor.donor_kind === 'REGISTERED').length;
   const filteredDirectoryTotal = allCards.filter(donor => donor.donor_kind === 'IMPORTED').length;
   const total = allCards.length;
@@ -1725,11 +1752,230 @@ async function consumeChallenge(challenge: OtpChallenge) {
   await saveToTable('common_otps', challenge);
 }
 
+function signFollowUpToken(followUp: DonationFollowUp) {
+  const secret = process.env.FOLLOW_UP_LINK_SECRET?.trim();
+  if (!secret) return '';
+  const payload = Buffer.from(JSON.stringify({ id: followUp.id, exp: Date.now() + 14 * 86_400_000 })).toString('base64url');
+  const signature = createHmac('sha256', secret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function followUpFromToken(token: unknown) {
+  const secret = process.env.FOLLOW_UP_LINK_SECRET?.trim();
+  if (!secret || typeof token !== 'string' || token.length > 1_000) return null;
+  const [payload, supplied] = token.split('.');
+  if (!payload || !supplied) return null;
+  const expected = createHmac('sha256', secret).update(payload).digest();
+  let suppliedBuffer: Buffer;
+  try { suppliedBuffer = Buffer.from(supplied, 'base64url'); } catch { return null; }
+  if (suppliedBuffer.length !== expected.length || !timingSafeEqual(suppliedBuffer, expected)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { id?: unknown; exp?: unknown };
+    if (typeof parsed.id !== 'string' || typeof parsed.exp !== 'number' || parsed.exp <= Date.now()) return null;
+    return donationFollowUps.find(item => item.id === parsed.id) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function followUpTarget(followUp: DonationFollowUp): Promise<{ phone: string; user?: User; listing?: ImportedDonor } | null> {
+  const reference = parseDonorRef(followUp.donor_ref);
+  if (!reference) return null;
+  if (reference.kind === 'REGISTERED') {
+    const user = users.find(item => item.id === reference.id && !item.deleted_at);
+    return user?.phone ? { phone: user.phone, user } : null;
+  }
+  const listing = await getImportedDonor(reference.id);
+  if (!listing || listing.listing_state === 'REMOVED' || listing.publication_state === 'EXPIRED') return null;
+  const user = listing.claimed_by ? users.find(item => item.id === listing.claimed_by && !item.deleted_at) : undefined;
+  if (user?.phone) return { phone: user.phone, user, listing };
+  const phone = toRevealedImportedDonor(listing).phone;
+  return phone ? { phone, listing } : null;
+}
+
+async function createDonationFollowUp(request: BloodRequest, reveal: CallReport, smsConsent: boolean) {
+  const existing = donationFollowUps.find(item => item.request_id === request.id && item.donor_ref === reveal.donor_ref);
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const reference = parseDonorRef(reveal.donor_ref);
+  let response: DonorResponse | undefined;
+  if (reference?.kind === 'REGISTERED') {
+    response = await inviteDonorToRequest(request, reference.id);
+    if (!['DONATED', 'ARRIVED'].includes(response.status)) {
+      response.status = 'ACCEPTED';
+      response.updated_at = now;
+      await saveToTable('common_responses', response);
+      await recomputeRequestProgress(request);
+    }
+  }
+  const followUp: DonationFollowUp = {
+    id: uuidv4(),
+    request_id: request.id,
+    requester_id: request.user_id,
+    donor_ref: reveal.donor_ref,
+    donor_kind: reveal.donor_kind,
+    ...(reference?.kind === 'REGISTERED' ? { donor_user_id: reference.id } : {}),
+    ...(response ? { response_id: response.id } : {}),
+    reveal_id: reveal.id,
+    agreed_at: now,
+    sms_consent: smsConsent,
+    due_at: followUpDueAt(now, request.needed_by),
+    delivery: { status: smsConsent ? 'PENDING' : 'NOT_REQUESTED', attempts: 0 },
+    reminder_count: 0,
+    state: 'FOLLOW_UP_DUE',
+    created_at: now,
+    updated_at: now
+  };
+  donationFollowUps.push(followUp);
+  await saveToTable('common_donation_followups', followUp);
+  if (reference?.kind === 'REGISTERED') {
+    const token = signFollowUpToken(followUp);
+    await notify(reference.id, 'DONATION_FOLLOW_UP', 'Donation follow-up scheduled', 'After the planned donation, tell Drop what happened.', token ? `/follow-up#token=${token}` : '/profile/responses');
+  }
+  return followUp;
+}
+
+async function updateDonorHistoryFromFollowUp(followUp: DonationFollowUp) {
+  const target = await followUpTarget(followUp);
+  const donor = target?.user;
+  const request = requests.find(item => item.id === followUp.request_id);
+  if (!donor?.donor_profile || !request) return;
+  followUp.donor_user_id = donor.id;
+  const recordId = `follow-up:${followUp.id}`;
+  const history = donor.donor_profile.donation_history || [];
+  if (followUp.donor_outcome !== 'DONATED') {
+    donor.donor_profile.donation_history = history.filter(item => item.id !== recordId);
+    await saveToTable('common_users', donor);
+    return;
+  }
+  const date = followUp.donated_on || followUp.donor_reported_at!.slice(0, 10);
+  const confirmationStatus = followUp.state === 'CONFIRMED'
+    ? 'CONFIRMED'
+    : followUp.state === 'DISPUTED'
+      ? 'DISPUTED'
+      : 'PENDING_REQUESTER';
+  const record: DonationRecord = {
+    id: recordId,
+    date,
+    organization: request.hospital_name || 'Receiving facility',
+    request_id: request.id,
+    source: 'DROP_REQUEST',
+    confirmation_status: confirmationStatus
+  };
+  donor.donor_profile.donation_history = [...history.filter(item => item.id !== recordId), record];
+  donor.donor_profile.last_donation = { kind: 'EXACT', date, reported_at: followUp.donor_reported_at! };
+  donor.donor_profile.last_donation_date = date;
+  donor.donor_profile.availability_status = 'NOT_AVAILABLE';
+  donor.donor_profile.availability_history = [
+    ...(donor.donor_profile.availability_history || []),
+    { status: 'NOT_AVAILABLE' as const, changed_at: followUp.donor_reported_at! }
+  ].slice(-50);
+  const ledger = migrateDonationLedger(donor.donor_profile);
+  donor.donor_profile.donations_before_history = ledger.donations_before_history;
+  donor.donor_profile.donation_count = ledger.donation_count;
+  await saveToTable('common_users', donor);
+  await removeDonorFromAllPartitions(donor.id);
+}
+
+async function recordDonationOutcome(followUp: DonationFollowUp, role: 'DONOR' | 'REQUESTER', outcome: DonationOutcome, donatedOn?: string) {
+  if (followUp.state === 'CONFIRMED') return { error: 'This donation is already confirmed' } as const;
+  const now = new Date().toISOString();
+  if (outcome === 'REMIND_LATER') {
+    if (role !== 'DONOR') return { error: 'Only the donor can postpone their reminder' } as const;
+    if (followUp.reminder_count >= 1) return { error: 'This reminder has already been postponed once' } as const;
+    followUp.reminder_count += 1;
+    followUp.due_at = remindTomorrowAt(new Date());
+    followUp.next_attempt_at = undefined;
+    followUp.delivery = { status: followUp.sms_consent ? 'PENDING' : 'NOT_REQUESTED', attempts: 0 };
+    followUp.updated_at = now;
+    await saveToTable('common_donation_followups', followUp);
+    return { value: followUp } as const;
+  }
+  if (role === 'DONOR') {
+    if (followUp.donor_outcome) return { error: 'Your outcome has already been recorded' } as const;
+    followUp.donor_outcome = outcome;
+    followUp.donor_reported_at = now;
+    if (outcome === 'DONATED') followUp.donated_on = donatedOn || now.slice(0, 10);
+  } else {
+    if (followUp.requester_outcome) return { error: 'Your outcome has already been recorded' } as const;
+    followUp.requester_outcome = outcome;
+    followUp.requester_reported_at = now;
+  }
+  followUp.state = deriveFollowUpState(followUp.donor_outcome, followUp.requester_outcome);
+  followUp.updated_at = now;
+  const response = followUp.response_id ? donorResponses.find(item => item.id === followUp.response_id) : undefined;
+  if (response) {
+    if (followUp.donor_outcome === 'DONATED') {
+      response.status = 'DONATED';
+      response.donor_confirmed_at = followUp.donor_reported_at;
+    }
+    if (followUp.requester_outcome === 'DONATED') response.requester_confirmed_at = followUp.requester_reported_at;
+    response.updated_at = now;
+    await saveToTable('common_responses', response);
+  }
+  await updateDonorHistoryFromFollowUp(followUp);
+  await saveToTable('common_donation_followups', followUp);
+  const request = requests.find(item => item.id === followUp.request_id);
+  if (request) await recomputeRequestProgress(request);
+  if (followUp.state === 'CONFIRMED' && followUp.donor_user_id) {
+    await notify(followUp.donor_user_id, 'DONATION_CONFIRMED', 'Donation confirmed', 'Both sides confirmed the donation. Your history is up to date.', '/profile/history');
+  }
+  return { value: followUp } as const;
+}
+
+async function processDonationFollowUps() {
+  const provider = getFollowUpSmsProvider();
+  const now = Date.now();
+  for (const followUp of donationFollowUps) {
+    if (followUp.delivery.job_id && followUp.delivery.status === 'QUEUED' && provider?.getStatus) {
+      try {
+        const status = await provider.getStatus(followUp.delivery.job_id);
+        followUp.delivery.status = status.toUpperCase() as DonationFollowUp['delivery']['status'];
+        followUp.delivery.updated_at = new Date().toISOString();
+        await saveToTable('common_donation_followups', followUp);
+      } catch {
+        // Delivery polling is retried by the next maintenance pass.
+      }
+    }
+    if (!provider || !followUp.sms_consent || !['PENDING', 'FAILED'].includes(followUp.delivery.status)) continue;
+    if (followUp.state === 'CONFIRMED' || followUp.state === 'NOT_DONATED' || followUp.state === 'DISPUTED') continue;
+    if (new Date(followUp.due_at).getTime() > now || (followUp.next_attempt_at && new Date(followUp.next_attempt_at).getTime() > now)) continue;
+    if (followUp.delivery.attempts >= 3 || !configuredPublicOrigin) continue;
+    const target = await followUpTarget(followUp);
+    const token = signFollowUpToken(followUp);
+    if (!target?.phone || !token) continue;
+    followUp.delivery.attempts += 1;
+    followUp.delivery.updated_at = new Date().toISOString();
+    try {
+      const delivery = await provider.sendMessage(
+        target.phone,
+        `Drop follow-up: please update whether the donation was completed. ${configuredPublicOrigin}/follow-up#token=${token}`,
+        `drop-follow-up:${followUp.id}:${followUp.reminder_count}`
+      );
+      followUp.delivery = {
+        status: delivery.status.toUpperCase() as DonationFollowUp['delivery']['status'],
+        provider: provider.name,
+        job_id: delivery.jobId,
+        attempts: followUp.delivery.attempts,
+        updated_at: new Date().toISOString()
+      };
+      followUp.next_attempt_at = undefined;
+    } catch {
+      followUp.delivery.status = 'FAILED';
+      followUp.delivery.last_error = 'Delivery failed';
+      followUp.next_attempt_at = new Date(Date.now() + followUp.delivery.attempts * 30 * 60_000).toISOString();
+    }
+    followUp.updated_at = new Date().toISOString();
+    await saveToTable('common_donation_followups', followUp);
+  }
+}
+
 // API Routes
 
 app.get('/api/config/public', (_req, res) => {
   res.json({
     sms_configured: isSmsConfigured(),
+    follow_up_sms_configured: isFollowUpSmsConfigured(),
     otp_bypass_enabled: isOtpBypassEnabled(),
     donation_interval_days: DONATION_INTERVAL_DAYS,
     availability_ttl_days: AVAILABILITY_TTL_DAYS,
@@ -1786,6 +2032,11 @@ app.get('/api/search/donors', async (req, res) => {
 
   const auth = getCurrentAuth(req);
   const { bloodGroup, location, upazila, sort, exactGroupOnly, phoneVerifiedOnly, facilityName, facilityCode } = parsed.value;
+  const suppliedSeed = optionalCleanString(req.query.order_seed, 80);
+  if (req.query.order_seed !== undefined && (!suppliedSeed || !/^[A-Za-z0-9_-]{8,80}$/.test(suppliedSeed))) {
+    return validationError(res, 'Order seed is invalid');
+  }
+  const orderSeed = suppliedSeed || randomBytes(16).toString('base64url');
   const requestedPage = Math.max(1, Math.min(10_000, Math.floor(Number(req.query.page) || 1)));
   const budget = dailySearchBudget.consume({
     identities: [auth ? `user:${auth.user.id}` : '', `ip:${req.ip || req.socket.remoteAddress || 'unknown'}`],
@@ -1808,7 +2059,8 @@ app.get('/api/search/donors', async (req, res) => {
     exactGroupOnly,
     phoneVerifiedOnly,
     facilityName,
-    facilityCode
+    facilityCode,
+    orderSeed
   });
 
   res.json({
@@ -1821,6 +2073,7 @@ app.get('/api/search/donors', async (req, res) => {
       exact_group: exactGroupOnly,
       phone_verified_only: phoneVerifiedOnly
     },
+    order_seed: orderSeed,
     registered,
     directory,
     totals,
@@ -1858,14 +2111,16 @@ app.get('/health', asyncRoute(async (_req, res) => {
 app.get('/ready', asyncRoute(async (_req, res) => {
   const staticAssets = await currentStaticAssetHealth();
   const smsReady = !IS_PRODUCTION || isSmsConfigured();
+  const followUpReady = !IS_PRODUCTION || (isFollowUpSmsConfigured() && (process.env.FOLLOW_UP_LINK_SECRET?.trim().length || 0) >= 32);
   const otpPolicyReady = !IS_PRODUCTION || otpBypassSetting?.enabled !== true;
   const metricsReady = !IS_PRODUCTION || metricsToken.length >= 32;
-  const ready = isReady && staticAssets.status !== 'failed' && smsReady && otpPolicyReady && metricsReady;
+  const ready = isReady && staticAssets.status !== 'failed' && smsReady && followUpReady && otpPolicyReady && metricsReady;
   res.status(ready ? 200 : 503).json({
     status: ready ? 'ready' : isReady ? 'degraded' : 'starting',
     checks: {
       datastore_initialized: isReady,
       sms_configured: smsReady,
+      follow_up_configured: followUpReady,
       otp_bypass_disabled: otpPolicyReady,
       metrics_protected: metricsReady
     },
@@ -1885,13 +2140,15 @@ app.get('/metrics', (req, res) => {
     '# HELP drop_users_total Registered user records', '# TYPE drop_users_total gauge', `drop_users_total ${users.length}`,
     '# HELP drop_active_requests Active public blood requests', '# TYPE drop_active_requests gauge', `drop_active_requests ${requests.filter(item => ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(item.status)).length}`,
     '# HELP drop_open_reports Open moderation reports', '# TYPE drop_open_reports gauge', `drop_open_reports ${moderationReports.filter(item => item.status === 'OPEN').length}`,
+    '# HELP drop_failed_follow_up_reminders Failed donation follow-up reminders', '# TYPE drop_failed_follow_up_reminders gauge', `drop_failed_follow_up_reminders ${donationFollowUps.filter(item => item.delivery.status === 'FAILED').length}`,
+    '# HELP drop_disputed_donations Disputed donation follow-ups', '# TYPE drop_disputed_donations gauge', `drop_disputed_donations ${donationFollowUps.filter(item => item.state === 'DISPUTED').length}`,
     '# HELP drop_uptime_seconds Process uptime', '# TYPE drop_uptime_seconds gauge', `drop_uptime_seconds ${Math.floor((Date.now() - STARTED_AT) / 1000)}`
   ].join('\n') + '\n');
 });
 
 app.get('/robots.txt', (req, res) => {
   const origin = publicOrigin(req);
-  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nDisallow: /community/new\nDisallow: /directory/call/\nDisallow: /directory/imported/\nSitemap: ${origin}/sitemap.xml\n`);
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nDisallow: /follow-up\nDisallow: /community/new\nDisallow: /directory/call/\nDisallow: /directory/imported/\nSitemap: ${origin}/sitemap.xml\n`);
 });
 
 app.get('/sitemap.xml', asyncRoute(async (req, res) => {
@@ -2810,6 +3067,7 @@ app.get('/api/me/export', asyncRoute(async (req, res) => {
     account: sanitizeUser(auth.user),
     requests: requests.filter(item => item.user_id === userId),
     responses: donorResponses.filter(item => item.donor_id === userId || item.requester_id === userId),
+    donation_follow_ups: donationFollowUps.filter(item => item.requester_id === userId || item.donor_user_id === userId || item.donor_ref === `reg:${userId}`),
     notifications: notifications.filter(item => item.user_id === userId),
     reports: moderationReports.filter(item => item.reporter_id === userId),
     community_posts: exportedCommunityPosts
@@ -2860,14 +3118,20 @@ app.get('/api/me/requests', async (req, res) => {
   await enforceExpiredRequests();
   const userRequests = requests.filter(r => r.user_id === auth.user.id);
   const sortedRequests = [...userRequests].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  const enrichedRequests = sortedRequests.map(r => {
+  const enrichedRequests = await Promise.all(sortedRequests.map(async r => {
       const requester = users.find(u => u.id === r.user_id);
+      const reports = await requestCallReports(r.id, auth.user.id);
+      const contactedCount = new Set(reports.filter(item => item.kind === 'REVEAL').map(item => item.donor_ref)).size;
+      const followUps = donationFollowUps.filter(item => item.request_id === r.id);
       return {
           ...r,
           requester_name: r.requester_name || requester?.name || 'Anonymous',
-          requester_phone: requester?.phone || '+8800000000'
+          requester_phone: requester?.phone || '+8800000000',
+          contacted_donor_count: contactedCount,
+          agreed_donor_count: followUps.length,
+          follow_up_action_count: followUps.filter(item => ['AWAITING_REQUESTER', 'DISPUTED'].includes(item.state)).length
       };
-  });
+  }));
   res.json(enrichedRequests);
 });
 
@@ -2999,6 +3263,7 @@ function parseCompleteRequest(body: Record<string, unknown>) {
   const patient_name = cleanString(body.patient_name, 120);
   const requester_name = cleanString(body.requester_name, 120);
   const requester_relationship = body.requester_relationship;
+  const upazila = location && body.upazila ? parseUpazila(location.area_name, body.upazila) : undefined;
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return { error: 'Valid blood group is required' } as const;
   if (!isOneOf(blood_component, BLOOD_COMPONENTS)) return { error: 'Valid blood component is required' } as const;
@@ -3013,7 +3278,7 @@ function parseCompleteRequest(body: Record<string, unknown>) {
 
   return {
     value: {
-      blood_group, blood_component, location, needed_by, contacts, units_required,
+      blood_group, blood_component, location, upazila, needed_by, contacts, units_required,
       hospital_name, hospital_address, ward, patient_reference, patient_name,
       requester_name, requester_relationship
     }
@@ -3144,17 +3409,9 @@ app.post('/api/search/requests', async (req, res) => {
   const parsed = parseSearchRequest(req.body || {}, auth.user.phone);
   if ('error' in parsed) return validationError(res, parsed.error);
 
-  // Re-searching after a dead-end call is not a mistake to error at, so a
-  // repeat for the same patient need returns the request already in flight
-  // instead of the 409 the older, reference-keyed flow raises.
-  const recent = requests.find(request =>
-    request.user_id === auth.user.id &&
-    ['DRAFT', 'ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status) &&
-    request.blood_group === parsed.value.blood_group &&
-    request.upazila === parsed.value.upazila &&
-    Date.now() - new Date(request.created_at).getTime() < 6 * 3_600_000
-  );
-  if (recent) return res.json({ request: recent, reused: true });
+  const recent = duplicateActiveRequest(parsed.value);
+  if (recent && recent.user_id === auth.user.id) return res.json({ request: recent, reused: true });
+  if (recent) return res.status(409).json({ error: 'An active request already exists for these details', code: 'DUPLICATE_ACTIVE_REQUEST' });
 
   const now = new Date().toISOString();
   const request: BloodRequest = {
@@ -3194,6 +3451,10 @@ const revealLimiter = rateLimit({
 /** Bounded reads for request-specific history and account-wide call enforcement. */
 async function requestCallReports(requestId: string, actorId?: string) {
   return await queryCallReports<CallReport>({ requestId, actorId, limit: 1_000 });
+}
+
+function duplicateActiveRequest(candidate: Pick<BloodRequest, 'blood_group' | 'location' | 'upazila' | 'contacts'>) {
+  return findDuplicateActiveRequest(requests, candidate);
 }
 
 async function actorCallReports(actorId: string) {
@@ -3384,6 +3645,9 @@ app.post('/api/requests/:id/call-reports', async (req, res) => {
 
   const parsed = parseCallOutcome(req.body || {});
   if ('error' in parsed) return validationError(res, parsed.error);
+  if (parsed.value.outcome === 'WILL_DONATE' && typeof req.body?.sms_consent !== 'boolean') {
+    return validationError(res, 'Confirm whether the donor agreed to one follow-up SMS');
+  }
 
   const revealId = cleanString(req.body?.reveal_id, 80);
   if (!revealId) return validationError(res, 'A reveal reference is required');
@@ -3421,15 +3685,140 @@ app.post('/api/requests/:id/call-reports', async (req, res) => {
     const response = donorResponses.find(item =>
       item.request_id === request.id && item.donor_id === reference.id && item.status === 'INVITED'
     );
-    if (response && ['WRONG_NUMBER', 'UNREACHABLE', 'DECLINED'].includes(parsed.value.outcome)) {
+    if (response && parsed.value.outcome === 'WILL_DONATE') {
+      response.status = 'ACCEPTED';
+      response.updated_at = new Date().toISOString();
+      await saveToTable('common_responses', response);
+      await recomputeRequestProgress(request);
+    } else if (response && ['WRONG_NUMBER', 'UNREACHABLE', 'DECLINED'].includes(parsed.value.outcome)) {
       response.status = 'DECLINED';
       response.updated_at = new Date().toISOString();
       await saveToTable('common_responses', response);
     }
   }
 
-  res.status(201).json({ report_id: report.id });
+  const followUp = parsed.value.outcome === 'WILL_DONATE'
+    ? await createDonationFollowUp(request, reveal, req.body.sms_consent === true)
+    : undefined;
+  res.status(201).json({ report_id: report.id, follow_up: followUp });
 });
+
+function donationFollowUpPayload(followUp: DonationFollowUp, role: 'DONOR' | 'REQUESTER') {
+  const request = requests.find(item => item.id === followUp.request_id);
+  return {
+    id: followUp.id,
+    request_id: followUp.request_id,
+    role,
+    state: followUp.state,
+    due_at: followUp.due_at,
+    reminder_count: followUp.reminder_count,
+    donor_outcome: followUp.donor_outcome,
+    requester_outcome: followUp.requester_outcome,
+    donated_on: followUp.donated_on,
+    delivery: followUp.delivery,
+    request: request ? {
+      blood_group: request.blood_group,
+      facility: request.hospital_name,
+      district: request.location.area_name,
+      upazila: request.upazila
+    } : null
+  };
+}
+
+app.get('/api/requests/:id/contacted-donors', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const request = requests.find(item => item.id === req.params.id);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can view contacted donors' });
+  const reports = await requestCallReports(request.id, auth.user.id);
+  const reveals = reports.filter(item => item.kind === 'REVEAL');
+  const items: ContactedDonorSummary[] = [];
+  for (const reveal of reveals) {
+    if (items.some(item => item.donor_ref === reveal.donor_ref)) continue;
+    const followUp = donationFollowUps.find(item => item.request_id === request.id && item.donor_ref === reveal.donor_ref);
+    const latestOutcome = reports
+      .filter(item => item.kind === 'CALL_OUTCOME' && item.donor_ref === reveal.donor_ref)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+    const target = await followUpTarget({ donor_ref: reveal.donor_ref } as DonationFollowUp);
+    const reference = parseDonorRef(reveal.donor_ref);
+    const registered = reference?.kind === 'REGISTERED' ? users.find(item => item.id === reference.id) : undefined;
+    const listing = reference?.kind === 'IMPORTED' ? await getImportedDonor(reference.id) : undefined;
+    items.push({
+      donor_ref: reveal.donor_ref,
+      donor_kind: reveal.donor_kind,
+      name: registered?.name || listing?.name || 'Donor',
+      phone_masked: maskPhone(target?.phone || ''),
+      latest_call_outcome: latestOutcome?.outcome,
+      agreed: Boolean(followUp),
+      reminder_state: followUp ? (followUp.sms_consent ? followUp.delivery.status : 'IN_APP_ONLY') : 'NOT_SCHEDULED',
+      donor_outcome: followUp?.donor_outcome,
+      requester_outcome: followUp?.requester_outcome,
+      final_state: followUp?.state,
+      next_action: followUpNextAction(followUp),
+      contacted_at: reveal.created_at
+    });
+  }
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ items });
+}));
+
+app.post('/api/donation-follow-ups/open', asyncRoute(async (req, res) => {
+  const followUp = followUpFromToken(req.body?.token);
+  if (!followUp) return res.status(404).json({ error: 'This follow-up link is invalid or expired' });
+  const auth = getCurrentAuth(req);
+  const target = await followUpTarget(followUp);
+  const role = auth?.user.id === followUp.requester_id
+    ? 'REQUESTER'
+    : auth && target?.user?.id === auth.user.id
+      ? 'DONOR'
+      : null;
+  res.set('Cache-Control', 'private, no-store');
+  if (role) return res.json({ follow_up: donationFollowUpPayload(followUp, role) });
+  res.json({ requires_verification: true, phone_masked: maskPhone(target?.phone || ''), donor_kind: followUp.donor_kind });
+}));
+
+app.post('/api/donation-follow-ups/verify', authLimiter, asyncRoute(async (req, res) => {
+  const followUp = followUpFromToken(req.body?.token);
+  if (!followUp) return res.status(404).json({ error: 'This follow-up link is invalid or expired' });
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const target = await followUpTarget(followUp);
+  if (!phone || !target?.phone || phone !== target.phone) return res.status(403).json({ error: 'Verify the phone that received this follow-up' });
+  const challenge = verifiedChallenge(phone, 'DONATION_FOLLOW_UP', req.body?.verification_token);
+  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before updating the donation' });
+  if (!target.user) {
+    if (challenge) await consumeChallenge(challenge);
+    const listing = 'listing' in target ? target.listing : undefined;
+    return res.json({ claim_required: true, claim_path: listing ? `/c/${listing.claim_slug}` : null });
+  }
+  followUp.donor_user_id = target.user.id;
+  followUp.updated_at = new Date().toISOString();
+  await saveToTable('common_donation_followups', followUp);
+  const sessionToken = await issueSession(target.user.id, req);
+  if (challenge) await consumeChallenge(challenge);
+  res.cookie(SESSION_COOKIE, sessionToken, sessionCookieOptions());
+  res.json({ follow_up: donationFollowUpPayload(followUp, 'DONOR'), user: sanitizeUser(target.user) });
+}));
+
+app.post('/api/donation-follow-ups/:id/outcome', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  const followUp = donationFollowUps.find(item => item.id === req.params.id);
+  if (!auth) return res.status(401).json({ error: 'Log in or verify the donor phone first' });
+  if (!followUp) return res.status(404).json({ error: 'Follow-up not found' });
+  const outcome = req.body?.outcome;
+  if (!isOneOf(outcome, DONATION_OUTCOMES)) return validationError(res, 'Choose donated, not donated, or remind later');
+  const target = await followUpTarget(followUp);
+  const role = auth.user.id === followUp.requester_id ? 'REQUESTER' : target?.user?.id === auth.user.id ? 'DONOR' : null;
+  if (!role) return res.status(403).json({ error: 'This follow-up belongs to the donor and requester' });
+  let donatedOn: string | undefined;
+  if (outcome === 'DONATED' && role === 'DONOR') {
+    donatedOn = parseDate(req.body?.donated_on)?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+    if (new Date(donatedOn).getTime() > Date.now()) return validationError(res, 'Donation date cannot be in the future');
+  }
+  const recorded = await recordDonationOutcome(followUp, role, outcome, donatedOn);
+  if ('error' in recorded) return res.status(409).json({ error: recorded.error });
+  res.json({ follow_up: donationFollowUpPayload(followUp, role) });
+}));
 
 /** Requests a signed-in donor could answer, with the requester's number masked. */
 app.get('/api/me/donor-requests', async (req, res) => {
@@ -3568,13 +3957,9 @@ app.post('/api/requests', async (req, res) => {
   if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before creating a request' });
   const parsed = parseCompleteRequest(req.body || {});
   if ('error' in parsed) return validationError(res, parsed.error);
-  const duplicate = requests.find(request =>
-    request.user_id === auth.user.id &&
-    ['DRAFT', 'ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status) &&
-    request.patient_reference?.toLowerCase() === parsed.value.patient_reference.toLowerCase() &&
-    request.hospital_name?.toLowerCase() === parsed.value.hospital_name.toLowerCase()
-  );
-  if (duplicate) return res.status(409).json({ error: 'A request for this patient reference and hospital already exists', request_id: duplicate.id });
+  const duplicate = duplicateActiveRequest(parsed.value);
+  if (duplicate && duplicate.user_id === auth.user.id) return res.json({ ...duplicate, reused: true });
+  if (duplicate) return res.status(409).json({ error: 'An active request already exists for these details', code: 'DUPLICATE_ACTIVE_REQUEST' });
 
   const now = new Date().toISOString();
   const request: BloodRequest = {
@@ -3613,6 +3998,7 @@ function responsePayload(response: DonorResponse, viewerId: string) {
   const requester = users.find(user => user.id === response.requester_id);
   const contactAllowed = ['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status) &&
     (viewerId === response.donor_id || viewerId === response.requester_id);
+  const followUp = donationFollowUps.find(item => item.response_id === response.id);
   return {
     ...response,
     request: request ? {
@@ -3623,6 +4009,7 @@ function responsePayload(response: DonorResponse, viewerId: string) {
     } : null,
     donor: donor ? { id: donor.id, name: donor.name, blood_group: donor.donor_profile?.blood_group, is_verified: donor.is_verified } : null,
     requester: requester ? { id: requester.id, name: requester.name, is_verified: requester.is_verified } : null,
+    follow_up: followUp ? donationFollowUpPayload(followUp, viewerId === response.donor_id ? 'DONOR' : 'REQUESTER') : null,
     ...(contactAllowed ? {
       donor_phone: donor?.phone,
       requester_contacts: request?.contacts || []
@@ -3664,7 +4051,7 @@ async function inviteDonorToRequest(request: BloodRequest, donorId: string) {
   };
   donorResponses.push(response);
   await saveToTable('common_responses', response);
-  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group} ${request.blood_component?.replaceAll('_', ' ').toLowerCase()} is needed at ${request.hospital_name}.`, `/profile/invitations`);
+  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group} ${request.blood_component?.replaceAll('_', ' ').toLowerCase()} is needed at ${request.hospital_name}.`, `/profile/responses`);
   return response;
 }
 
@@ -3695,6 +4082,19 @@ app.get('/api/me/invitations', async (req, res) => {
   res.json(responses.map(response => responsePayload(response, auth.user.id)));
 });
 
+app.get('/api/me/donation-follow-ups', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const items = [];
+  for (const followUp of donationFollowUps) {
+    const target = await followUpTarget(followUp);
+    const role = followUp.requester_id === auth.user.id ? 'REQUESTER' : target?.user?.id === auth.user.id ? 'DONOR' : null;
+    if (role) items.push(donationFollowUpPayload(followUp, role));
+  }
+  res.set('Cache-Control', 'private, no-store');
+  res.json(items.sort((a, b) => new Date(b.due_at).getTime() - new Date(a.due_at).getTime()));
+}));
+
 app.patch('/api/responses/:id', async (req, res) => {
   const auth = getCurrentAuth(req);
   const response = donorResponses.find(item => item.id === req.params.id);
@@ -3706,10 +4106,22 @@ app.patch('/api/responses/:id', async (req, res) => {
   if (!isOneOf(status, ['ACCEPTED', 'DECLINED', 'QUESTION', 'ARRIVED', 'DONATED', 'CANCELLED'] as const)) return validationError(res, 'Valid donor response is required');
   if (status === 'QUESTION' && !message) return validationError(res, 'A question is required');
   if (status === 'DONATED' && !['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status)) return res.status(409).json({ error: 'Accept the request before reporting a donation' });
+  if (status === 'DONATED') {
+    const request = requests.find(item => item.id === response.request_id);
+    if (!request) return res.status(404).json({ error: 'Request not found' });
+    const followUp = donationFollowUps.find(item => item.response_id === response.id)
+      || await createDonationFollowUp(request, {
+        id: response.id, kind: 'REVEAL', request_id: request.id, actor_id: response.requester_id,
+        donor_ref: `reg:${response.donor_id}`, donor_kind: 'REGISTERED', created_at: response.created_at
+      }, false);
+    const recorded = await recordDonationOutcome(followUp, 'DONOR', 'DONATED', new Date().toISOString().slice(0, 10));
+    if ('error' in recorded && !followUp.donor_outcome) return res.status(409).json({ error: recorded.error });
+    await notify(response.requester_id, 'DONOR_RESPONSE', 'Donor reported a donation', `${auth.user.name} updated their response.`, `/profile/responses`);
+    return res.json(responsePayload(response, auth.user.id));
+  }
   response.status = status;
   response.message = message || response.message;
   response.updated_at = new Date().toISOString();
-  if (status === 'DONATED') response.donor_confirmed_at = response.updated_at;
   await saveToTable('common_responses', response);
   const request = requests.find(item => item.id === response.request_id);
   if (request) await recomputeRequestProgress(request);
@@ -3725,36 +4137,18 @@ app.post('/api/responses/:id/confirm-donation', async (req, res) => {
   if (response.requester_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can confirm receipt' });
   if (!response.donor_confirmed_at) return res.status(409).json({ error: 'The donor must report the donation first' });
   if (!response.requester_confirmed_at) {
-    response.requester_confirmed_at = new Date().toISOString();
-    response.status = 'DONATED';
-    response.updated_at = response.requester_confirmed_at;
-    await saveToTable('common_responses', response);
-    const donor = users.find(user => user.id === response.donor_id);
     const request = requests.find(item => item.id === response.request_id);
-    if (donor?.donor_profile && request) {
-      const date = response.requester_confirmed_at.slice(0, 10);
-      const previousHistory = donor.donor_profile.donation_history || [];
-      donor.donor_profile.last_donation = {
-        kind: 'EXACT', date, reported_at: response.requester_confirmed_at
-      };
-      donor.donor_profile.last_donation_date = date;
-      donor.donor_profile.availability_status = 'NOT_AVAILABLE';
-      if (!previousHistory.some(record => record.id === response.id)) {
-        donor.donor_profile.donation_history = [...previousHistory, {
-          id: response.id,
-          date,
-          organization: request.hospital_name || 'Receiving hospital',
-          request_id: request.id
-        }];
-      }
-      const ledger = migrateDonationLedger(donor.donor_profile);
-      donor.donor_profile.donations_before_history = ledger.donations_before_history;
-      donor.donor_profile.donation_count = ledger.donation_count;
-      await saveToTable('common_users', donor);
-      await removeDonorFromAllPartitions(donor.id);
-      await recomputeRequestProgress(request);
-      await notify(donor.id, 'DONATION_CONFIRMED', 'Donation confirmed', `Your donation at ${request.hospital_name} was confirmed.`, '/profile/history');
+    if (!request) return res.status(404).json({ error: 'Request not found' });
+    const followUp = donationFollowUps.find(item => item.response_id === response.id)
+      || await createDonationFollowUp(request, {
+        id: response.id, kind: 'REVEAL', request_id: request.id, actor_id: response.requester_id,
+        donor_ref: `reg:${response.donor_id}`, donor_kind: 'REGISTERED', created_at: response.created_at
+      }, false);
+    if (!followUp.donor_outcome) {
+      await recordDonationOutcome(followUp, 'DONOR', 'DONATED', response.donor_confirmed_at.slice(0, 10));
     }
+    const recorded = await recordDonationOutcome(followUp, 'REQUESTER', 'DONATED');
+    if ('error' in recorded && !followUp.requester_outcome) return res.status(409).json({ error: recorded.error });
   }
   res.json(responsePayload(response, auth.user.id));
 });
@@ -3885,6 +4279,8 @@ app.get('/api/admin/overview', async (req, res) => {
       open_tickets: supportTickets.filter(ticket => ticket.status !== 'CLOSED').length,
       pending_directory_claims: pendingDirectoryClaims,
       confirmed_donations: donorResponses.filter(response => response.status === 'DONATED' && response.donor_confirmed_at && response.requester_confirmed_at).length,
+      failed_follow_up_reminders: donationFollowUps.filter(item => item.delivery.status === 'FAILED').length,
+      disputed_donations: donationFollowUps.filter(item => item.state === 'DISPUTED').length,
       pending_organizations: organizations.filter(item => item.status === 'PENDING').length,
       verified_organizations: organizations.filter(item => item.status === 'VERIFIED').length,
       published_community_posts: publishedCommunityPosts,
@@ -3901,6 +4297,7 @@ app.get('/api/admin/overview', async (req, res) => {
       environment: IS_PRODUCTION ? 'production' : 'development',
       uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000),
       sms_configured: isSmsConfigured(),
+      follow_up_sms_configured: isFollowUpSmsConfigured(),
       otp_bypass_enabled: isOtpBypassEnabled(),
       storage: 'lancedb',
       donation_interval_days: DONATION_INTERVAL_DAYS,
@@ -5066,6 +5463,7 @@ async function startServer() {
   await enforceExpiredRequests();
   await enforceStaleAvailability();
   await expireOtpChallenges();
+  await processDonationFollowUps();
   // Prepare the imported directory before reporting ready. It is otherwise
   // prepared lazily on first access, and after a schema change that means the
   // first donor search blocks behind a full-table migration while /ready has
@@ -5082,6 +5480,9 @@ async function startServer() {
     void enforceExpiredRequests();
     void enforceStaleAvailability();
     void expireOtpChallenges();
+    void processDonationFollowUps().catch(error => {
+      console.error('donation follow-up processing failed', error);
+    });
     void expireAnonymousContributions().catch(error => {
       console.error('anonymous contribution expiry failed', error);
     });

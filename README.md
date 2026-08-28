@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.99`
+Current version: `0.0.100`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -68,6 +68,12 @@ Refresh the district facility files from the public DGHS registry with:
   attempt budget, stops polling after mobile-network handoff, and cancels unsent
   replaced or expired jobs. The former `woven` provider name is accepted as a
   compatibility alias; public responses consistently say `messavo`.
+- Donation follow-ups use a separate automatic-send credential in
+  `SMS_FOLLOWUP_API_TOKEN` and a separate 32+ character
+  `FOLLOW_UP_LINK_SECRET`. A requester records the donor's SMS consent after
+  the call; without consent the same follow-up remains in-app. Reminder links
+  carry the private token only in the URL fragment and message text contains no
+  patient, blood-group, hospital, or request details.
 - A superadmin can turn on the persisted **OTP bypass test mode** outside
   production from
   **Operations → System**. While active, every phone-protected activity skips
@@ -83,7 +89,10 @@ Refresh the district facility files from the public DGHS registry with:
   Phone-verified, opted-in donors are ranked first and explicitly labelled before
   attributed public listings. Requesters can sort by recommendation, recent
   confirmation, location fit, donation total, contact reliability, or name,
-  and can limit results to the exact group or phone-verified profiles. Cards
+  and can limit results to the exact group or phone-verified profiles. Donors
+  tied on every active priority field are shuffled using an opaque stable
+  `order_seed`, avoiding repeated or missing results across pages; explicit
+  name sorting remains alphabetical. Cards
   explain area, facility, or current-time preference matches without exposing
   a donor's stored schedule. Every result stays masked until the protected
   request and one-at-a-time reveal workflow opens a contact. Opening a contact
@@ -122,7 +131,11 @@ Refresh the district facility files from the public DGHS registry with:
   collection, screening, and transfusion arrangements directly.
 - Requesters invite eligible donors privately. Donors can accept, decline,
   report arrival/donation, and reveal coordination contacts only after
-  acceptance. A donation counts only after requester confirmation.
+  acceptance. Every agreed donor receives one persisted follow-up timeline.
+  Donor and requester report independently; matching donation answers confirm
+  the record, conflicts become disputed, and requester-only answers never
+  change another person's profile. The request owner sees masked contacted
+  donors and next actions on the request page.
 - Set `ADMIN_PHONE` to a verified member's normalized Bangladesh phone to
   bootstrap the first superadmin. `/admin` is a capability-aware workspace for
   member status and staff roles, request/report/support/partner/claim queues,

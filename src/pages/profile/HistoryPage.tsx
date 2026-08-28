@@ -104,6 +104,8 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
       id: editingId || `manual-${Date.now()}`,
       date,
       organization: organization.trim(),
+      source: 'SELF_REPORTED',
+      confirmation_status: 'SELF_REPORTED',
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(requestId ? { request_id: requestId } : {})
     };
@@ -181,8 +183,8 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
               <li key={record.id} className="rounded-2xl border border-slate-200 p-4">
                 <div className="flex items-start gap-4">
                   <div className="mt-2 h-3 w-3 flex-shrink-0 rounded-full bg-primary" />
-                  <div className="min-w-0 flex-1"><p className="font-bold">{record.organization}</p><time className="text-sm text-slate-500" dateTime={record.date}>{new Date(`${record.date}T00:00:00`).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</time>{record.note && <p className="mt-2 text-sm text-slate-600"><span className="font-bold">Private note:</span> {record.note}</p>}{record.request_id && <Link to={`/request/${record.request_id}`} className="mt-2 inline-flex text-xs font-bold text-primary hover:underline">View linked Drop request</Link>}</div>
-                  <div className="flex flex-wrap justify-end gap-1"><button type="button" onClick={() => openShare(record)} aria-label={`Share donation at ${record.organization}`} className="p-2 text-primary hover:text-primary-dark"><Share2 className="h-4 w-4" /></button><button type="button" onClick={() => edit(record)} aria-label={`Edit donation at ${record.organization}`} className="p-2 text-slate-500 hover:text-slate-900"><Edit2 className="h-4 w-4" /></button><button type="button" disabled={saving} onClick={() => persist(records.filter(item => item.id !== record.id), 'Donation record deleted.')} aria-label={`Delete donation at ${record.organization}`} className="p-2 text-slate-400 hover:text-red-600 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></div>
+                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-bold">{record.organization}</p><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold uppercase text-slate-600">{(record.confirmation_status || 'SELF_REPORTED').replaceAll('_', ' ')}</span></div><time className="text-sm text-slate-500" dateTime={record.date}>{new Date(`${record.date}T00:00:00`).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</time>{record.note && <p className="mt-2 text-sm text-slate-600"><span className="font-bold">Private note:</span> {record.note}</p>}{record.request_id && <Link to={`/request/${record.request_id}`} className="mt-2 inline-flex text-xs font-bold text-primary hover:underline">View linked Drop request</Link>}</div>
+                  <div className="flex flex-wrap justify-end gap-1"><button type="button" onClick={() => openShare(record)} aria-label={`Share donation at ${record.organization}`} className="p-2 text-primary hover:text-primary-dark"><Share2 className="h-4 w-4" /></button>{record.source !== 'DROP_REQUEST' && <><button type="button" onClick={() => edit(record)} aria-label={`Edit donation at ${record.organization}`} className="p-2 text-slate-500 hover:text-slate-900"><Edit2 className="h-4 w-4" /></button><button type="button" disabled={saving} onClick={() => persist(records.filter(item => item.id !== record.id), 'Donation record deleted.')} aria-label={`Delete donation at ${record.organization}`} className="p-2 text-slate-400 hover:text-red-600 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></>}</div>
                 </div>
                 {sharingId === record.id && (
                   <form onSubmit={createShareDraft} className="mt-5 rounded-2xl border border-rose-200 bg-rose-50/60 p-4 sm:p-5">

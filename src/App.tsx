@@ -32,6 +32,7 @@ import RemoveListingPage from './pages/RemoveListingPage';
 import ContributeDonorPage from './pages/ContributeDonorPage';
 import DonorSearchPage from './pages/DonorSearchPage';
 import CallOutcomeGate from './components/CallOutcomeGate';
+import DonationFollowUpPage from './pages/DonationFollowUpPage';
 import { getSafeReturnTo } from './lib/navigation';
 
 const CommunityEditorPage = lazy(() => import('./pages/CommunityEditorPage'));
@@ -106,6 +107,7 @@ export default function App() {
             <Route path="/directory/:id" element={<LegacyClaimRedirect />} />
             <Route path="/c/:slug" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
             <Route path="/contribute" element={<ContributeDonorPage />} />
+            <Route path="/follow-up" element={<DonationFollowUpPage onAuthUpdate={fetchUser} />} />
             <Route path="/login" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile"><LoginPage onLogin={fetchUser} /></GuestOnlyRoute>} />
             <Route path="/register" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile/donor"><RegisterPage onLogin={fetchUser} /></GuestOnlyRoute>} />
             <Route path="/forgot-password" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile/security"><ForgotPasswordPage /></GuestOnlyRoute>} />
@@ -115,7 +117,8 @@ export default function App() {
               <Route path="donor" element={<DonorPage user={user} onUpdate={fetchUser} />} />
               <Route path="donor-requests" element={<DonorRequestsPage user={user} onUpdate={fetchUser} />} />
               <Route path="requests" element={<ProfileRequestsPage />} />
-              <Route path="invitations" element={<InvitationsPage user={user} />} />
+              <Route path="responses" element={<InvitationsPage user={user} />} />
+              <Route path="invitations" element={<Navigate to="/profile/responses" replace />} />
               <Route path="contact-reports" element={<ContactReportsPage user={user} onUpdate={fetchUser} />} />
               <Route path="history" element={<DeferredRoute label="Loading donation history…"><HistoryPage user={user} onUpdate={fetchUser} /></DeferredRoute>} />
               <Route path="security" element={<SecurityPage />} />
