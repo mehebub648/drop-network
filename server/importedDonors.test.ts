@@ -53,7 +53,7 @@ test('imported donors start unclaimed and never expose a raw phone publicly', ()
   const serialized = JSON.stringify(publicView);
   assert.equal(publicView.has_phone, true);
   assert.ok(!publicView.phone_masked.includes('61161'));
-  assert.equal(publicView.phone_masked, '+88019••••••96');
+  assert.equal(publicView.phone_masked, '+880196 * * * * * 96');
   assert.deepEqual(publicView.missing_fields, []);
   assert.equal(publicView.id, donor.public_id);
   assert.match(donor.claim_slug, /^[A-Za-z0-9_-]{12}$/);
@@ -103,7 +103,7 @@ test('the reveal projection adds the raw phone and keeps the masked one', () => 
   const donor = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
   const revealed = toRevealedImportedDonor(donor);
   assert.equal(revealed.phone, scraped.phone);
-  assert.equal(revealed.phone_masked, '+88019••••••96');
+  assert.equal(revealed.phone_masked, '+880196 * * * * * 96');
   // Everything the public projection guarantees still holds, because the
   // reveal is built on top of it rather than replacing it.
   assert.equal(revealed.id, donor.public_id);
@@ -123,7 +123,7 @@ test('legacy storage ids remain internal when public identity is hydrated', () =
 });
 
 test('masking keeps only the operator prefix and the last two digits', () => {
-  assert.equal(maskPhone('+8801712345678'), '+88017••••••78');
+  assert.equal(maskPhone('+8801712345678'), '+880171 * * * * * 78');
   assert.equal(maskPhone(''), '');
 });
 

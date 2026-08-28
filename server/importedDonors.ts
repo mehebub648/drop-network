@@ -262,7 +262,8 @@ export function maskPhone(phone: string) {
   if (!phone) return '';
   const local = phone.replace(/^\+880/, '');
   if (local.length < 6) return '';
-  return `+880${local.slice(0, 2)}${'•'.repeat(local.length - 4)}${local.slice(-2)}`;
+  const hidden = Array.from({ length: local.length - 5 }, () => '*').join(' ');
+  return `+880${local.slice(0, 3)} ${hidden} ${local.slice(-2)}`;
 }
 
 export type PublicImportedDonor = {
