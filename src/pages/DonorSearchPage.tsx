@@ -20,6 +20,7 @@ import { EmptyState } from '../components/ui';
 import {
   readSearchDraft,
   searchRequestPayload,
+  startsAfterBloodGroup,
   writeSearchDraft,
   type RequesterRole,
   type SearchDraft
@@ -80,7 +81,7 @@ export default function DonorSearchPage({
   const [gateOpen, setGateOpen] = useState(false);
   const [busyRef, setBusyRef] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
-  const nativeStart = searchParams.get('native_start') === '1';
+  const startWithLocation = startsAfterBloodGroup(searchParams);
   const [refineOpen, setRefineOpen] = useState(() => !(
     searchParams.get('blood_group') && searchParams.get('district') && searchParams.get('upazila')
   ));
@@ -257,7 +258,7 @@ export default function DonorSearchPage({
                 onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
                 onSubmit={runSearch}
                 submitting={loading}
-                initialStep={nativeStart && draft.blood_group ? 1 : 0}
+                initialStep={startWithLocation ? 1 : 0}
               />
             </div>
           ) : (

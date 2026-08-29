@@ -32,8 +32,6 @@ const QUESTIONS = [
   'Who are you?'
 ] as const;
 
-const STEP_LABELS = ['Blood', 'Location', 'Facility', 'You'] as const;
-
 const STEP_HELP = [
   'Choose the blood group the patient needs.',
   'Choose where the patient will receive blood.',
@@ -185,37 +183,15 @@ export default function SearchCriteriaForm({
 
   return (
     <form onSubmit={submit} className={`surface p-5 ${compact ? 'sm:p-6' : 'sm:p-7'}`}>
-      <div className="mb-5 border-b border-slate-100 pb-5">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">Donor search</p>
-          <p className="text-xs font-bold text-slate-500">Step {activeStep + 1} of {QUESTIONS.length}</p>
-        </div>
-        <ol className="grid grid-cols-4 gap-2" aria-label="Search progress">
-          {STEP_LABELS.map((label, index) => {
-            const complete = index < activeStep;
-            const current = index === activeStep;
-            return (
-              <li key={label}>
-                <button
-                  type="button"
-                  disabled={index > activeStep}
-                  aria-current={current ? 'step' : undefined}
-                  onClick={() => index <= activeStep && setActiveStep(index)}
-                  className={`w-full rounded-xl border px-1 py-2 text-center text-[10px] font-extrabold transition-colors sm:text-xs ${
-                    current
-                      ? 'border-primary bg-primary text-white'
-                      : complete
-                        ? 'border-rose-200 bg-rose-50 text-rose-800'
-                        : 'border-slate-200 bg-slate-50 text-slate-400'
-                  }`}
-                >
-                  <span className="block text-xs sm:inline">{complete ? '✓' : index + 1}</span>
-                  <span className="sm:ml-1">{label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+      <div className="mb-4 flex min-h-9 items-center justify-between gap-3">
+        <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">
+          {activeStep > 0 && value.blood_group ? `Finding ${value.blood_group} donors` : 'Donor search'}
+        </p>
+        {activeStep > 0 && value.blood_group && (
+          <button type="button" onClick={() => setActiveStep(0)} className="rounded-lg px-2 py-1.5 text-xs font-extrabold text-primary hover:bg-rose-50">
+            Change blood group
+          </button>
+        )}
       </div>
 
       <div
@@ -224,17 +200,6 @@ export default function SearchCriteriaForm({
       >
         <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
         <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{STEP_HELP[activeStep]}</p>
-
-        {activeStep > 0 && value.blood_group && (
-          <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
-            <p className="text-sm font-bold text-slate-800">
-              Blood group <span className="ml-1 text-base font-extrabold text-primary">{value.blood_group}</span>
-            </p>
-            <button type="button" onClick={() => setActiveStep(0)} className="min-h-9 rounded-lg px-3 text-xs font-extrabold text-primary hover:bg-white">
-              Change
-            </button>
-          </div>
-        )}
 
         {activeStep === 0 && (
           <fieldset className="mt-5">

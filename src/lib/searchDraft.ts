@@ -82,6 +82,15 @@ export function clearSearchDraft() {
   }
 }
 
+/** A blood-group-only link has already completed the first search question. */
+export function startsAfterBloodGroup(params: URLSearchParams) {
+  return Boolean(
+    params.get('blood_group')
+    && !params.get('district')
+    && !params.get('upazila')
+  );
+}
+
 export function hasPatientDetails(draft: SearchDraft) {
   const age = Number(draft.patient_age);
   return Boolean(
