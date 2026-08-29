@@ -32,6 +32,15 @@ const QUESTIONS = [
   'Who are you?'
 ] as const;
 
+const STEP_LABELS = ['Blood', 'Location', 'Facility', 'You'] as const;
+
+const STEP_HELP = [
+  'Choose the blood group the patient needs.',
+  'Choose where the patient will receive blood.',
+  'Enter the collection hospital or blood bank.',
+  'Tell donors whether you are the patient, a relative, or helping someone else.'
+] as const;
+
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase('en');
 }
@@ -48,7 +57,8 @@ export default function SearchCriteriaForm({
   submitting,
   submitLabel = 'Find donors',
   nextLabel = 'Continue',
-  compact = false
+  compact = false,
+  initialStep = 0
 }: {
   value: Criteria;
   onChange: (next: Criteria) => void;
@@ -57,15 +67,18 @@ export default function SearchCriteriaForm({
   submitLabel?: string;
   nextLabel?: string;
   compact?: boolean;
+  initialStep?: number;
 }) {
-  const [activeStep, setActiveStep] = useState(0);
+  const [activeStep, setActiveStep] = useState(() => Math.max(0, Math.min(QUESTIONS.length - 1, initialStep)));
   const [facilityOpen, setFacilityOpen] = useState(false);
   const [activeFacilityIndex, setActiveFacilityIndex] = useState(0);
   const [districtFacilities, setDistrictFacilities] = useState<RegisteredCollectionFacility[]>([]);
   const [facilityLoading, setFacilityLoading] = useState(false);
   const [facilityLoadFailed, setFacilityLoadFailed] = useState(false);
   const facilityListId = useId();
-  const question = QUESTIONS[activeStep];
+  const question = activeStep === 1 && value.blood_group
+    ? `Where is ${value.blood_group} blood needed?`
+    : QUESTIONS[activeStep];
   const upazilas = useMemo(() => getUpazilasForDistrict(value.district), [value.district]);
 
   useEffect(() => {
@@ -172,11 +185,56 @@ export default function SearchCriteriaForm({
 
   return (
     <form onSubmit={submit} className={`surface p-5 ${compact ? 'sm:p-6' : 'sm:p-7'}`}>
+      <div className="mb-5 border-b border-slate-100 pb-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">Donor search</p>
+          <p className="text-xs font-bold text-slate-500">Step {activeStep + 1} of {QUESTIONS.length}</p>
+        </div>
+        <ol className="grid grid-cols-4 gap-2" aria-label="Search progress">
+          {STEP_LABELS.map((label, index) => {
+            const complete = index < activeStep;
+            const current = index === activeStep;
+            return (
+              <li key={label}>
+                <button
+                  type="button"
+                  disabled={index > activeStep}
+                  aria-current={current ? 'step' : undefined}
+                  onClick={() => index <= activeStep && setActiveStep(index)}
+                  className={`w-full rounded-xl border px-1 py-2 text-center text-[10px] font-extrabold transition-colors sm:text-xs ${
+                    current
+                      ? 'border-primary bg-primary text-white'
+                      : complete
+                        ? 'border-rose-200 bg-rose-50 text-rose-800'
+                        : 'border-slate-200 bg-slate-50 text-slate-400'
+                  }`}
+                >
+                  <span className="block text-xs sm:inline">{complete ? '✓' : index + 1}</span>
+                  <span className="sm:ml-1">{label}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+
       <div
         key={activeStep}
-        className={`fade-in ${compact ? 'min-h-[8.5rem]' : 'min-h-[12rem] sm:min-h-[11rem]'}`}
+        className={`fade-in ${compact ? 'min-h-[8rem]' : 'min-h-[10rem]'}`}
       >
         <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
+        <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{STEP_HELP[activeStep]}</p>
+
+        {activeStep > 0 && value.blood_group && (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
+            <p className="text-sm font-bold text-slate-800">
+              Blood group <span className="ml-1 text-base font-extrabold text-primary">{value.blood_group}</span>
+            </p>
+            <button type="button" onClick={() => setActiveStep(0)} className="min-h-9 rounded-lg px-3 text-xs font-extrabold text-primary hover:bg-white">
+              Change
+            </button>
+          </div>
+        )}
 
         {activeStep === 0 && (
           <fieldset className="mt-5">

@@ -80,6 +80,7 @@ export default function DonorSearchPage({
   const [gateOpen, setGateOpen] = useState(false);
   const [busyRef, setBusyRef] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const nativeStart = searchParams.get('native_start') === '1';
   const [refineOpen, setRefineOpen] = useState(() => !(
     searchParams.get('blood_group') && searchParams.get('district') && searchParams.get('upazila')
   ));
@@ -256,6 +257,7 @@ export default function DonorSearchPage({
                 onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
                 onSubmit={runSearch}
                 submitting={loading}
+                initialStep={nativeStart && draft.blood_group ? 1 : 0}
               />
             </div>
           ) : (
@@ -436,16 +438,15 @@ export default function DonorSearchPage({
         </section>
       )}
 
-      <aside className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-7">
+      <aside className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 sm:p-5">
         <div className="flex gap-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
             <ShieldCheck className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <h2 className="font-extrabold text-slate-950">Search-only donor access</h2>
+            <h2 className="font-extrabold text-slate-950">Private donor search</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-              Drop has no browsable donor directory. Search is limited daily by account and IP to three districts,
-              three blood groups, and nine unique searches. Moving between pages of the same search does not use another search.
+              Donor numbers stay protected. You choose a donor first, then use the request flow when you need to contact them.
             </p>
           </div>
         </div>
