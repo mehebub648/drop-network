@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.107`
+Current application version: `0.0.108`
 
 ## Overview
 
@@ -66,12 +66,14 @@ Entry points:
 - `src/components/search/` holds the guided criteria form, combined district
   and upazila step, searchable facility combobox, shared requester-role picker,
   donor result card, and `RequestGate`. The gate reuses completed draft answers,
-  summarizes them with explicit Change actions, and splits patient, contact,
+  summarizes them with explicit Change actions, and splits patient, contacts,
   review, verification, required donor-profile basics, and an explicit
   availability choice into short stages. Age, weight, and donation experience
   stay in the full donor-profile editor instead of blocking onboarding. When
   onboarding begins from search, the donor's district and upazila are prefilled
   from the patient search but remain editable as the donor's home location.
+  Role-aware guidance identifies whose information belongs in every field, and
+  review keeps the patient, request owner, and donor contact visibly separate.
 - `src/components/DonorPreferencesFields.tsx` manages bounded preferred areas,
   facilities, travel willingness, and recurring Asia/Dhaka windows. The
   facility picker uses the same generated DGHS snapshot as request search.

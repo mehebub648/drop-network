@@ -2149,6 +2149,55 @@ body {
   background: #ffe4e6;
 }
 
+.request-data-guidance,
+.request-data-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 1rem;
+  border: 1px solid #fda4af;
+  border-radius: 0.9rem;
+  background: #fff1f2;
+  padding: 0.85rem 0.9rem;
+  color: #881337;
+}
+
+.request-data-guidance strong,
+.request-data-section strong {
+  font-size: 0.84rem;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.request-data-guidance span,
+.request-data-section span {
+  color: #9f1239;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.request-data-section {
+  margin-top: 1.1rem;
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.request-data-section span {
+  color: #64748b;
+}
+
+.request-data-section.is-contact {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.request-data-section.is-contact span {
+  color: #047857;
+}
+
 .request-context-summary,
 .request-review-card {
   display: flex;

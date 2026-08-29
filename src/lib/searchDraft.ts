@@ -94,8 +94,8 @@ export function hasPatientDetails(draft: SearchDraft) {
 }
 
 export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone = '') {
-  if (draft.requester_role === 'PATIENT') return true;
   const requesterPhone = draft.requester_phone.trim() || verifiedRequesterPhone.trim();
+  if (draft.requester_role === 'PATIENT') return Boolean(requesterPhone);
   if (draft.requester_role === 'RELATIVE') {
     return Boolean(draft.requester_name.trim() && requesterPhone && draft.requester_relation.trim());
   }

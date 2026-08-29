@@ -37,6 +37,8 @@ test('completed patient and requester sections can be skipped when a draft is re
   assert.equal(hasRequesterDetails(completeDraft({ requester_phone: '' }), '01800000000'), true);
   assert.equal(hasRequesterDetails(completeDraft({ contact_name: '' })), false);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT' })), true);
+  assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', requester_phone: '' })), false);
+  assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', requester_phone: '' }), '01800000000'), true);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'RELATIVE', requester_relation: '' })), false);
 });
 
