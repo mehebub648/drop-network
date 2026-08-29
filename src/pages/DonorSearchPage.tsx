@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
-  Building2,
   ChevronLeft,
   ChevronRight,
-  MapPin,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
-  UserRound,
   UserRoundSearch
 } from 'lucide-react';
 import { api, type SearchDonorCard } from '../lib/api';
@@ -237,13 +234,6 @@ export default function DonorSearchPage({
   };
 
   const donors = results ? [...results.registered, ...results.directory] : [];
-  const requesterLabel = draft.requester_role === 'PATIENT'
-    ? 'Patient'
-    : draft.requester_role === 'RELATIVE'
-      ? "Patient's relative"
-      : draft.requester_role === 'THIRD_PARTY'
-        ? 'Third-party volunteer'
-        : '';
 
   return (
     <div className="space-y-6 pb-8 sm:space-y-8">
@@ -273,24 +263,6 @@ export default function DonorSearchPage({
                     <h1 className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl lg:text-4xl">
                       Donors near {upazila}
                     </h1>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
-                        <MapPin className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                        {upazila}, {district}
-                      </span>
-                      {draft.collection_facility && (
-                        <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
-                          <Building2 className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                          {draft.collection_facility}
-                        </span>
-                      )}
-                      {requesterLabel && (
-                        <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700">
-                          <UserRound className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                          {requesterLabel}
-                        </span>
-                      )}
-                    </div>
                   </div>
                 </div>
               </div>
