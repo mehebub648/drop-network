@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Droplet, Edit2, Filter, Flag, Heart, Hospital, MapPin, MessageCircle, Phone, Plus, Search, Share2, Shield, Trash2, User as UserIcon, Users, Zap } from 'lucide-react';
+import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, MapPin, MessageCircle, Phone, Plus, Share2, Shield, Trash2, User as UserIcon, Users } from 'lucide-react';
 import { api, BROWSER_FINGERPRINT, type ContactedDonorSummary } from '../lib/api';
-import { BLOOD_GROUPS, compatibleDonorsFor, DONATION_INTERVAL_DAYS, getEligibility, getUrgency, URGENCY_ORDER } from '../lib/blood';
+import { compatibleDonorsFor } from '../lib/blood';
 import {
   loadRegisteredCollectionFacilities,
   type RegisteredCollectionFacility
@@ -222,15 +222,28 @@ export default function RequestDetailsPage({ user }: { user: any }) {
 
   const { request, matches } = data;
   const isOwner = (user && user.id === request.user_id) || request.user_id === BROWSER_FINGERPRINT;
+  const neededLabel = request.needed_by
+    ? new Date(request.needed_by).toLocaleDateString('en-GB')
+    : 'As soon as possible';
+  const componentLabel = (request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 fade-in">
-      <div className="flex items-center gap-4 pb-4 border-b border-slate-100">
-        <Link to="/requests" className="text-slate-400 hover:text-slate-900 transition-colors">
-          &larr; Back
-        </Link>
-        <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">Request Dashboard</h2>
-        {user && !isOwner && <button onClick={() => setReportTarget({ type: 'REQUEST', id: request.id })} className="ml-auto text-xs font-bold text-slate-500 hover:text-red-600 flex items-center gap-1"><Flag className="w-4 h-4" /> Report</button>}
+    <div className="mx-auto max-w-6xl space-y-6 fade-in">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            to="/requests"
+            aria-label="Back to blood requests"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-900"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Link>
+          <div className="min-w-0">
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary">Blood request</p>
+            <h2 className="truncate text-xl font-extrabold tracking-tight text-slate-950 md:text-2xl">Request details</h2>
+          </div>
+        </div>
+        {user && !isOwner && <button onClick={() => setReportTarget({ type: 'REQUEST', id: request.id })} className="inline-flex h-11 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"><Flag className="w-4 h-4" /> Report</button>}
       </div>
 
       {reportTarget && (
@@ -275,7 +288,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       )}
 
       {/* Main Request Header */}
-      <div className="theme-card p-6 md:p-8 bg-white border border-slate-200 shadow-sm relative overflow-hidden">
+      <section className="relative overflow-hidden rounded-[2rem] border border-rose-100 bg-gradient-to-br from-white via-white to-rose-50/70 p-5 shadow-[0_16px_48px_-32px_rgba(136,19,55,0.45)] md:p-8">
         {request.status === 'FULFILLED' && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
             <div className="w-16 h-16 bg-green-100 text-green-700 rounded-full flex items-center justify-center mb-4">
@@ -296,41 +309,23 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           </div>
         )}
 
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 relative z-0">
-          <div className="flex items-start gap-5">
-             <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center text-red-700 text-2xl md:text-3xl font-extrabold shadow-sm flex-shrink-0">
+        <div className="relative z-0 flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 items-start gap-4 md:gap-5">
+             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-red-100 bg-white text-2xl font-extrabold text-red-700 shadow-sm md:h-20 md:w-20 md:text-3xl">
                {request.blood_group}
              </div>
-             <div>
-                <div className="flex items-center gap-3 mb-1 flex-wrap">
-                  <span className="bg-green-100 text-green-800 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm border border-green-200">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div> Active
+             <div className="min-w-0 flex-1">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="flex items-center gap-1.5 rounded-full border border-green-200 bg-green-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-green-800">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span> {request.status === 'ACTIVE' ? 'Active' : request.status}
                   </span>
                   <UrgencyBadge neededBy={request.needed_by} />
-                  <span className="text-xs font-bold text-slate-400">ID: #{request.id.split('-')[1]}</span>
+                  <span className="text-[11px] font-bold text-slate-400">#{request.id.split('-')[1]}</span>
                 </div>
-                <h1 className="mt-2 flex items-start gap-2 text-xl font-bold text-slate-900 md:text-2xl">
-                  <Hospital className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
-                  <span>{request.hospital_name || 'Collection facility'}</span>
+                <h1 className="text-xl font-extrabold leading-tight text-slate-950 md:text-3xl">
+                  {request.hospital_name || 'Collection facility'}
                 </h1>
-                <p className="mt-2 flex items-start gap-1.5 text-sm font-semibold text-slate-600">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-                  <span>{request.hospital_address ? `${request.hospital_address}, ` : ''}{request.location.area_name}</span>
-                </p>
-                {request.ward && <p className="mt-1 pl-5 text-xs font-semibold text-slate-500">{request.ward}</p>}
-                 <p className="text-sm font-semibold text-slate-500 flex items-center gap-1.5 mt-2">
-                   <Calendar className="w-4 h-4 text-primary" />
-                   Needed: <span className="text-slate-700">{request.needed_by ? new Date(request.needed_by).toLocaleDateString() : 'ASAP'}</span>
-                 </p>
-                 <p className="text-sm font-semibold text-slate-600 mt-2">
-                   {request.units_required || 1} unit(s) · {(request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase()}
-                 </p>
-                <p className="text-xs font-semibold text-slate-500 mt-2 flex items-center gap-1.5 flex-wrap">
-                  <Droplet className="w-3.5 h-3.5 text-primary" /> Compatible donors:
-                  {compatibleDonorsFor(request.blood_group).map(g => (
-                    <span key={g} className="px-1.5 py-0.5 bg-white border border-red-100 rounded-md text-red-700 font-bold text-[11px]">{g}</span>
-                  ))}
-                </p>
+                {request.ward && <p className="mt-1 text-sm font-semibold text-slate-500">{request.ward}</p>}
              </div>
           </div>
           {isOwner && (
@@ -342,24 +337,57 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           )}
         </div>
 
+        <div className="relative z-0 mt-6 grid grid-cols-2 gap-2.5 border-t border-rose-100 pt-5 sm:grid-cols-4">
+          <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
+            <MapPin className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Location</p>
+            <p className="mt-1 text-sm font-bold text-slate-800">{request.hospital_address || request.location.area_name}</p>
+            {request.hospital_address && <p className="mt-0.5 text-xs font-semibold text-slate-500">{request.location.area_name}</p>}
+          </div>
+          <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
+            <Calendar className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Needed by</p>
+            <p className="mt-1 text-sm font-bold text-slate-800">{neededLabel}</p>
+          </div>
+          <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
+            <Droplet className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Amount</p>
+            <p className="mt-1 text-sm font-bold text-slate-800">{request.units_required || 1} unit · {componentLabel}</p>
+          </div>
+          <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
+            <Users className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Compatible</p>
+            <p className="mt-1 flex flex-wrap gap-1">
+              {compatibleDonorsFor(request.blood_group).map(g => (
+                <span key={g} className="rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] font-extrabold text-red-700">{g}</span>
+              ))}
+            </p>
+          </div>
+        </div>
+
         {request.status === 'ACTIVE' && (
-          <div className="flex items-center gap-3 mt-6 pt-5 border-t border-slate-100 relative z-0">
-            <span className="text-xs font-bold uppercase tracking-widest text-slate-400 mr-1">Spread the word</span>
-            <button
-              onClick={() => shareRequest('whatsapp')}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm transition-colors flex items-center gap-2"
-            >
-              <Share2 className="w-4 h-4" /> WhatsApp
-            </button>
-            <button
-              onClick={() => shareRequest('copy')}
-              className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold text-sm transition-colors flex items-center gap-2"
-            >
-              <Copy className="w-4 h-4" /> {copied ? 'Copied!' : 'Copy link'}
-            </button>
+          <div className="relative z-0 mt-5 flex flex-col gap-3 rounded-2xl border border-rose-100 bg-white/85 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="px-1">
+              <p className="text-sm font-extrabold text-slate-900">Help this request reach donors</p>
+              <p className="text-xs font-medium text-slate-500">Share only the public request link.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:flex">
+              <button
+                onClick={() => shareRequest('whatsapp')}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-green-700"
+              >
+                <Share2 className="w-4 h-4" /> WhatsApp
+              </button>
+              <button
+                onClick={() => shareRequest('copy')}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <Copy className="w-4 h-4" /> {copied ? 'Copied!' : 'Copy link'}
+              </button>
+            </div>
           </div>
         )}
-      </div>
+      </section>
 
       {isOwner && (
         <section className="theme-card border border-slate-100 p-6 shadow-sm">
@@ -371,14 +399,17 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       )}
 
       {/* Patient & Contact Details Section */}
-      <div className="theme-card p-6 border border-slate-100 shadow-sm relative">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900">
-            <UserIcon className="w-5 h-5 text-primary" /> Patient & Contact Info
-          </h3>
+      <section className="theme-card relative border border-slate-100 p-5 shadow-sm md:p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+              <UserIcon className="w-5 h-5 text-primary" /> Who is this request for?
+            </h3>
+            <p className="mt-1 text-sm font-medium text-slate-500">Patient and requester details for coordination.</p>
+          </div>
           {isOwner && !isEditing && (
-            <button onClick={() => setIsEditing(true)} className="text-sm font-bold text-slate-500 hover:text-slate-900 flex items-center gap-1">
-              <Edit2 className="w-4 h-4" /> Edit Details
+            <button onClick={() => setIsEditing(true)} className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-xl px-3 text-sm font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+              <Edit2 className="w-4 h-4" /> Edit
             </button>
           )}
         </div>
@@ -520,35 +551,35 @@ export default function RequestDetailsPage({ user }: { user: any }) {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 fade-in">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Patient Name</p>
-              <p className="font-semibold text-slate-900">{request.patient_name || 'Not specified'}</p>
+          <div className="grid grid-cols-1 gap-3 fade-in sm:grid-cols-3">
+            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
+              <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Patient</p>
+              <p className="font-bold text-slate-900">{request.patient_name || 'Name not provided'}</p>
             </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Requested By</p>
-              <p className="font-semibold text-slate-900">{request.requester_name || 'Anonymous'}</p>
+            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
+              <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Requested by</p>
+              <p className="font-bold text-slate-900">{request.requester_name || 'Anonymous'}</p>
             </div>
-            <div className="sm:col-span-2">
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Needed By</p>
-              <p className="font-semibold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-slate-400" />
-                {request.needed_by ? new Date(request.needed_by).toLocaleDateString('en-GB') : 'As soon as possible'}
+            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
+              <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Needed by</p>
+              <p className="flex items-center gap-2 font-bold text-slate-900">
+                <Calendar className="w-4 h-4 text-primary" />
+                {neededLabel}
               </p>
             </div>
-            
-            <div className="sm:col-span-2 border-t border-slate-100 pt-4 mt-2">
-               <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Contact Details</p>
+
+            <div className="mt-1 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 sm:col-span-3">
                {request.contacts === undefined ? (
-                 <p className="text-sm font-medium text-slate-500 italic">
-                   Contact details are shared only after a donor response is accepted.
-                 </p>
+                 <div className="flex items-start gap-3">
+                   <Shield className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
+                   <div><p className="text-sm font-extrabold text-emerald-900">Contact details are protected</p><p className="mt-0.5 text-sm font-medium text-emerald-800/80">They appear only after a donor response is accepted.</p></div>
+                 </div>
                ) : request.contacts.length === 0 && (
-                 <p className="text-sm font-medium text-slate-500 italic">No secondary contacts provided. Respond through normal channels to reveal primary phone number.</p>
+                 <p className="text-sm font-medium text-emerald-900">No secondary contacts provided. Respond through the request to reveal the primary number.</p>
                )}
-               <div className="grid gap-3">
+               <div className="grid gap-3 empty:hidden">
                  {request.contacts?.map((c: any, i: number) => (
-                   <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                   <div key={i} className="flex flex-col justify-between rounded-xl border border-emerald-100 bg-white p-3 sm:flex-row sm:items-center">
                      <div>
                        <span className="text-[10px] uppercase font-extrabold tracking-widest text-slate-400">{c.type}</span>
                        <p className="font-bold text-slate-900">{c.name}</p>
@@ -562,17 +593,26 @@ export default function RequestDetailsPage({ user }: { user: any }) {
             </div>
           </div>
         )}
-      </div>
+      </section>
 
       {/* Potential Donors Section */}
-      <div className="space-y-4 pt-4">
-        <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900">
-           <Users className="w-5 h-5 text-primary" /> Potential Donors Nearby ({matches.length})
-        </h3>
+      <section className="space-y-4">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+              <Users className="w-5 h-5 text-primary" /> Donor options
+            </h3>
+            <p className="mt-1 text-sm font-medium text-slate-500">Available donors near this request.</p>
+          </div>
+          <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-extrabold text-primary">{matches.length} nearby</span>
+        </div>
         {matches.length === 0 ? (
-          <div className="theme-card p-10 text-center border border-slate-100 shadow-sm bg-slate-50/50">
-            <Activity className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-700 font-bold text-lg">No donors are currently available in this specific area.</p>
+          <div className="theme-card flex flex-col gap-4 border border-slate-100 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><Activity className="h-5 w-5" /></div>
+              <div><p className="font-extrabold text-slate-900">No nearby donor is available yet</p><p className="mt-1 text-sm font-medium text-slate-500">Sharing this request can help it reach someone suitable.</p></div>
+            </div>
+            {request.status === 'ACTIVE' && <button onClick={() => shareRequest('whatsapp')} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-bold text-white hover:bg-green-700"><Share2 className="h-4 w-4" /> Share request</button>}
           </div>
         ) : (
           <div className="grid gap-4">
@@ -606,17 +646,20 @@ export default function RequestDetailsPage({ user }: { user: any }) {
             ))}
           </div>
         )}
-      </div>
+      </section>
 
       {/* Discussion / Comments Section */}
-      <div className="theme-card p-6 border border-slate-100 shadow-sm mt-8">
-        <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900 mb-6">
-          <MessageCircle className="w-5 h-5 text-primary" /> Discussion & Updates
-        </h3>
+      <section className="theme-card border border-slate-100 p-5 shadow-sm md:p-6">
+        <div className="mb-5">
+          <h3 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+            <MessageCircle className="w-5 h-5 text-primary" /> Updates & questions
+          </h3>
+          <p className="mt-1 text-sm font-medium text-slate-500">Share useful public updates about this request.</p>
+        </div>
         
-        <div className="space-y-5 mb-8">
+        <div className="mb-5 space-y-5">
           {(!request.comments || request.comments.length === 0) ? (
-            <p className="text-slate-500 text-sm font-medium text-center py-4 italic">No comments yet. Be the first to ask a question or provide an update!</p>
+            <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">No updates yet.</p>
           ) : (
             request.comments.map((c: any) => (
               <div key={c.id} className="flex gap-4">
@@ -644,17 +687,17 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           )}
         </div>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 border-t border-slate-100 pt-5">
           {!user && (
             <input 
               type="text" 
               value={anonName}
               onChange={e => setAnonName(e.target.value)}
               placeholder="Your Name (required)"
-              className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-primary focus:ring-4 focus:ring-rose-100 text-sm font-medium outline-none transition-all w-[240px]"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none transition-all focus:border-primary focus:bg-white focus:ring-4 focus:ring-rose-100 sm:w-[240px]"
             />
           )}
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <input 
               type="text" 
               value={newComment} 
@@ -663,13 +706,13 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-primary focus:ring-4 focus:ring-rose-100 text-sm font-medium outline-none transition-all"
               onKeyDown={e => e.key === 'Enter' && submitComment()}
             />
-            <button onClick={submitComment} className="px-5 py-3 bg-primary text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform shadow-sm hover:bg-primary-dark">
+            <button onClick={submitComment} className="min-h-11 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white shadow-sm transition-transform hover:bg-primary-dark active:scale-[0.98]">
               Post
             </button>
           </div>
           {!user && <p className="text-xs text-slate-500 font-medium">Commenting anonymously. Max 3/min. <Link to="/login" className="text-primary hover:underline">Log in</Link> for unlimited messaging.</p>}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
