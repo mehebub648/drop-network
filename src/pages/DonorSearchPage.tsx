@@ -336,6 +336,7 @@ export default function DonorSearchPage({
                   onSubmit={runSearch}
                   submitting={loading}
                   submitLabel="Update donor matches"
+                  compact
                 />
               </div>
             </div>

@@ -196,15 +196,34 @@ export default function SearchCriteriaForm({
 
       <div
         key={activeStep}
-        className={`fade-in ${compact ? 'min-h-[8rem]' : 'min-h-[10rem]'}`}
+        className={`fade-in ${compact ? '' : 'min-h-[10rem]'}`}
       >
-        <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
-        <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{STEP_HELP[activeStep]}</p>
+        {(!compact || activeStep > 0) && (
+          <>
+            <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
+            <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{STEP_HELP[activeStep]}</p>
+          </>
+        )}
 
-        {activeStep === 0 && (
+        {activeStep === 0 && compact && (
+          <label className="block text-sm font-extrabold text-slate-800">
+            Blood group needed
+            <select
+              aria-label="Blood group needed"
+              value={value.blood_group}
+              onChange={event => onChange({ ...value, blood_group: event.target.value })}
+              className="input mt-1.5"
+            >
+              <option value="">Select blood group</option>
+              {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
+            </select>
+          </label>
+        )}
+
+        {activeStep === 0 && !compact && (
           <fieldset className="mt-5">
             <legend className="sr-only">Blood group</legend>
-            <div className={`grid grid-cols-4 gap-2 ${compact ? '' : 'sm:grid-cols-8'}`}>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
               {BLOOD_GROUPS.map(group => {
                 const selected = value.blood_group === group;
                 return (
