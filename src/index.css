@@ -2059,51 +2059,6 @@ body {
   line-height: 1.65;
 }
 
-.request-gate-progress {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin: 1.1rem 0 0;
-}
-
-.request-gate-progress li {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.55rem;
-  border-radius: 0.75rem;
-  background: #f8fafc;
-  padding: 0.55rem 0.65rem;
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
-.request-gate-progress li span {
-  display: inline-flex;
-  width: 1.65rem;
-  height: 1.65rem;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #cbd5e1;
-  border-radius: 999px;
-  background: white;
-  font-size: 0.68rem;
-}
-
-.request-gate-progress li.is-current {
-  background: #fff1f2;
-  color: #9f1239;
-}
-
-.request-gate-progress li.is-current span,
-.request-gate-progress li.is-complete span {
-  border-color: #be123c;
-  background: #be123c;
-  color: white;
-}
-
 .requester-role-summary {
   display: flex;
   align-items: center;
@@ -2149,7 +2104,6 @@ body {
   background: #ffe4e6;
 }
 
-.request-data-guidance,
 .request-data-section {
   display: flex;
   flex-direction: column;
@@ -2162,14 +2116,12 @@ body {
   color: #881337;
 }
 
-.request-data-guidance strong,
 .request-data-section strong {
   font-size: 0.84rem;
   font-weight: 850;
   line-height: 1.35;
 }
 
-.request-data-guidance span,
 .request-data-section span {
   color: #9f1239;
   font-size: 0.75rem;
@@ -2491,11 +2443,6 @@ body {
 
   .call-outcome-footer .primary-button {
     width: 100%;
-  }
-
-  .request-gate-progress li {
-    justify-content: center;
-    padding-inline: 0.4rem;
   }
 
   .dialog-actions {

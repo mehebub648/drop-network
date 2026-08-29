@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.110`
+Current application version: `0.0.111`
 
 ## Overview
 

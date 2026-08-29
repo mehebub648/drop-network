@@ -472,7 +472,6 @@ export default function DonorSearchPage({
           draft={draft}
           onDraftChange={updateDraft}
           user={user}
-          donorName={selected.name}
           onClose={() => setGateOpen(false)}
           onEditSearch={() => {
             setGateOpen(false);

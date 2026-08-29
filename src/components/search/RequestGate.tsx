@@ -40,8 +40,7 @@ export default function RequestGate({
   user,
   onClose,
   onEditSearch,
-  onReady,
-  donorName
+  onReady
 }: {
   draft: SearchDraft;
   onDraftChange: (next: SearchDraft) => void;
@@ -50,7 +49,6 @@ export default function RequestGate({
   onEditSearch: () => void;
   /** Called once a session exists and the details are complete. */
   onReady: () => Promise<void>;
-  donorName: string;
 }) {
   const [step, setStep] = useState<Step>(() => {
     if (!draft.requester_role) return 'role';
@@ -212,12 +210,6 @@ export default function RequestGate({
   };
 
   const role = draft.requester_role;
-  const requestProgressStep: RequestStep | null = step === 'role'
-    ? null
-    : step === 'patient' || step === 'requester' || step === 'review'
-      ? step
-      : null;
-  const progressIndex = requestProgressStep === 'patient' ? 0 : requestProgressStep === 'requester' ? 1 : 2;
   const roleLabel = role === 'PATIENT'
     ? "I'm the patient"
     : role === 'RELATIVE'
@@ -235,21 +227,6 @@ export default function RequestGate({
         ? `${draft.contact_name} · ${draft.requester_relation}`
         : `${draft.patient_name} · Patient`;
   const donorContactPhone = role === 'THIRD_PARTY' ? draft.contact_phone : accountPhone;
-  const patientGuidance = role === 'PATIENT'
-    ? {
-        title: 'Enter your own patient details below',
-        body: 'You selected “I’m the patient,” so these fields are about you.'
-      }
-    : role === 'RELATIVE'
-      ? {
-          title: 'Enter the patient’s details — not your own',
-          body: 'We’ll ask for your name, relationship, and contact number in the next step.'
-        }
-      : {
-          title: 'Enter the patient’s details — not your own',
-          body: 'Your volunteer account and the number donors should call are handled separately next.'
-        };
-
   const editRole = (returnStep: RequestStep) => {
     setRoleReturnStep(returnStep);
     setError('');
@@ -282,25 +259,8 @@ export default function RequestGate({
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
           <span className="dialog-icon">
-            {step === 'role' || requestProgressStep ? <HeartPulse className="h-6 w-6" aria-hidden="true" /> : <ShieldCheck className="h-6 w-6" aria-hidden="true" />}
+            {step === 'role' || step === 'patient' || step === 'requester' || step === 'review' ? <HeartPulse className="h-6 w-6" aria-hidden="true" /> : <ShieldCheck className="h-6 w-6" aria-hidden="true" />}
           </span>
-
-        {requestProgressStep && (
-          <ol className="request-gate-progress" aria-label="Request details progress">
-            <li aria-current={progressIndex === 0 ? 'step' : undefined} className={progressIndex === 0 ? 'is-current' : 'is-complete'}>
-              <span>1</span>
-              Patient
-            </li>
-            <li aria-current={progressIndex === 1 ? 'step' : undefined} className={progressIndex === 1 ? 'is-current' : progressIndex > 1 ? 'is-complete' : ''}>
-              <span>2</span>
-              Contacts
-            </li>
-            <li aria-current={progressIndex === 2 ? 'step' : undefined} className={progressIndex === 2 ? 'is-current' : ''}>
-              <span>3</span>
-              Review
-            </li>
-          </ol>
-        )}
 
         {step === 'role' && (
           <form onSubmit={submitRole} className="fade-in">
@@ -322,13 +282,8 @@ export default function RequestGate({
 
         {step === 'patient' && (
           <form onSubmit={submitPatient} className="fade-in">
-            <h2 id="request-gate-title">About the patient</h2>
-            <p>{donorName} and other matching donors will use these patient details to understand the request.</p>
-
-            <div className="request-data-guidance" role="note">
-              <strong>{patientGuidance.title}</strong>
-              <span>{patientGuidance.body}</span>
-            </div>
+            <h2 id="request-gate-title">{role === 'PATIENT' ? 'Your patient details' : 'Patient details'}</h2>
+            {role !== 'PATIENT' && <p>Enter the patient’s information, not your own.</p>}
 
             <div className="request-context-summary">
               <span>
