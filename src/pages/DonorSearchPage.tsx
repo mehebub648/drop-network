@@ -23,6 +23,7 @@ import {
   type SearchDraft
 } from '../lib/searchDraft';
 import { announcePendingCall } from '../lib/callOutcome';
+import { BLOOD_GROUPS } from '../lib/blood';
 
 type SearchResponse = {
   order_seed: string;
@@ -233,6 +234,15 @@ export default function DonorSearchPage({
     setSearchParams(next);
   };
 
+  const updateBloodGroup = (value: string) => {
+    updateDraft({ ...draft, blood_group: value, request_id: undefined });
+    const next = new URLSearchParams(searchParams);
+    next.delete('page');
+    next.set('blood_group', value);
+    next.set('order_seed', crypto.randomUUID().replaceAll('-', ''));
+    setSearchParams(next);
+  };
+
   const donors = results ? [...results.registered, ...results.directory] : [];
 
   return (
@@ -313,10 +323,15 @@ export default function DonorSearchPage({
           {refineOpen && (
             <div id="sort-and-refine-panel" className="fade-in mb-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
               {!loading && !error && results && (
-                <div className="grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:items-end">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,1fr)_minmax(10rem,0.7fr)_auto_auto] lg:items-end">
                   <label className="text-sm font-extrabold text-slate-800">Sort donor matches
                     <select value={sort} onChange={event => updateSearchOption('sort', event.target.value)} className="input mt-1.5">
                       {SEARCH_SORTS.map(option => <option key={option} value={option}>{SORT_LABELS[option]}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-sm font-extrabold text-slate-800">Blood group needed
+                    <select value={criteria.blood_group} onChange={event => updateBloodGroup(event.target.value)} className="input mt-1.5">
+                      {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
                     </select>
                   </label>
                   <label className="flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
@@ -337,6 +352,7 @@ export default function DonorSearchPage({
                   submitting={loading}
                   submitLabel="Update donor matches"
                   compact
+                  skipBloodGroup
                 />
               </div>
             </div>

@@ -56,7 +56,8 @@ export default function SearchCriteriaForm({
   submitLabel = 'Find donors',
   nextLabel = 'Continue',
   compact = false,
-  initialStep = 0
+  initialStep = 0,
+  skipBloodGroup = false
 }: {
   value: Criteria;
   onChange: (next: Criteria) => void;
@@ -66,8 +67,10 @@ export default function SearchCriteriaForm({
   nextLabel?: string;
   compact?: boolean;
   initialStep?: number;
+  skipBloodGroup?: boolean;
 }) {
-  const [activeStep, setActiveStep] = useState(() => Math.max(0, Math.min(QUESTIONS.length - 1, initialStep)));
+  const firstStep = skipBloodGroup ? 1 : Math.max(0, Math.min(QUESTIONS.length - 1, initialStep));
+  const [activeStep, setActiveStep] = useState(firstStep);
   const [facilityOpen, setFacilityOpen] = useState(false);
   const [activeFacilityIndex, setActiveFacilityIndex] = useState(0);
   const [districtFacilities, setDistrictFacilities] = useState<RegisteredCollectionFacility[]>([]);
@@ -187,7 +190,7 @@ export default function SearchCriteriaForm({
         <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">
           {activeStep > 0 && value.blood_group ? `Finding ${value.blood_group} donors` : 'Donor search'}
         </p>
-        {activeStep > 0 && value.blood_group && (
+        {activeStep > 0 && value.blood_group && !skipBloodGroup && (
           <button type="button" onClick={() => setActiveStep(0)} className="rounded-lg px-2 py-1.5 text-xs font-extrabold text-primary hover:bg-rose-50">
             Change blood group
           </button>
@@ -198,29 +201,10 @@ export default function SearchCriteriaForm({
         key={activeStep}
         className={`fade-in ${compact ? '' : 'min-h-[10rem]'}`}
       >
-        {(!compact || activeStep > 0) && (
-          <>
-            <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
-            <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{STEP_HELP[activeStep]}</p>
-          </>
-        )}
+        <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
+        <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{STEP_HELP[activeStep]}</p>
 
-        {activeStep === 0 && compact && (
-          <label className="block text-sm font-extrabold text-slate-800">
-            Blood group needed
-            <select
-              aria-label="Blood group needed"
-              value={value.blood_group}
-              onChange={event => onChange({ ...value, blood_group: event.target.value })}
-              className="input mt-1.5"
-            >
-              <option value="">Select blood group</option>
-              {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
-            </select>
-          </label>
-        )}
-
-        {activeStep === 0 && !compact && (
+        {activeStep === 0 && (
           <fieldset className="mt-5">
             <legend className="sr-only">Blood group</legend>
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
@@ -399,7 +383,7 @@ export default function SearchCriteriaForm({
       </div>
 
       <div className={`${compact ? 'mt-4' : 'mt-5'} flex items-center gap-3`}>
-        {activeStep > 0 && (
+        {activeStep > firstStep && (
           <button
             type="button"
             data-search-navigation
