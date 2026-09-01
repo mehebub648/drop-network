@@ -88,6 +88,7 @@ import { isTrustedCookieMutation, secureBearerMatches } from './httpSecurity';
 import { migrateDonationLedger, resolveDonationLedger } from './donationLedger';
 import { findDuplicateActiveRequest } from './requestDeduplication';
 import { REQUEST_REASONS, type RequestReason } from './requestReasons';
+import { buildRequestFeedPage } from './requestFeed';
 import {
   DONATION_OUTCOMES,
   deriveFollowUpState,
@@ -5302,15 +5303,23 @@ app.get('/api/requests', async (req, res) => {
   const urgentOnly = req.query.urgent === 'true';
   const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
   const limit = Math.min(50, Math.max(1, Math.floor(Number(req.query.limit) || 20)));
-  const sortedRequests = requests
-    .filter(r => r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED')
-    .filter(r => !group || r.blood_group === group)
-    .filter(r => !district || r.location.area_name === district)
-    .filter(r => !urgentOnly || !r.needed_by || new Date(r.needed_by).getTime() - Date.now() <= 72 * 3_600_000)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  const total = sortedRequests.length;
-  const items = sortedRequests.slice((page - 1) * limit, page * limit).map(publicRequestPayload);
-  res.json({ items, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+  const feed = buildRequestFeedPage(
+    requests.filter(r => r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED'),
+    { bloodGroup: group, district, urgentOnly },
+    page,
+    limit
+  );
+  res.json({
+    items: feed.items.map(publicRequestPayload),
+    other_items: feed.otherItems.map(publicRequestPayload),
+    pagination: {
+      page,
+      limit,
+      total: feed.total,
+      exact_total: feed.exactTotal,
+      pages: feed.pages
+    }
+  });
 });
 
 app.get('/api/requests/:id', async (req, res) => {

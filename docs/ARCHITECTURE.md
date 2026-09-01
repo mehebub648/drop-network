@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.123`
+Current application version: `0.0.124`
 
 ## Overview
 
@@ -136,20 +136,25 @@ Entry points:
 
 Routes:
 
-- `/` is a search-led landing page with the complete blood group, location,
-  collection-facility, and requester-role flow presented in short stages. The
-  location stage keeps district and upazila together, with upazila enabled only
-  after its district is known. Only the current stage, its answers, and
-  Back/Search controls are visible. It persists that guided draft into `/directory`, alongside
-  network context, privacy explanations, request preparation, safety guidance,
-  and FAQs elsewhere on the page.
-- `/requests` uses a compact divided list of bounded public blood-request pages.
-  Blood-group, district, urgency, and page filters remain persisted in the URL;
-  mobile filters open in an accessible bottom sheet while desktop filters stay
-  inline, and every list row exposes the collection facility and needed date.
+- `/` is a task-first donor search page. Blood group, location,
+  collection-facility, and requester-role questions remain staged, but metrics,
+  promotional sections, and repeated explanations have been removed. The draft
+  persists into `/directory`; Requests and donor-profile actions remain compact
+  secondary links.
+- `/requests` uses a compact divided list of 20-request public pages. Blood
+  group, district, urgency, and page filters remain persisted in the URL. A
+  signed-in donor's blood group and district become defaults only when the URL
+  has no explicit filter state. The shared filter button opens an accessible
+  mobile bottom sheet or desktop dialog. When fewer than ten exact matches
+  exist, a quieter “Other emergency blood” section fills the page with active
+  requests ranked by shared blood group, district, urgency, then age.
 - `/request/:id` shows one request, its collection facility and address, donor
   matches, patient/contact details, and comments. Owners can correct the
   collection location while a request is active.
+- Member pages use a desktop side rail and an accessible mobile section sheet.
+  Android WebView documents receive a document-start marker that removes global
+  website chrome and applies app spacing before React paints, without changing
+  routes, sessions, or authorization behavior.
 - `/login` logs in an existing user by password or a purpose-bound Messavo
   verification code, including passwordless accounts created by a claim.
 - `/register` verifies a Bangladesh mobile by OTP before creating an account.
@@ -479,7 +484,9 @@ API routes:
   and `directory_donors` are `null` and the landing page renders a dash rather
   than a count that omits the directory.
 - `GET /api/requests` lists active, non-expired public blood requests without
-  requester phone or contact details and returns bounded pagination metadata.
+  requester phone or contact details. Results are oldest first and returned in
+  20-request pages. Sparse filtered pages separate proximity-ranked fallbacks
+  into `other_items`; pagination includes `exact_total` for the primary count.
 - `GET /api/requests/:id` publishes the chosen coordination contacts while a
   request is active or partially fulfilled, then removes them from public
   responses after fulfilment, cancellation, or expiry. Patient identity and

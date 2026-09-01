@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.123`
+Current version: `0.0.124`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -107,6 +107,10 @@ Refresh the district facility files from the public DGHS registry with:
   at most three districts, three blood groups, and nine unique searches per
   Dhaka day; paging an unchanged search does not consume another unique search,
   while the standard API rate limit still applies.
+- Public and member pages use task-first responsive layouts. Mobile account
+  sections open from an accessible bottom sheet instead of a horizontal rail,
+  task routes omit the promotional footer, and Android embedded workflows hide
+  website chrome before first paint while retaining the shared security gates.
 - Registered donors can self-report an exact last-donation date, an approximate
   number of days, months, or years ago, or that they have never donated, plus a
   lifetime donation count. Search cards show that bounded summary when present;
@@ -149,8 +153,9 @@ Refresh the district facility files from the public DGHS registry with:
   actions require a reason and are audited.
 - Members can recover passwords by verified SMS, inspect and revoke signed-in
   devices, download a server-side data export, and anonymize their account.
-- Public requests use server-side filters and bounded pagination with URL-based
-  filter state. `/health` and `/ready` verify the critical static files plus the
+- Public requests use profile-aware server-side filters and 20-request pages
+  with URL-based filter state. Sparse exact results are followed by a quieter,
+  proximity-ranked emergency section. `/health` and `/ready` verify the critical static files plus the
   hashed JavaScript/CSS referenced by the production shell, while
   bearer-protected Prometheus-format `/metrics` supports monitoring.
 - The responsive interface uses a doodle-led cartoon system on a clean white

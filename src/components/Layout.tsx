@@ -9,6 +9,13 @@ const navigation: Array<{ label: string; to: string; end?: boolean }> = [
   { label: 'About', to: '/about' }
 ];
 
+const supportNavigation = [
+  { label: 'Safety', to: '/safety' },
+  { label: 'Contact', to: '/contact' },
+  { label: 'Privacy', to: '/privacy' },
+  { label: 'Terms', to: '/terms' }
+];
+
 const desktopLink = ({ isActive }: { isActive: boolean }) =>
   `inline-flex min-h-10 items-center rounded-full px-3.5 text-sm font-bold transition-colors ${
     isActive
@@ -37,6 +44,9 @@ export default function Layout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const { pathname } = useLocation();
+  const isAndroidEmbed = typeof document !== 'undefined' && document.documentElement.dataset.dropAndroid === 'true';
+  const isTaskRoute = /^(\/directory|\/requests|\/request\/|\/community(?:\/|$)|\/profile(?:\/|$)|\/login$|\/register$|\/forgot-password$|\/follow-up$|\/c\/|\/contribute$|\/admin(?:\/|$))/.test(pathname);
+  const hideFooter = isAndroidEmbed;
   const isStaff = Boolean(
     user?.staff_role ||
       user?.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role))
@@ -58,7 +68,7 @@ export default function Layout({
   }, [mobileOpen]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-transparent">
+    <div className={`min-h-screen flex flex-col bg-transparent ${isAndroidEmbed ? 'android-embedded-layout' : ''}`}>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-3 focus:font-bold focus:text-slate-950 focus:shadow-lg"
@@ -230,6 +240,13 @@ export default function Layout({
                 </>
               )}
             </div>
+            <nav className="mobile-support-navigation mx-auto mt-3 grid grid-cols-4 gap-1 border-t border-slate-100 pt-3" aria-label="Help and legal">
+              {supportNavigation.map(item => (
+                <Link key={item.to} to={item.to} className="flex min-h-11 items-center justify-center rounded-xl px-2 text-center text-xs font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-900">
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
           </div>
         )}
       </header>
@@ -250,7 +267,7 @@ export default function Layout({
         </div>
         {children}
       </main>
-      <Footer />
+      {!hideFooter && <Footer compact={isTaskRoute} />}
     </div>
   );
 }

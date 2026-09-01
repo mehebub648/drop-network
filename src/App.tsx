@@ -93,7 +93,7 @@ export default function App() {
             {/* Posting a request is no longer a separate form: searching for
                 donors is how a request is created. Old links land on search. */}
             <Route path="/request/new" element={<Navigate to="/directory" replace />} />
-            <Route path="/requests" element={<RequestsPage />} />
+            <Route path="/requests" element={<RequestsPage user={user} authLoading={loading} />} />
             <Route path="/community" element={<CommunityRoute><CommunityPage user={user} /></CommunityRoute>} />
             <Route path="/community/new" element={loading ? <RouteLoading /> : user ? <CommunityRoute><CommunityEditorPage /></CommunityRoute> : <Navigate to="/login?returnTo=%2Fcommunity%2Fnew" replace />} />
             <Route path="/community/:slug" element={<CommunityRoute><CommunityPostPage user={user} /></CommunityRoute>} />

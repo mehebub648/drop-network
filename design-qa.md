@@ -1,25 +1,35 @@
-# Contact Modal Design QA
+# Responsive Experience Design QA
 
-## Scope
+## Coverage
 
-Third-party requester contact step, review step, and account verification handoff.
+- Desktop: 1440 × 900 public, information, request, community, and member
+  route families.
+- Mobile web: 390 × 844 across the same route families.
+- Android: 1080 × 2400 emulator captures for Find, Requests, Community, and
+  Account, plus the protected request coordination transition.
 
-## Evidence
+## Release findings
 
-- Reference: `C:\Users\Mehebub\AppData\Local\Temp\codex-clipboard-499bc9a3-83d9-4164-b06f-03bd2c0cefae.png`
-- Desktop implementation: `C:\Users\Mehebub\.codex\visualizations\2026\08\20\01a01fdf-6814-7710-be5b-31ec743afb42\drop-contact-separated-desktop.png`
-- Mobile implementation: `C:\Users\Mehebub\.codex\visualizations\2026\08\20\01a01fdf-6814-7710-be5b-31ec743afb42\drop-contact-separated-mobile.png`
-- Combined comparison: `C:\Users\Mehebub\.codex\visualizations\2026\08\20\01a01fdf-6814-7710-be5b-31ec743afb42\drop-contact-reference-comparison.png`
-- Verification handoff: `C:\Users\Mehebub\.codex\visualizations\2026\08\20\01a01fdf-6814-7710-be5b-31ec743afb42\drop-coordinator-number-verification.png`
+- The landing page begins with donor search, followed by a compact live-network
+  strip and expandable contact, safety, privacy, and donation guidance. The
+  same capabilities remain available without repeating promotional sections.
+- Requests uses a single count/filter row, 20-result pages, profile defaults,
+  and a visually quieter fallback section for related emergencies.
+- Task, account, authentication, and protected workflow routes do not inherit
+  the promotional footer. The remaining mobile information footer is compact.
+- Member identity appears once; mobile navigation opens from an accessible
+  account-section sheet instead of an overflowing horizontal rail.
+- Community preview and post management are collapsed secondary actions rather
+  than competing with the editor.
+- Information and legal pages retain their content while adding a compact
+  contents navigator and denser mobile reading layout.
+- Android embedded documents are marked before React paints, suppressing
+  duplicated site chrome and desktop spacing without changing security gates.
 
-## Checks
+## Release gate
 
-- The existing icon, progress, type, color, border, radius, and button system is preserved.
-- Coordinator name, coordinator account contact, contact-owner choice, and patient-side contact are clearly labeled and ordered.
-- The coordinator and patient-side numbers remain separate on the review screen.
-- The coordinator number is prefilled on the verification screen and remains editable before an OTP is sent.
-- A 390 by 844 mobile viewport keeps the modal scrollable, fields full-width, and actions accessible without horizontal overflow.
-- A 1029 by 937 desktop viewport keeps the dialog centered, contained, and free of overlapping or clipped controls.
-- No OTP, account, request, donor reveal, or persistent production test record was created during QA.
+GitHub CI must pass before deployment. Hosted desktop/mobile checks must show
+no horizontal overflow, failed requests, console errors, broken keyboard focus,
+or unresolved P0–P2 visual defect. Any failure stops or rolls back the release.
 
-final result: passed
+final result: release-gated

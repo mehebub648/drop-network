@@ -49,7 +49,24 @@ const trustItems = [
   }
 ];
 
-export default function Footer() {
+export default function Footer({ compact = false }: { compact?: boolean }) {
+  if (compact) {
+    return (
+      <footer className="site-footer site-footer-compact">
+        <div className="site-footer-inner mx-auto flex flex-col items-center justify-between gap-3 px-4 py-4 text-xs text-slate-500 sm:flex-row sm:px-6">
+          <p>© {new Date().getFullYear()} Drop Network</p>
+          <nav className="flex flex-wrap items-center justify-center gap-x-4" aria-label="Help and legal">
+            <Link to="/about">About</Link>
+            <Link to="/safety">Safety</Link>
+            <Link to="/contact">Contact</Link>
+            <Link to="/privacy">Privacy</Link>
+            <Link to="/terms">Terms</Link>
+          </nav>
+        </div>
+      </footer>
+    );
+  }
+
   return (
     <footer className="site-footer relative mt-14">
       <div className="site-footer-inner mx-auto px-4 py-9 sm:px-6 sm:py-11">

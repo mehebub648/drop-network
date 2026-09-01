@@ -213,14 +213,11 @@ export default function CommunityEditorPage() {
         <Link to="/community" className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-primary">
           <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Community
         </Link>
-        <p className="mt-4 text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Member publishing</p>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Share something useful</h1>
-        <p className="mt-3 text-base leading-7 text-slate-600">
-          Write a real donation story or responsible health suggestion. Published posts receive a permanent public page that search engines can index.
-        </p>
+        <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Create a post</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Share a donation story or responsible health guidance without private details.</p>
       </header>
 
-      <form onSubmit={submit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+      <form onSubmit={submit} className="community-editor-form space-y-4">
         <div className="theme-card border border-slate-100 p-5 sm:p-8">
           <fieldset disabled={submitting}>
             <legend className="text-sm font-extrabold text-slate-950">Choose a post type</legend>
@@ -359,24 +356,22 @@ export default function CommunityEditorPage() {
           </button>
         </div>
 
-        <aside className="theme-card border border-slate-100 p-5 sm:p-7 lg:sticky lg:top-28">
-          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-slate-400">Safe preview</p>
+        <details className="theme-card border border-slate-100 p-5 sm:p-7">
+          <summary className="min-h-11 cursor-pointer font-extrabold text-slate-900">Preview post</summary>
           <h2 className="mt-2 break-words text-2xl font-extrabold tracking-tight text-slate-950">{title.trim() || 'Your title will appear here'}</h2>
           <p className="mt-2 text-xs font-bold text-rose-800">{communityPostTypeLabel(type)}</p>
           <div className="mt-5 border-t border-slate-100 pt-5">
             {body.trim() ? <MarkdownContent markdown={body} className="text-sm" /> : <p className="text-sm leading-6 text-slate-400">Start writing to preview the safely rendered Markdown.</p>}
           </div>
-        </aside>
+        </details>
       </form>
 
-      <section aria-labelledby="my-community-posts" className="border-t border-slate-200 pt-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h2 id="my-community-posts" className="text-2xl font-extrabold tracking-tight text-slate-950">Your posts</h2>
-            <p className="mt-1 text-sm text-slate-500">Drafts are private. Published posts stay public until you delete them.</p>
-          </div>
-          {!ownerLoading && <span className="text-sm font-bold text-slate-500">{ownerPosts.total} total</span>}
-        </div>
+      <details className="community-owner-posts border-t border-slate-200 pt-5">
+        <summary id="my-community-posts" className="flex min-h-12 cursor-pointer items-center justify-between gap-4 text-xl font-extrabold text-slate-950">
+          Your posts
+          {!ownerLoading && <span className="text-sm font-bold text-slate-500">{ownerPosts.total}</span>}
+        </summary>
+        <div className="pt-1">
 
         {ownerLoading ? (
           <div className="mt-5 h-28 animate-pulse rounded-2xl bg-slate-100" role="status"><span className="sr-only">Loading your posts…</span></div>
@@ -438,7 +433,8 @@ export default function CommunityEditorPage() {
             </button>
           </nav>
         )}
-      </section>
+        </div>
+      </details>
     </div>
   );
 }
