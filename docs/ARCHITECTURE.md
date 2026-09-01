@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.122`
+Current application version: `0.0.123`
 
 ## Overview
 
@@ -143,9 +143,10 @@ Routes:
   Back/Search controls are visible. It persists that guided draft into `/directory`, alongside
   network context, privacy explanations, request preparation, safety guidance,
   and FAQs elsewhere on the page.
-- `/requests` lists bounded pages of public blood requests with server-side
-  blood-group/district/urgency filters persisted in the URL and makes the
-  collection facility visible on each request card.
+- `/requests` uses a compact divided list of bounded public blood-request pages.
+  Blood-group, district, urgency, and page filters remain persisted in the URL;
+  mobile filters open in an accessible bottom sheet while desktop filters stay
+  inline, and every list row exposes the collection facility and needed date.
 - `/request/:id` shows one request, its collection facility and address, donor
   matches, patient/contact details, and comments. Owners can correct the
   collection location while a request is active.
