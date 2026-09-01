@@ -60,6 +60,7 @@
     "vite": "^6.4.3"
   },
   "overrides": {
+    "browserslist": "4.28.7",
     "postcss": "8.5.25"
   }
 }
