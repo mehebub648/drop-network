@@ -15,7 +15,18 @@ export const SEARCH_DRAFT_KEY = 'drop_search_flow_v1';
 
 export type RequesterRole = 'PATIENT' | 'RELATIVE' | 'THIRD_PARTY';
 export type NeededWindow = 'WITHIN_HOURS' | 'TODAY' | 'WITHIN_2_3_DAYS' | 'PLANNED';
-export type BloodComponent = 'WHOLE_BLOOD' | 'RED_CELLS' | 'PLATELETS' | 'PLASMA';
+export type PatientSex = 'MALE' | 'FEMALE';
+export type BloodComponent =
+  | 'WHOLE_BLOOD'
+  | 'RED_CELLS'
+  | 'PLATELETS'
+  | 'PLASMA'
+  | 'APHERESIS_PLATELETS'
+  | 'CRYOPRECIPITATE'
+  | 'WASHED_RED_CELLS'
+  | 'IRRADIATED_RED_CELLS'
+  | 'GRANULOCYTES'
+  | 'OTHER_COMPONENT';
 
 export type SearchDraft = {
   blood_group: string;
@@ -24,7 +35,7 @@ export type SearchDraft = {
   collection_facility: string;
   collection_facility_code?: string;
   requester_role: RequesterRole | '';
-  patient_title: 'MR' | 'MST' | '';
+  patient_sex: PatientSex | '';
   patient_name: string;
   patient_age: string;
   blood_component: BloodComponent | '';
@@ -49,7 +60,7 @@ export const EMPTY_DRAFT: SearchDraft = {
   upazila: '',
   collection_facility: '',
   requester_role: '',
-  patient_title: '',
+  patient_sex: '',
   patient_name: '',
   patient_age: '',
   blood_component: '',
@@ -69,9 +80,22 @@ export function readSearchDraft(): SearchDraft {
   try {
     const stored = localStorage.getItem(SEARCH_DRAFT_KEY);
     if (!stored) return { ...EMPTY_DRAFT };
+    const parsed = JSON.parse(stored) as Partial<SearchDraft> & { patient_title?: string };
+    const { patient_title: legacyPatientTitle, ...storedDraft } = parsed;
+    const legacySex = legacyPatientTitle === 'MR'
+      ? 'MALE'
+      : legacyPatientTitle === 'MST'
+        ? 'FEMALE'
+        : '';
     // Merging onto the empty draft means a stored value from an older shape
-    // loads with the missing fields blank instead of crashing the page.
-    return { ...EMPTY_DRAFT, ...JSON.parse(stored) };
+    // loads with the missing fields blank instead of crashing the page. The
+    // former honorific field is read once as gender so an interrupted request
+    // survives this release without continuing to store titles.
+    return {
+      ...EMPTY_DRAFT,
+      ...storedDraft,
+      patient_sex: storedDraft.patient_sex || legacySex
+    };
   } catch {
     return { ...EMPTY_DRAFT };
   }
@@ -102,21 +126,30 @@ export function startsAfterBloodGroup(params: URLSearchParams) {
   );
 }
 
-export function hasPatientDetails(draft: SearchDraft) {
+export function hasPatientIdentity(draft: SearchDraft) {
   const age = Number(draft.patient_age);
-  const units = Number(draft.units_required);
   return Boolean(
-    draft.patient_title &&
+    draft.patient_sex &&
     draft.patient_name.trim() &&
     Number.isInteger(age) &&
     age >= 1 &&
-    age <= 120 &&
+    age <= 120
+  );
+}
+
+export function hasPatientNeed(draft: SearchDraft) {
+  const units = Number(draft.units_required);
+  return Boolean(
     draft.blood_component &&
     Number.isInteger(units) &&
     units >= 1 &&
-    units <= 20 &&
+    units <= 10 &&
     draft.request_reason
   );
+}
+
+export function hasPatientDetails(draft: SearchDraft) {
+  return hasPatientIdentity(draft) && hasPatientNeed(draft);
 }
 
 export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone = '') {
@@ -161,7 +194,7 @@ export function searchRequestPayload(draft: SearchDraft) {
     collection_facility: draft.collection_facility,
     collection_facility_code: draft.collection_facility_code,
     requester_role: draft.requester_role,
-    patient_title: draft.patient_title,
+    patient_sex: draft.patient_sex,
     patient_name: draft.patient_name,
     patient_age: Number(draft.patient_age),
     blood_component: draft.blood_component,

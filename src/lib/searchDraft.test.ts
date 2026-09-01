@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   EMPTY_DRAFT,
   hasPatientDetails,
+  hasPatientIdentity,
+  hasPatientNeed,
   hasRequesterDetails,
   searchRequestPayload,
   startsAfterBloodGroup,
@@ -16,7 +18,7 @@ const completeDraft = (patch: Partial<SearchDraft> = {}): SearchDraft => ({
   upazila: 'Meherpur Sadar',
   collection_facility: 'Meherpur General Hospital',
   requester_role: 'THIRD_PARTY',
-  patient_title: 'MR',
+  patient_sex: 'MALE',
   patient_name: 'Patient Name',
   patient_age: '32',
   blood_component: 'WHOLE_BLOOD',
@@ -41,10 +43,14 @@ test('a fresh app handoff skips the already selected blood group without stored 
 
 test('completed patient and requester sections can be skipped when a draft is reopened', () => {
   assert.equal(hasPatientDetails(completeDraft()), true);
+  assert.equal(hasPatientIdentity(completeDraft()), true);
+  assert.equal(hasPatientNeed(completeDraft()), true);
+  assert.equal(hasPatientIdentity(completeDraft({ patient_sex: '' })), false);
   assert.equal(hasPatientDetails(completeDraft({ patient_age: '0' })), false);
   assert.equal(hasPatientDetails(completeDraft({ patient_name: ' ' })), false);
   assert.equal(hasPatientDetails(completeDraft({ blood_component: '' })), false);
   assert.equal(hasPatientDetails(completeDraft({ units_required: '0' })), false);
+  assert.equal(hasPatientDetails(completeDraft({ units_required: '11' })), false);
   assert.equal(hasPatientDetails(completeDraft({ request_reason: '' })), false);
 
   assert.equal(hasRequesterDetails(completeDraft()), true);
@@ -68,6 +74,7 @@ test('request payload omits stale contact fields after changing to patient', () 
   assert.equal('requester_phone' in payload, false);
   assert.equal(payload.blood_component, 'WHOLE_BLOOD');
   assert.equal(payload.units_required, 2);
+  assert.equal(payload.patient_sex, 'MALE');
   assert.equal(payload.request_reason, 'SURGERY');
   assert.equal(payload.request_reason_details, undefined);
 });

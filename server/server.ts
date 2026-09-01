@@ -129,7 +129,18 @@ const contributionFingerprintAttempts = new Map<string, number[]>();
 const REQUEST_STATUSES = ['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'] as const;
 const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
 const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
-const BLOOD_COMPONENTS = ['WHOLE_BLOOD', 'RED_CELLS', 'PLATELETS', 'PLASMA'] as const;
+const BLOOD_COMPONENTS = [
+  'WHOLE_BLOOD',
+  'RED_CELLS',
+  'PLATELETS',
+  'PLASMA',
+  'APHERESIS_PLATELETS',
+  'CRYOPRECIPITATE',
+  'WASHED_RED_CELLS',
+  'IRRADIATED_RED_CELLS',
+  'GRANULOCYTES',
+  'OTHER_COMPONENT'
+] as const;
 const REQUESTER_RELATIONSHIPS = ['SELF', 'FAMILY', 'FRIEND', 'HOSPITAL_STAFF', 'VOLUNTEER', 'OTHER'] as const;
 const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
 // SIGN_IN serves the blood request flow, where the requester gives a phone
@@ -355,6 +366,7 @@ type Comment = {
 
 const REQUESTER_ROLES = ['PATIENT', 'RELATIVE', 'THIRD_PARTY'] as const;
 const PATIENT_TITLES = ['MR', 'MST'] as const;
+const PATIENT_SEXES = ['MALE', 'FEMALE'] as const;
 const CONTACT_OWNERS = ['PATIENT', 'RELATIVE'] as const;
 // Coarse timing, because a requester in a corridor cannot give a timestamp but
 // can say how soon. Mapped to a `needed_by` so urgency stays meaningful.
@@ -3326,12 +3338,19 @@ const REQUESTER_ROLE_RELATIONSHIPS: Record<(typeof REQUESTER_ROLES)[number], (ty
 function parseSearchRequest(body: Record<string, unknown>, requesterPhone: string) {
   const blood_group = body.blood_group;
   const blood_component = body.blood_component;
-  const units_required = parsePositiveInteger(body.units_required);
+  const units_required = parsePositiveInteger(body.units_required, 10);
   const request_reason = body.request_reason;
   const districtName = cleanString(body.district, 80);
   const location = districtName ? getLocationByName(districtName) : null;
   const requester_role = body.requester_role;
-  const patient_title = body.patient_title;
+  const legacyPatientTitle = body.patient_title;
+  const patient_sex = isOneOf(body.patient_sex, PATIENT_SEXES)
+    ? body.patient_sex
+    : legacyPatientTitle === 'MR'
+      ? 'MALE'
+      : legacyPatientTitle === 'MST'
+        ? 'FEMALE'
+        : undefined;
   const patient_name = cleanString(body.patient_name, 120);
   const patient_age = parseOptionalInteger(body.patient_age, 0, 120);
   const collection_facility = cleanString(body.collection_facility, 160);
@@ -3347,7 +3366,7 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return { error: 'Valid blood group is required' } as const;
   if (!isOneOf(blood_component, BLOOD_COMPONENTS)) return { error: 'Valid blood component is required' } as const;
-  if (!units_required) return { error: 'Units required must be between 1 and 20' } as const;
+  if (!units_required) return { error: 'Bags needed must be between 1 and 10' } as const;
   if (!isOneOf(request_reason, REQUEST_REASONS)) return { error: 'Reason blood is needed is required' } as const;
   const request_reason_details = request_reason === 'OTHER' ? optionalCleanString(body.request_reason_details, 160) : undefined;
   if (!location) return { error: 'Valid Bangladesh district is required' } as const;
@@ -3355,7 +3374,7 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
   if (!upazila) return { error: 'Choose an upazila that belongs to the selected district' } as const;
   if (!collection_facility) return { error: 'Where the blood will be collected is required' } as const;
   if (!isOneOf(requester_role, REQUESTER_ROLES)) return { error: 'Say whether you are the patient, a relative, or a volunteer' } as const;
-  if (!isOneOf(patient_title, PATIENT_TITLES)) return { error: 'Patient title is required' } as const;
+  if (!patient_sex) return { error: 'Patient gender is required' } as const;
   if (!patient_name) return { error: "The patient's name is required" } as const;
   if (!patient_age) return { error: "The patient's age must be between 1 and 120" } as const;
   if (needed_window === null) return { error: 'Choose a valid time frame' } as const;
@@ -3400,8 +3419,7 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
       request_reason_details,
       hospital_name: collection_facility,
       collection_facility_code,
-      patient_title,
-      patient_sex: patient_title === 'MR' ? ('MALE' as const) : ('FEMALE' as const),
+      patient_sex,
       patient_name,
       patient_age,
       requester_role,

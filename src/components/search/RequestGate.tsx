@@ -7,10 +7,12 @@ import { BLOOD_GROUPS } from '../../lib/blood';
 import { BD_LOCATION_NAMES, getLocationByName } from '../../lib/locations';
 import { getUpazilasForDistrict } from '../../lib/upazilas';
 import {
-  hasPatientDetails,
+  hasPatientIdentity,
+  hasPatientNeed,
   hasRequesterDetails,
   type BloodComponent,
   type NeededWindow,
+  type PatientSex,
   type SearchDraft
 } from '../../lib/searchDraft';
 import { requestReasonLabel } from '../../lib/requestReasons';
@@ -18,7 +20,8 @@ import ModalPortal from '../ModalPortal';
 import RequestReasonCombobox from './RequestReasonCombobox';
 import RequesterRolePicker from './RequesterRolePicker';
 
-type RequestStep = 'patient' | 'requester' | 'review';
+type PatientStep = 'patient-identity' | 'patient-need';
+type RequestStep = PatientStep | 'requester' | 'review';
 type Step = 'role' | RequestStep | 'phone' | 'code' | 'password' | 'signup' | 'signup-donor';
 
 const NEEDED_WINDOWS: Array<{ value: NeededWindow; label: string }> = [
@@ -29,10 +32,16 @@ const NEEDED_WINDOWS: Array<{ value: NeededWindow; label: string }> = [
 ];
 
 const BLOOD_COMPONENTS: Array<{ value: BloodComponent; label: string }> = [
+  { value: 'RED_CELLS', label: 'Packed red blood cells (PRBC)' },
   { value: 'WHOLE_BLOOD', label: 'Whole blood' },
-  { value: 'RED_CELLS', label: 'Red cells' },
-  { value: 'PLATELETS', label: 'Platelets' },
-  { value: 'PLASMA', label: 'Plasma' }
+  { value: 'PLATELETS', label: 'Platelet concentrate' },
+  { value: 'PLASMA', label: 'Fresh frozen plasma (FFP)' },
+  { value: 'APHERESIS_PLATELETS', label: 'Single-donor platelets (SDP)' },
+  { value: 'CRYOPRECIPITATE', label: 'Cryoprecipitate' },
+  { value: 'WASHED_RED_CELLS', label: 'Washed red blood cells' },
+  { value: 'IRRADIATED_RED_CELLS', label: 'Irradiated red blood cells' },
+  { value: 'GRANULOCYTES', label: 'Granulocytes' },
+  { value: 'OTHER_COMPONENT', label: 'Other doctor-specified component' }
 ];
 
 /**
@@ -62,11 +71,12 @@ export default function RequestGate({
 }) {
   const [step, setStep] = useState<Step>(() => {
     if (!draft.requester_role) return 'role';
-    if (!hasPatientDetails(draft)) return 'patient';
+    if (!hasPatientIdentity(draft)) return 'patient-identity';
+    if (!hasPatientNeed(draft)) return 'patient-need';
     if (!hasRequesterDetails(draft, user?.phone)) return 'requester';
     return 'review';
   });
-  const [roleReturnStep, setRoleReturnStep] = useState<RequestStep>('patient');
+  const [roleReturnStep, setRoleReturnStep] = useState<RequestStep>('patient-identity');
   const [phone, setPhone] = useState(() => draft.requester_phone || user?.phone || '');
   const [code, setCode] = useState('');
   const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
@@ -107,9 +117,16 @@ export default function RequestGate({
     }
   };
 
-  const submitPatient = (event: FormEvent) => {
+  const submitPatientIdentity = (event: FormEvent) => {
     event.preventDefault();
-    if (!hasPatientDetails(draft)) return setError('Choose a reason from the list and complete every required field.');
+    if (!hasPatientIdentity(draft)) return setError('Enter the patient’s gender, age, and full name.');
+    setError('');
+    setStep('patient-need');
+  };
+
+  const submitPatientNeed = (event: FormEvent) => {
+    event.preventDefault();
+    if (!hasPatientNeed(draft)) return setError('Choose the number of bags, blood component, and reason.');
     setError('');
     setStep('requester');
   };
@@ -122,7 +139,8 @@ export default function RequestGate({
 
   const submitReview = (event: FormEvent) => {
     event.preventDefault();
-    if (!hasPatientDetails(draft)) return setStep('patient');
+    if (!hasPatientIdentity(draft)) return setStep('patient-identity');
+    if (!hasPatientNeed(draft)) return setStep('patient-need');
     if (!hasRequesterDetails(draft, user?.phone)) return setStep('requester');
     if (!consent) return setError('Confirm you may share these details before continuing.');
     setError('');
@@ -226,7 +244,8 @@ export default function RequestGate({
     : role === 'RELATIVE'
       ? "I'm the patient's relative"
       : "I'm a third-party volunteer";
-  const patientLabel = `${draft.patient_title === 'MR' ? 'Mr.' : 'Mst.'} ${draft.patient_name}`.trim();
+  const patientLabel = draft.patient_name.trim();
+  const patientSexLabel = draft.patient_sex === 'MALE' ? 'Male' : draft.patient_sex === 'FEMALE' ? 'Female' : '';
   const neededWindowLabel = NEEDED_WINDOWS.find(option => option.value === draft.needed_window)?.label || 'As soon as possible';
   const componentLabel = BLOOD_COMPONENTS.find(option => option.value === draft.blood_component)?.label || '';
   const reasonLabel = requestReasonLabel(draft.request_reason);
@@ -245,6 +264,27 @@ export default function RequestGate({
     setError('');
     setStep('role');
   };
+
+  const patientContext = (returnStep: PatientStep) => (
+    <>
+      <div className="request-context-summary">
+        <span>
+          <small>Already provided</small>
+          <strong>{draft.blood_group} · {draft.upazila}, {draft.district}</strong>
+          <span>{draft.collection_facility}</span>
+        </span>
+        <button type="button" onClick={onEditSearch}>Change search</button>
+      </div>
+
+      <div className="requester-role-summary">
+        <span>
+          <small>Who you are</small>
+          <strong>{roleLabel}</strong>
+        </span>
+        <button type="button" onClick={() => editRole(returnStep)}>Change</button>
+      </div>
+    </>
+  );
 
   const changeRequesterRole = (requesterRole: SearchDraft['requester_role']) => {
     const next: Partial<SearchDraft> = { requester_role: requesterRole };
@@ -272,7 +312,7 @@ export default function RequestGate({
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
           <span className="dialog-icon">
-            {step === 'role' || step === 'patient' || step === 'requester' || step === 'review' ? <HeartPulse className="h-6 w-6" aria-hidden="true" /> : <ShieldCheck className="h-6 w-6" aria-hidden="true" />}
+            {step === 'role' || step.startsWith('patient-') || step === 'requester' || step === 'review' ? <HeartPulse className="h-6 w-6" aria-hidden="true" /> : <ShieldCheck className="h-6 w-6" aria-hidden="true" />}
           </span>
 
         {step === 'role' && (
@@ -293,35 +333,23 @@ export default function RequestGate({
           </form>
         )}
 
-        {step === 'patient' && (
-          <form onSubmit={submitPatient} className="fade-in">
-            <h2 id="request-gate-title">{role === 'PATIENT' ? 'Your patient details' : 'Patient details'}</h2>
-            {role !== 'PATIENT' && <p>Enter the patient’s information, not your own.</p>}
+        {step === 'patient-identity' && (
+          <form onSubmit={submitPatientIdentity} className="fade-in">
+            {patientContext('patient-identity')}
 
-            <div className="request-context-summary">
-              <span>
-                <small>Already provided</small>
-                <strong>{draft.blood_group} · {draft.upazila}, {draft.district}</strong>
-                <span>{draft.collection_facility}</span>
-              </span>
-              <button type="button" onClick={onEditSearch}>Change search</button>
+            <div className="request-form-heading">
+              <small>Patient details · Step 1 of 2</small>
+              <h2 id="request-gate-title">{role === 'PATIENT' ? 'Your patient details' : 'Patient details'}</h2>
+              {role !== 'PATIENT' && <p>Enter the patient’s information, not your own.</p>}
             </div>
 
-            <div className="requester-role-summary">
-              <span>
-                <small>Who you are</small>
-                <strong>{roleLabel}</strong>
-              </span>
-              <button type="button" onClick={() => editRole('patient')}>Change</button>
-            </div>
-
-            <div className="mt-2 grid gap-x-4 sm:grid-cols-2">
+            <div className="grid gap-x-4 sm:grid-cols-2">
               <label className="dialog-field">
-                <span>Patient title</span>
-                <select required value={draft.patient_title} onChange={event => set({ patient_title: event.target.value as 'MR' | 'MST' })} className="input">
+                <span>Patient gender</span>
+                <select required value={draft.patient_sex} onChange={event => set({ patient_sex: event.target.value as PatientSex })} className="input">
                   <option value="">Select</option>
-                  <option value="MR">Mr.</option>
-                  <option value="MST">Mst.</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
                 </select>
               </label>
               <label className="dialog-field">
@@ -332,16 +360,37 @@ export default function RequestGate({
                 <span>Patient full name</span>
                 <input required value={draft.patient_name} onChange={event => set({ patient_name: event.target.value })} className="input" />
               </label>
+            </div>
+
+            {error && <p className="dialog-error">{error}</p>}
+            <div className="dialog-actions">
+              <button type="button" onClick={onClose} className="button button-secondary">Cancel</button>
+              <button type="submit" className="button button-primary">Continue</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'patient-need' && (
+          <form onSubmit={submitPatientNeed} className="fade-in">
+            {patientContext('patient-need')}
+
+            <div className="request-form-heading">
+              <small>Blood requirement · Step 2 of 2</small>
+              <h2 id="request-gate-title">What does the patient need?</h2>
+              <p>Use the component and quantity requested by the hospital.</p>
+            </div>
+
+            <div className="grid gap-x-4 sm:grid-cols-2">
+              <label className="dialog-field">
+                <span>How many bags are needed?</span>
+                <input required type="number" inputMode="numeric" min={1} max={10} value={draft.units_required} onChange={event => set({ units_required: event.target.value })} className="input" />
+              </label>
               <label className="dialog-field">
                 <span>Blood component</span>
                 <select required value={draft.blood_component} onChange={event => set({ blood_component: event.target.value as BloodComponent })} className="input">
                   <option value="">Select</option>
                   {BLOOD_COMPONENTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
-              </label>
-              <label className="dialog-field">
-                <span>Units needed</span>
-                <input required type="number" inputMode="numeric" min={1} max={20} value={draft.units_required} onChange={event => set({ units_required: event.target.value })} className="input" />
               </label>
               <label className="dialog-field sm:col-span-2">
                 <span>Reason blood is needed</span>
@@ -364,7 +413,7 @@ export default function RequestGate({
 
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
-              <button type="button" onClick={onClose} className="button button-secondary">Cancel</button>
+              <button type="button" onClick={() => setStep('patient-identity')} className="button button-secondary">Back</button>
               <button type="submit" className="button button-primary">Continue</button>
             </div>
           </form>
@@ -492,7 +541,7 @@ export default function RequestGate({
 
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
-              <button type="button" onClick={() => setStep('patient')} className="button button-secondary">Back</button>
+              <button type="button" onClick={() => setStep('patient-need')} className="button button-secondary">Back</button>
               <button type="submit" className="button button-primary">Continue</button>
             </div>
           </form>
@@ -514,12 +563,12 @@ export default function RequestGate({
 
             <div className="request-review-grid">
               <div className="request-review-card">
-                <span><small>Patient</small><strong>{patientLabel}</strong><span>Age {draft.patient_age}</span></span>
-                <button type="button" onClick={() => setStep('patient')}>Change</button>
+                <span><small>Patient</small><strong>{patientLabel}</strong><span>{patientSexLabel} · Age {draft.patient_age}</span></span>
+                <button type="button" onClick={() => setStep('patient-identity')}>Change</button>
               </div>
               <div className="request-review-card">
-                <span><small>Blood needed</small><strong>{draft.units_required} unit{draft.units_required === '1' ? '' : 's'} · {componentLabel}</strong><span>{reasonLabel}{draft.request_reason === 'OTHER' && draft.request_reason_details.trim() ? ` · ${draft.request_reason_details.trim()}` : ''}</span></span>
-                <button type="button" onClick={() => setStep('patient')}>Change</button>
+                <span><small>Blood needed</small><strong>{draft.units_required} bag{draft.units_required === '1' ? '' : 's'} · {componentLabel}</strong><span>{reasonLabel}{draft.request_reason === 'OTHER' && draft.request_reason_details.trim() ? ` · ${draft.request_reason_details.trim()}` : ''}</span></span>
+                <button type="button" onClick={() => setStep('patient-need')}>Change</button>
               </div>
               <div className="request-review-card">
                 <span>

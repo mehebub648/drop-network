@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.125`
+Current application version: `0.0.126`
 
 ## Overview
 
@@ -74,9 +74,11 @@ Entry points:
   from the patient search but remain editable as the donor's home location.
   Role-aware guidance identifies whose information belongs in every field, and
   review keeps the patient, request owner, and donor contact visibly separate.
-  The patient stage requires a full patient name plus the blood component,
-  units needed, and one broad public reason category. The searchable reason
-  list is shared with server validation, ranked by reported Bangladesh
+  Patient details use two short stages: explicit gender, age, and full name,
+  followed by 1-10 bags, the hospital-requested blood component, and one broad
+  public reason category. Common components appear first, followed by specialist
+  component options and an explicit doctor-specified fallback. The searchable
+  reason list is shared with server validation, ranked by reported Bangladesh
   transfusion patterns, and keeps Other last with an optional bounded broad
   description; it does not collect a detailed diagnosis.
 - `src/components/DonorPreferencesFields.tsx` manages bounded preferred areas,
@@ -178,8 +180,9 @@ Routes:
   number. Asking for another donor's number opens the patient-details gate.
   Previously completed search, role,
   patient, and contact answers are summarized rather than requested again and
-  remain editable. Separate patient, contact, and review stages carry explicit
-  publication consent before the inline sign-in; publishing the request is what
+  remain editable. Separate patient identity, blood requirement, contact, and
+  review stages carry explicit publication consent before the inline sign-in;
+  publishing the request is what
   unmasks the number. The keyboard-operable
   facility combobox preloads and searches only the selected district. The
   generated snapshot includes every DGHS registry function except the two
