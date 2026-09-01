@@ -5327,7 +5327,7 @@ app.get('/api/requests/:id', async (req, res) => {
   };
 
   const donorMatches = requestOwner ? await findRequestDonors({
-    bloodGroup: request.blood_group,
+    bloodGroup: request.blood_group as BloodGroup,
     district: request.location.area_name,
     upazila: request.upazila || request.location.area_name,
     requesterUserId: request.user_id,
