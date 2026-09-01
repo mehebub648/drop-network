@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.126`
+Current application version: `0.0.127`
 
 ## Overview
 
@@ -486,7 +486,9 @@ API routes:
   available donors, and active/fulfilled requests. Claimed listings are counted
   once, as registered profiles. If the imported table cannot be read, `donors`
   and `directory_donors` are `null` and the landing page renders a dash rather
-  than a count that omits the directory.
+  than a count that omits the directory. The landing page labels the headline
+  as searchable listings, shows the public-source/member breakdown, and does
+  not present availability or fulfilment counts as comparable network totals.
 - `GET /api/requests` lists active, non-expired public blood requests without
   requester phone or contact details. Results are oldest first and returned in
   20-request pages. Sparse filtered pages separate proximity-ranked fallbacks

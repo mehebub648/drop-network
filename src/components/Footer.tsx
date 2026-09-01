@@ -5,27 +5,26 @@ const columns = [
   {
     title: 'Use Drop',
     links: [
-      { label: 'Find live donors', to: '/directory' },
-      { label: 'Live blood requests', to: '/requests' },
-      { label: 'Find blood', to: '/directory' }
+      { label: 'Find donors', to: '/directory' },
+      { label: 'Blood requests', to: '/requests' },
+      { label: 'Become a donor', to: '/register' }
     ]
   },
   {
-    title: 'Community',
+    title: 'About & safety',
     links: [
       { label: 'Stories and suggestions', to: '/community' },
       { label: 'Suggest a donor privately', to: '/contribute' },
-      { label: 'Join as a donor', to: '/register' },
-      { label: 'Verified partners', to: '/partners' },
-      { label: 'About Drop', to: '/about' },
-      { label: 'Safety guidance', to: '/safety' }
+      { label: 'How Drop works', to: '/about' },
+      { label: 'Safety guidance', to: '/safety' },
+      { label: 'Privacy policy', to: '/privacy' }
     ]
   },
   {
-    title: 'Support & legal',
+    title: 'Support',
     links: [
       { label: 'Contact operations', to: '/contact' },
-      { label: 'Privacy policy', to: '/privacy' },
+      { label: 'Remove my listing', to: '/directory/remove' },
       { label: 'Terms of use', to: '/terms' }
     ]
   }

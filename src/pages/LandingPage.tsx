@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
-  Activity,
   ArrowRight,
-  CheckCircle2,
   ChevronDown,
+  Database,
   HeartHandshake,
   LockKeyhole,
   Search,
-  ShieldCheck,
-  Users
+  ShieldCheck
 } from 'lucide-react';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
 import { api } from '../lib/api';
@@ -23,10 +21,30 @@ import {
 
 type NetworkStats = {
   donors: number | null;
+  directory_donors: number | null;
+  registered_donors: number;
   available_donors: number;
   active_requests: number;
   fulfilled_requests: number;
 };
+
+const trustPromises = [
+  {
+    icon: Search,
+    title: 'No account needed',
+    body: 'Start a donor search without signing in.'
+  },
+  {
+    icon: LockKeyhole,
+    title: 'Protected contacts',
+    body: 'Phone numbers stay masked until a verified request.'
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Source clarity',
+    body: 'Results identify Drop members and public-source listings.'
+  }
+];
 
 const helpSteps = [
   {
@@ -83,7 +101,7 @@ export default function LandingPage({ user }: { user: any }) {
         <div className="landing-task-copy">
           <span className="landing-task-icon" aria-hidden="true"><HeartHandshake /></span>
           <h1>Find a blood donor</h1>
-          <p>Choose the blood group to begin. The collection area comes next, and contact details remain protected.</p>
+          <p>Search by blood group, then choose where the patient will receive blood. No account is needed to begin.</p>
         </div>
 
         <div id="donor-search" className="landing-task-search scroll-mt-24">
@@ -96,27 +114,40 @@ export default function LandingPage({ user }: { user: any }) {
             handoffAfterBloodGroup
           />
         </div>
+
+        <ul className="landing-trust-row" aria-label="Why people can search with confidence">
+          {trustPromises.map(({ icon: Icon, title, body }) => (
+            <li key={title}>
+              <Icon aria-hidden="true" />
+              <span><strong>{title}</strong><small>{body}</small></span>
+            </li>
+          ))}
+        </ul>
       </section>
 
-      <section className="landing-network-strip" aria-label="Drop Network activity">
-        {[
-          { value: stats?.donors, label: 'Donors', icon: Users },
-          { value: stats?.available_donors, label: 'Available', icon: CheckCircle2 },
-          { value: stats?.active_requests, label: 'Active requests', icon: Activity },
-          { value: stats?.fulfilled_requests, label: 'Fulfilled', icon: HeartHandshake }
-        ].map(({ value, label, icon: Icon }) => (
-          <div key={label}>
-            <Icon aria-hidden="true" />
-            <strong>{value?.toLocaleString() ?? '—'}</strong>
-            <span>{label}</span>
-          </div>
-        ))}
+      <section className="landing-directory-proof" aria-labelledby="directory-proof-title">
+        <span aria-hidden="true"><Database /></span>
+        <div>
+          <p>Transparent directory</p>
+          <h2 id="directory-proof-title">{stats?.donors?.toLocaleString() ?? '—'} searchable donor listings</h2>
+          <p>
+            {stats && stats.directory_donors !== null
+              ? `Includes ${stats.directory_donors.toLocaleString()} public-source listings and ${stats.registered_donors.toLocaleString()} registered Drop ${stats.registered_donors === 1 ? 'member' : 'members'}. `
+              : 'Includes public-source listings and registered Drop members. '}
+            Drop labels the source on each result; listing does not guarantee current availability.
+          </p>
+          <nav aria-label="Directory transparency">
+            <Link to="/privacy">How listings work</Link>
+            <Link to="/directory/remove">Remove my listing</Link>
+            <Link to="/contact">Report an issue</Link>
+          </nav>
+        </div>
       </section>
 
       <nav className="landing-shortcuts" aria-label="Other actions">
         <Link to="/requests">
           <span><HeartHandshake aria-hidden="true" /></span>
-          <strong>Blood requests</strong>
+          <strong>View blood requests</strong>
           <ArrowRight aria-hidden="true" />
         </Link>
         <Link to={user ? '/profile/donor' : '/register'}>
@@ -169,7 +200,10 @@ export default function LandingPage({ user }: { user: any }) {
         </details>
       </div>
 
-      <p className="landing-clinical-note">Hospitals and blood banks remain responsible for screening and clinical decisions.</p>
+      <aside className="landing-clinical-note">
+        <ShieldCheck aria-hidden="true" />
+        <p><strong>Coordination, not clinical care.</strong> Hospitals and blood banks decide donor eligibility, compatibility, and whether a donation can proceed.</p>
+      </aside>
     </div>
   );
 }
