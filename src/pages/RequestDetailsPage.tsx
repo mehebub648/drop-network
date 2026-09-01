@@ -210,7 +210,6 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     ? new Date(request.needed_by).toLocaleDateString('en-GB')
     : 'As soon as possible';
   const componentLabel = (request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
-  const contactsArePublic = ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status);
   const donorSearchQuery = new URLSearchParams({
     blood_group: request.blood_group,
     district: request.location.area_name,
@@ -546,7 +545,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 fade-in sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 fade-in sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
               <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Patient</p>
               <p className="font-bold text-slate-900">{request.patient_name || 'Name not provided'}</p>
@@ -563,31 +562,24 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               </p>
             </div>
 
-            <div className="mt-1 rounded-2xl border border-rose-200 bg-rose-50/70 p-4 sm:col-span-3">
-              <div className="mb-3">
-                <p className="text-base font-extrabold text-slate-950">{contactsArePublic ? 'Call about this blood request' : 'Saved request contacts'}</p>
-                <p className="mt-1 text-sm font-medium text-slate-600">{contactsArePublic ? 'Use these numbers only to coordinate blood donation for this active request.' : 'These contacts are no longer public because the request has closed.'}</p>
-              </div>
-              {request.contacts?.length ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {request.contacts.map((contact: any, index: number) => (
-                    <a
-                      key={`${contact.phone}-${index}`}
-                      href={`tel:${contact.phone}`}
-                      className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-white px-4 py-3 shadow-sm transition-colors hover:border-primary hover:bg-rose-50"
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{contact.type || 'Contact'}</span>
-                        <span className="mt-0.5 block truncate font-extrabold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</span>
-                      </span>
-                      <span className="inline-flex shrink-0 items-center gap-2 font-extrabold text-primary"><Phone className="h-4 w-4" /> {contact.phone}</span>
-                    </a>
-                  ))}
+            {request.contacts?.map((contact: any, index: number) => (
+              <div key={`${contact.phone}-${index}`} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{contact.type || 'Contact'}</p>
+                    <p className="truncate font-bold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</p>
+                  </div>
+                  <a
+                    href={`tel:${contact.phone}`}
+                    aria-label={`Call ${contact.name || 'request contact'}`}
+                    className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-primary-dark"
+                  >
+                    <Phone className="h-4 w-4" /> Call
+                  </a>
                 </div>
-              ) : (
-                <p className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-600">No public phone number is available for this request.</p>
-              )}
-            </div>
+                <p className="mt-2 break-all text-sm font-semibold text-slate-600">{contact.phone}</p>
+              </div>
+            ))}
           </div>
         )}
       </section>

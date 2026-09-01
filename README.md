@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.117`
+Current version: `0.0.118`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
