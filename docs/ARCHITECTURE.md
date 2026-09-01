@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.121`
+Current application version: `0.0.122`
 
 ## Overview
 
@@ -75,8 +75,10 @@ Entry points:
   Role-aware guidance identifies whose information belongs in every field, and
   review keeps the patient, request owner, and donor contact visibly separate.
   The patient stage requires a full patient name plus the blood component,
-  units needed, and one broad public reason category; it does not collect a
-  detailed diagnosis.
+  units needed, and one broad public reason category. The searchable reason
+  list is shared with server validation, ranked by reported Bangladesh
+  transfusion patterns, and keeps Other last with an optional bounded broad
+  description; it does not collect a detailed diagnosis.
 - `src/components/DonorPreferencesFields.tsx` manages bounded preferred areas,
   facilities, travel willingness, and recurring Asia/Dhaka windows. The
   facility picker uses the same generated DGHS snapshot as request search.
@@ -123,6 +125,8 @@ Entry points:
   it; re-exporting means the API and the interface cannot disagree about blood
   compatibility or place names. `src/lib/blood.ts` still owns the frontend-only
   helpers: urgency derivation and the donor eligibility calculation.
+- `server/requestReasons.ts` owns the bounded, searchable transfusion-indication
+  taxonomy used by both request validation and the frontend picker.
 - `src/index.css` defines the responsive doodle-led cartoon system: a white
   canvas, white surfaces with soft neutral boundaries and shadows, lightweight
   decorative marks behind the shared layout, generated editorial illustrations,

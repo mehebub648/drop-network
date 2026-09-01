@@ -87,6 +87,7 @@ import { DAILY_UNIQUE_SEARCH_LIMIT, DailySearchBudget } from './searchBudget';
 import { isTrustedCookieMutation, secureBearerMatches } from './httpSecurity';
 import { migrateDonationLedger, resolveDonationLedger } from './donationLedger';
 import { findDuplicateActiveRequest } from './requestDeduplication';
+import { REQUEST_REASONS, type RequestReason } from './requestReasons';
 import {
   DONATION_OUTCOMES,
   deriveFollowUpState,
@@ -128,7 +129,6 @@ const REQUEST_STATUSES = ['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_
 const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
 const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
 const BLOOD_COMPONENTS = ['WHOLE_BLOOD', 'RED_CELLS', 'PLATELETS', 'PLASMA'] as const;
-const REQUEST_REASONS = ['SURGERY', 'ACCIDENT_BLEEDING', 'CHILDBIRTH', 'ANAEMIA', 'THALASSEMIA', 'CANCER_TREATMENT', 'OTHER'] as const;
 const REQUESTER_RELATIONSHIPS = ['SELF', 'FAMILY', 'FRIEND', 'HOSPITAL_STAFF', 'VOLUNTEER', 'OTHER'] as const;
 const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
 // SIGN_IN serves the blood request flow, where the requester gives a phone
@@ -387,7 +387,8 @@ type BloodRequest = {
   expires_at: string;
   status: (typeof REQUEST_STATUSES)[number];
   blood_component?: (typeof BLOOD_COMPONENTS)[number];
-  request_reason?: (typeof REQUEST_REASONS)[number];
+  request_reason?: RequestReason;
+  request_reason_details?: string;
   units_required?: number;
   units_pledged?: number;
   units_confirmed?: number;
@@ -3259,6 +3260,7 @@ function parseCompleteRequest(body: Record<string, unknown>, requireRequestReaso
   const blood_component = body.blood_component;
   const request_reason = body.request_reason;
   const parsedRequestReason = isOneOf(request_reason, REQUEST_REASONS) ? request_reason : undefined;
+  const request_reason_details = parsedRequestReason === 'OTHER' ? optionalCleanString(body.request_reason_details, 160) : undefined;
   const location = parseLocation(body.location);
   const needed_by = parseDate(body.needed_by);
   const contacts = parseContacts(body.contacts);
@@ -3286,7 +3288,10 @@ function parseCompleteRequest(body: Record<string, unknown>, requireRequestReaso
 
   return {
     value: {
-      blood_group, blood_component, ...(parsedRequestReason ? { request_reason: parsedRequestReason } : {}), location, upazila, needed_by, contacts, units_required,
+      blood_group, blood_component,
+      ...(parsedRequestReason ? { request_reason: parsedRequestReason } : {}),
+      request_reason_details,
+      location, upazila, needed_by, contacts, units_required,
       hospital_name, hospital_address, ward, patient_reference, patient_name,
       requester_name, requester_relationship
     }
@@ -3343,6 +3348,7 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
   if (!isOneOf(blood_component, BLOOD_COMPONENTS)) return { error: 'Valid blood component is required' } as const;
   if (!units_required) return { error: 'Units required must be between 1 and 20' } as const;
   if (!isOneOf(request_reason, REQUEST_REASONS)) return { error: 'Reason blood is needed is required' } as const;
+  const request_reason_details = request_reason === 'OTHER' ? optionalCleanString(body.request_reason_details, 160) : undefined;
   if (!location) return { error: 'Valid Bangladesh district is required' } as const;
   const upazila = parseUpazila(location.area_name, body.upazila);
   if (!upazila) return { error: 'Choose an upazila that belongs to the selected district' } as const;
@@ -3390,6 +3396,7 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
       blood_component,
       units_required,
       request_reason,
+      request_reason_details,
       hospital_name: collection_facility,
       collection_facility_code,
       patient_title,
@@ -4017,7 +4024,8 @@ function responsePayload(response: DonorResponse, viewerId: string) {
     ...response,
     request: request ? {
       id: request.id, blood_group: request.blood_group, blood_component: request.blood_component,
-      units_required: request.units_required, hospital_name: request.hospital_name,
+      units_required: request.units_required, request_reason: request.request_reason,
+      request_reason_details: request.request_reason_details, hospital_name: request.hospital_name,
       hospital_address: request.hospital_address, ward: request.ward,
       location: request.location, needed_by: request.needed_by, status: request.status
     } : null,

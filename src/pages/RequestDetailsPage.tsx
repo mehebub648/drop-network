@@ -9,20 +9,11 @@ import {
   type RegisteredCollectionFacility
 } from '../lib/collectionFacilities';
 import { BD_LOCATION_NAMES, getLocationByName } from '../lib/locations';
+import { requestReasonLabel } from '../lib/requestReasons';
 import { cn } from '../lib/utils';
 import { UrgencyBadge } from '../components/UrgencyBadge';
 import VerifiedBadge from '../components/VerifiedBadge';
 import ModalPortal from '../components/ModalPortal';
-
-const REQUEST_REASON_LABELS: Record<string, string> = {
-  SURGERY: 'Surgery',
-  ACCIDENT_BLEEDING: 'Accident or bleeding',
-  CHILDBIRTH: 'Childbirth',
-  ANAEMIA: 'Anaemia',
-  THALASSEMIA: 'Thalassemia',
-  CANCER_TREATMENT: 'Cancer treatment',
-  OTHER: 'Other medical need'
-};
 
 export default function RequestDetailsPage({ user }: { user: any }) {
   const { id } = useParams();
@@ -50,7 +41,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       ? `by ${new Date(data.request.needed_by).toLocaleDateString('en-GB')}`
       : 'ASAP';
     const component = (data.request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
-    const reason = REQUEST_REASON_LABELS[data.request.request_reason];
+    const reason = requestReasonLabel(data.request.request_reason);
     const units = data.request.units_required || 1;
     const need = `${units} unit${units === 1 ? '' : 's'} of ${component}`;
     const text = `URGENT: ${data.request.blood_group} ${need} needed${reason ? ` for ${reason.toLowerCase()}` : ''} in ${data.request.location.area_name} ${neededText}. Details & contact: ${url}`;
@@ -236,7 +227,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     : 'As soon as possible';
   const componentLabel = (request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
   const unitsRequired = request.units_required || 1;
-  const reasonLabel = REQUEST_REASON_LABELS[request.request_reason];
+  const reasonLabel = requestReasonLabel(request.request_reason);
   const donorSearchQuery = new URLSearchParams({
     blood_group: request.blood_group,
     district: request.location.area_name,
@@ -389,6 +380,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               <HeartPulse className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
               <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Reason</p>
               <p className="mt-1 text-sm font-bold text-slate-800">{reasonLabel}</p>
+              {request.request_reason === 'OTHER' && request.request_reason_details && <p className="mt-0.5 text-xs font-semibold text-slate-500">{request.request_reason_details}</p>}
             </div>
           )}
         </div>

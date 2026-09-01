@@ -22,6 +22,7 @@ const completeDraft = (patch: Partial<SearchDraft> = {}): SearchDraft => ({
   blood_component: 'WHOLE_BLOOD',
   units_required: '2',
   request_reason: 'SURGERY',
+  request_reason_details: '',
   requester_name: 'Volunteer Name',
   requester_phone: '01800000000',
   requester_relation: 'Brother',
@@ -68,6 +69,15 @@ test('request payload omits stale contact fields after changing to patient', () 
   assert.equal(payload.blood_component, 'WHOLE_BLOOD');
   assert.equal(payload.units_required, 2);
   assert.equal(payload.request_reason, 'SURGERY');
+  assert.equal(payload.request_reason_details, undefined);
+});
+
+test('Other can carry an optional broad description without leaking stale text', () => {
+  const other = searchRequestPayload(completeDraft({ request_reason: 'OTHER', request_reason_details: '  Rare medical need  ' }));
+  assert.equal(other.request_reason_details, 'Rare medical need');
+
+  const known = searchRequestPayload(completeDraft({ request_reason: 'ANAEMIA', request_reason_details: 'Stale text' }));
+  assert.equal(known.request_reason_details, undefined);
 });
 
 test('request payload includes only fields relevant to the selected coordinator role', () => {

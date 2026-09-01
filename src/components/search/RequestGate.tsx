@@ -11,10 +11,11 @@ import {
   hasRequesterDetails,
   type BloodComponent,
   type NeededWindow,
-  type RequestReason,
   type SearchDraft
 } from '../../lib/searchDraft';
+import { requestReasonLabel } from '../../lib/requestReasons';
 import ModalPortal from '../ModalPortal';
+import RequestReasonCombobox from './RequestReasonCombobox';
 import RequesterRolePicker from './RequesterRolePicker';
 
 type RequestStep = 'patient' | 'requester' | 'review';
@@ -32,16 +33,6 @@ const BLOOD_COMPONENTS: Array<{ value: BloodComponent; label: string }> = [
   { value: 'RED_CELLS', label: 'Red cells' },
   { value: 'PLATELETS', label: 'Platelets' },
   { value: 'PLASMA', label: 'Plasma' }
-];
-
-const REQUEST_REASONS: Array<{ value: RequestReason; label: string }> = [
-  { value: 'SURGERY', label: 'Surgery' },
-  { value: 'ACCIDENT_BLEEDING', label: 'Accident or bleeding' },
-  { value: 'CHILDBIRTH', label: 'Childbirth' },
-  { value: 'ANAEMIA', label: 'Anaemia' },
-  { value: 'THALASSEMIA', label: 'Thalassemia' },
-  { value: 'CANCER_TREATMENT', label: 'Cancer treatment' },
-  { value: 'OTHER', label: 'Other medical need' }
 ];
 
 /**
@@ -118,6 +109,7 @@ export default function RequestGate({
 
   const submitPatient = (event: FormEvent) => {
     event.preventDefault();
+    if (!hasPatientDetails(draft)) return setError('Choose a reason from the list and complete every required field.');
     setError('');
     setStep('requester');
   };
@@ -237,7 +229,7 @@ export default function RequestGate({
   const patientLabel = `${draft.patient_title === 'MR' ? 'Mr.' : 'Mst.'} ${draft.patient_name}`.trim();
   const neededWindowLabel = NEEDED_WINDOWS.find(option => option.value === draft.needed_window)?.label || 'As soon as possible';
   const componentLabel = BLOOD_COMPONENTS.find(option => option.value === draft.blood_component)?.label || '';
-  const reasonLabel = REQUEST_REASONS.find(option => option.value === draft.request_reason)?.label || '';
+  const reasonLabel = requestReasonLabel(draft.request_reason);
   const accountPhone = user?.phone || draft.requester_phone;
   const requestOwnerName = role === 'PATIENT' ? patientLabel : draft.requester_name;
   const contactLabel = role === 'PATIENT'
@@ -353,11 +345,21 @@ export default function RequestGate({
               </label>
               <label className="dialog-field sm:col-span-2">
                 <span>Reason blood is needed</span>
-                <select required value={draft.request_reason} onChange={event => set({ request_reason: event.target.value as RequestReason })} className="input">
-                  <option value="">Select</option>
-                  {REQUEST_REASONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                <RequestReasonCombobox value={draft.request_reason} onChange={requestReason => set({ request_reason: requestReason })} />
               </label>
+              {draft.request_reason === 'OTHER' && (
+                <label className="dialog-field sm:col-span-2">
+                  <span>Broad description <small>Optional</small></span>
+                  <textarea
+                    rows={2}
+                    maxLength={160}
+                    value={draft.request_reason_details}
+                    onChange={event => set({ request_reason_details: event.target.value })}
+                    placeholder="For example, a doctor advised transfusion for another condition"
+                    className="input resize-none"
+                  />
+                </label>
+              )}
             </div>
 
             {error && <p className="dialog-error">{error}</p>}
@@ -516,7 +518,7 @@ export default function RequestGate({
                 <button type="button" onClick={() => setStep('patient')}>Change</button>
               </div>
               <div className="request-review-card">
-                <span><small>Blood needed</small><strong>{draft.units_required} unit{draft.units_required === '1' ? '' : 's'} · {componentLabel}</strong><span>{reasonLabel}</span></span>
+                <span><small>Blood needed</small><strong>{draft.units_required} unit{draft.units_required === '1' ? '' : 's'} · {componentLabel}</strong><span>{reasonLabel}{draft.request_reason === 'OTHER' && draft.request_reason_details.trim() ? ` · ${draft.request_reason_details.trim()}` : ''}</span></span>
                 <button type="button" onClick={() => setStep('patient')}>Change</button>
               </div>
               <div className="request-review-card">

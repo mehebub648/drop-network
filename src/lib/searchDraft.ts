@@ -9,12 +9,13 @@
 //
 // A password or verification code is never written here.
 
+import type { RequestReason } from './requestReasons';
+
 export const SEARCH_DRAFT_KEY = 'drop_search_flow_v1';
 
 export type RequesterRole = 'PATIENT' | 'RELATIVE' | 'THIRD_PARTY';
 export type NeededWindow = 'WITHIN_HOURS' | 'TODAY' | 'WITHIN_2_3_DAYS' | 'PLANNED';
 export type BloodComponent = 'WHOLE_BLOOD' | 'RED_CELLS' | 'PLATELETS' | 'PLASMA';
-export type RequestReason = 'SURGERY' | 'ACCIDENT_BLEEDING' | 'CHILDBIRTH' | 'ANAEMIA' | 'THALASSEMIA' | 'CANCER_TREATMENT' | 'OTHER';
 
 export type SearchDraft = {
   blood_group: string;
@@ -29,6 +30,7 @@ export type SearchDraft = {
   blood_component: BloodComponent | '';
   units_required: string;
   request_reason: RequestReason | '';
+  request_reason_details: string;
   requester_name: string;
   /** The coordinator's private account/verification number. Never sent in the request body. */
   requester_phone: string;
@@ -53,6 +55,7 @@ export const EMPTY_DRAFT: SearchDraft = {
   blood_component: '',
   units_required: '',
   request_reason: '',
+  request_reason_details: '',
   requester_name: '',
   requester_phone: '',
   requester_relation: '',
@@ -164,6 +167,7 @@ export function searchRequestPayload(draft: SearchDraft) {
     blood_component: draft.blood_component,
     units_required: Number(draft.units_required),
     request_reason: draft.request_reason,
+    request_reason_details: draft.request_reason === 'OTHER' ? draft.request_reason_details.trim() || undefined : undefined,
     ...requesterFields,
     needed_window: draft.needed_window || undefined
   };
