@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertCircle, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, MapPin, MessageCircle, Phone, Plus, Share2, Shield, Trash2, User as UserIcon, Users } from 'lucide-react';
-import { api, BROWSER_FINGERPRINT, type ContactedDonorSummary } from '../lib/api';
+import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, MapPin, MessageCircle, Phone, Plus, Share2, Trash2, User as UserIcon, Users } from 'lucide-react';
+import { api, BROWSER_FINGERPRINT, type ContactedDonorSummary, type SearchDonorCard } from '../lib/api';
 import { compatibleDonorsFor } from '../lib/blood';
 import {
   loadRegisteredCollectionFacilities,
@@ -17,14 +17,13 @@ import ModalPortal from '../components/ModalPortal';
 export default function RequestDetailsPage({ user }: { user: any }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [data, setData] = useState<{ request: any, matches: any[], responses?: any[] } | null>(null);
+  const [data, setData] = useState<{ request: any, matches: SearchDonorCard[], match_total?: number, responses?: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [contactedDonors, setContactedDonors] = useState<ContactedDonorSummary[]>([]);
   
   // UI States
-  const [inviting, setInviting] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [anonName, setAnonName] = useState('');
@@ -186,21 +185,6 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     }
   };
 
-  const inviteDonor = async (donorId: string) => {
-    if (!data) return;
-    setInviting(donorId);
-    setActionMessage(null);
-    try {
-      const response = await api.inviteDonor(data.request.id, donorId);
-      setData({ ...data, responses: [...(data.responses || []), response] });
-      setActionMessage({ type: 'success', text: 'Private invitation sent. Contact details remain hidden until the donor accepts.' });
-    } catch (error: any) {
-      setActionMessage({ type: 'error', text: error.message || 'Could not invite donor.' });
-    } finally {
-      setInviting('');
-    }
-  };
-
   const submitReport = async () => {
     if (!reportTarget) return;
     try {
@@ -226,6 +210,17 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     ? new Date(request.needed_by).toLocaleDateString('en-GB')
     : 'As soon as possible';
   const componentLabel = (request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
+  const contactsArePublic = ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status);
+  const donorSearchQuery = new URLSearchParams({
+    blood_group: request.blood_group,
+    district: request.location.area_name,
+    upazila: request.upazila || request.location.area_name,
+    collection_facility: request.hospital_name || '',
+    collection_facility_code: request.collection_facility_code || '',
+    request_id: request.id,
+    order_seed: request.id.replaceAll('-', '')
+  });
+  const donorSearchPath = `/directory?${donorSearchQuery.toString()}`;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 fade-in">
@@ -568,85 +563,68 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               </p>
             </div>
 
-            <div className="mt-1 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 sm:col-span-3">
-               {request.contacts === undefined ? (
-                 <div className="flex items-start gap-3">
-                   <Shield className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
-                   <div><p className="text-sm font-extrabold text-emerald-900">Contact details are protected</p><p className="mt-0.5 text-sm font-medium text-emerald-800/80">They appear only after a donor response is accepted.</p></div>
-                 </div>
-               ) : request.contacts.length === 0 && (
-                 <p className="text-sm font-medium text-emerald-900">No secondary contacts provided. Respond through the request to reveal the primary number.</p>
-               )}
-               <div className="grid gap-3 empty:hidden">
-                 {request.contacts?.map((c: any, i: number) => (
-                   <div key={i} className="flex flex-col justify-between rounded-xl border border-emerald-100 bg-white p-3 sm:flex-row sm:items-center">
-                     <div>
-                       <span className="text-[10px] uppercase font-extrabold tracking-widest text-slate-400">{c.type}</span>
-                       <p className="font-bold text-slate-900">{c.name}</p>
-                     </div>
-                     <a href={`tel:${c.phone}`} className="text-primary font-bold tracking-wide hover:underline mt-2 sm:mt-0 flex items-center gap-1.5">
-                       <Phone className="w-3.5 h-3.5" /> {c.phone}
-                     </a>
-                   </div>
-                 ))}
-               </div>
+            <div className="mt-1 rounded-2xl border border-rose-200 bg-rose-50/70 p-4 sm:col-span-3">
+              <div className="mb-3">
+                <p className="text-base font-extrabold text-slate-950">{contactsArePublic ? 'Call about this blood request' : 'Saved request contacts'}</p>
+                <p className="mt-1 text-sm font-medium text-slate-600">{contactsArePublic ? 'Use these numbers only to coordinate blood donation for this active request.' : 'These contacts are no longer public because the request has closed.'}</p>
+              </div>
+              {request.contacts?.length ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {request.contacts.map((contact: any, index: number) => (
+                    <a
+                      key={`${contact.phone}-${index}`}
+                      href={`tel:${contact.phone}`}
+                      className="flex min-h-16 items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-white px-4 py-3 shadow-sm transition-colors hover:border-primary hover:bg-rose-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{contact.type || 'Contact'}</span>
+                        <span className="mt-0.5 block truncate font-extrabold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</span>
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-2 font-extrabold text-primary"><Phone className="h-4 w-4" /> {contact.phone}</span>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-600">No public phone number is available for this request.</p>
+              )}
             </div>
           </div>
         )}
       </section>
 
-      {/* Potential Donors Section */}
-      <section className="space-y-4">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h3 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
-              <Users className="w-5 h-5 text-primary" /> Donor options
-            </h3>
-            <p className="mt-1 text-sm font-medium text-slate-500">Available donors near this request.</p>
-          </div>
-          <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-extrabold text-primary">{matches.length} nearby</span>
-        </div>
-        {matches.length === 0 ? (
-          <div className="theme-card flex flex-col gap-4 border border-slate-100 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><Activity className="h-5 w-5" /></div>
-              <div><p className="font-extrabold text-slate-900">No nearby donor is available yet</p><p className="mt-1 text-sm font-medium text-slate-500">Sharing this request can help it reach someone suitable.</p></div>
+      {/* Request-owner donor matches. Public viewers do not receive a fake zero. */}
+      {isOwner && (
+        <section className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+                <Users className="w-5 h-5 text-primary" /> Donors matching this request
+              </h3>
+              <p className="mt-1 text-sm font-medium text-slate-500">Registered donors and attributed public listings in {request.upazila || request.location.area_name}.</p>
             </div>
-            {request.status === 'ACTIVE' && <button onClick={() => shareRequest('whatsapp')} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-bold text-white hover:bg-green-700"><Share2 className="h-4 w-4" /> Share request</button>}
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-extrabold text-primary">{data.match_total || 0} matches</span>
+              <Link to={donorSearchPath} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-4 text-sm font-extrabold text-white shadow-sm hover:bg-primary-dark">Open donor search</Link>
+            </div>
           </div>
-        ) : (
-          <div className="grid gap-4">
-            {matches.map((m, i) => (
-              <div key={i} className="theme-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-rose-200 border border-slate-100 transition-colors shadow-sm bg-white">
-                <div className="flex items-center gap-5 flex-1">
-                  <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl overflow-hidden bg-slate-50 flex-shrink-0 flex items-center justify-center text-primary text-xl font-extrabold border border-slate-100">
-                    {m.blood_group}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-lg text-slate-900">{m.name}</span>
-                      <VerifiedBadge verified={Boolean(m.is_verified)} compact />
-                      <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Available</span>
-                    </div>
-                    <div className="text-sm font-semibold text-slate-500 mt-1 flex items-center gap-2">
-                      <span>{m.distance_km} km away</span>
-                      <span>•</span>
-                      <span>Active Donor</span>
-                    </div>
+          {matches.length === 0 ? (
+            <div className="theme-card border border-slate-100 bg-white p-5 text-sm font-semibold text-slate-600 shadow-sm">No matching donor is listed in this upazila yet. Try a neighbouring upazila from donor search.</div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {matches.map(match => (
+                <div key={match.donor_ref} className="theme-card flex items-center gap-4 border border-slate-100 bg-white p-4 shadow-sm">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-100 bg-rose-50 text-lg font-extrabold text-primary">{match.blood_group}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2"><p className="truncate font-extrabold text-slate-900">{match.name}</p>{match.donor_kind === 'REGISTERED' && <VerifiedBadge verified={Boolean(match.is_verified)} compact />}</div>
+                    <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{match.phone_masked} · {match.upazila}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">{match.donor_kind === 'REGISTERED' ? 'Drop donor' : `Listed by ${match.source?.organization || 'a public directory'}`}</p>
                   </div>
                 </div>
-                {!data.responses?.some(response => response.donor_id === m.user_id && !['DECLINED', 'CANCELLED', 'NO_SHOW'].includes(response.status)) && (
-                  <div className="flex-shrink-0 md:w-32">
-                    <button disabled={inviting === m.user_id} onClick={() => inviteDonor(m.user_id)} className="w-full px-4 py-3 bg-primary text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform hover:bg-primary-dark shadow-sm disabled:opacity-50">
-                      {inviting === m.user_id ? 'Sending…' : 'Invite donor'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Discussion / Comments Section */}
       <section className="theme-card border border-slate-100 p-5 shadow-sm md:p-6">

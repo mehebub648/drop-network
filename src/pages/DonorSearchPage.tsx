@@ -68,7 +68,8 @@ export default function DonorSearchPage({
       district: searchParams.get('district') || stored.district,
       upazila: searchParams.get('upazila') || stored.upazila,
       collection_facility: searchParams.get('collection_facility') || stored.collection_facility,
-      collection_facility_code: searchParams.get('collection_facility_code') || stored.collection_facility_code
+      collection_facility_code: searchParams.get('collection_facility_code') || stored.collection_facility_code,
+      request_id: searchParams.get('request_id') || stored.request_id
     };
   });
   const [results, setResults] = useState<SearchResponse | null>(null);
@@ -97,7 +98,7 @@ export default function DonorSearchPage({
   const orderSeed = searchParams.get('order_seed') || '';
   const userId = user?.id || '';
   const hasQuery = Boolean(bloodGroup && district && upazila);
-  const contextComplete = Boolean(draft.collection_facility.trim() && draft.requester_role);
+  const contextComplete = Boolean(draft.request_id || (draft.collection_facility.trim() && draft.requester_role));
   const draftRef = useRef(draft);
   draftRef.current = draft;
 

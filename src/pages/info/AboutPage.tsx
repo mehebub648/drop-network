@@ -14,7 +14,7 @@ export default function AboutPage() {
           <li>Anyone can search by blood group and district, or a verified requester can publish a complete blood request.</li>
           <li>Drop searches available donor profiles in medically compatible blood groups and sorts matches by approximate distance.</li>
           <li>Public search results never include phone numbers. Signed-in members can view the number of an opted-in, available Drop donor.</li>
-          <li>Request contact details remain limited to the request owner and donors who accept an invitation. Request owners can update details and close the request.</li>
+          <li>Active requests publish the chosen patient-side contact so donors can call immediately. Request owners can update details and close the request.</li>
         </ul>
       </section>
       <section>

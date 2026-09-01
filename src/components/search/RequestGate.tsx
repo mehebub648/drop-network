@@ -403,7 +403,7 @@ export default function RequestGate({
                   </label>
                   <div className="request-data-section is-contact sm:col-span-2" role="note">
                     <strong>Donor contact</strong>
-                    <span>Agreed donors will use your verified mobile number to coordinate with the patient.</span>
+                    <span>Your verified mobile number will appear on the active request so donors can call immediately.</span>
                   </div>
                 </>
               )}
@@ -411,7 +411,7 @@ export default function RequestGate({
               {role === 'PATIENT' && (
                 <div className="request-data-section is-contact sm:col-span-2" role="note">
                   <strong>Donor contact</strong>
-                  <span>You selected “I’m the patient,” so agreed donors will use this same verified mobile number to contact you.</span>
+                  <span>You selected “I’m the patient,” so this verified number will appear on the active request for donor calls.</span>
                 </div>
               )}
 
@@ -419,7 +419,7 @@ export default function RequestGate({
                 <>
                   <div className="request-data-section is-contact sm:col-span-2">
                     <strong>Donor contact</strong>
-                    <span>Enter the patient or relative whom an agreed donor should call — not your volunteer account details.</span>
+                    <span>Enter the patient or relative whom donors should call. This number will appear publicly while the request is active.</span>
                   </div>
                   <label className="dialog-field sm:col-span-2">
                     <span>Whose patient-side number should donors get?</span>
@@ -488,7 +488,7 @@ export default function RequestGate({
                 <span>
                   <small>Donor contact</small>
                   <strong>{contactLabel}</strong>
-                  <span>{donorContactPhone || 'Mobile number added during verification'} · Shared only with agreed donors</span>
+                  <span>{donorContactPhone || 'Mobile number added during verification'} · Public while this request is active</span>
                 </span>
                 <button type="button" onClick={() => setStep('requester')}>Change</button>
               </div>
@@ -506,8 +506,8 @@ export default function RequestGate({
             <label className="mt-4 flex items-start gap-3 text-sm font-semibold leading-6 text-slate-700">
               <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0" />
               <span>
-                I may share these details, and I understand donor numbers are for this request only and
-                must not be reshared.
+                I may publish these details, including the donor contact number while this request is active.
+                I understand donor numbers opened through search are for this request only and must not be reshared.
               </span>
             </label>
 

@@ -40,6 +40,7 @@ import {
   SEARCH_SORTS,
   type SearchSort
 } from './donorSearch';
+import { shouldExposeRequestContacts } from './requestVisibility';
 import {
   parseDonorPreferences,
   type DonorPreferences
@@ -1382,6 +1383,7 @@ async function findRequestDonors(params: {
   facilityCode?: string;
   facilityName?: string;
   orderSeed?: string;
+  excludeRequester?: boolean;
 }) {
   const compatibleGroups = COMPATIBLE_DONORS[params.bloodGroup] || [params.bloodGroup];
   const upazilas = getUpazilaVariants(params.district, params.upazila);
@@ -1393,7 +1395,8 @@ async function findRequestDonors(params: {
       compatibleGroups,
       district: params.district,
       upazilas,
-      requesterUserId: params.requesterUserId
+      requesterUserId: params.requesterUserId,
+      excludeRequester: params.excludeRequester
     }, requester))
     .map(user => registeredDonorCard(user, params.bloodGroup, {
       district: params.district,
@@ -5310,18 +5313,39 @@ app.get('/api/requests/:id', async (req, res) => {
   if (!requestOwner && !['ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED'].includes(request.status)) {
     return res.status(404).json({ error: 'Not found' });
   }
-  // Patient identity, reference, contacts, and donor phones stay private until
-  // the response workflow grants purpose-limited access.
+  res.setHeader('Cache-Control', 'no-store');
+  // Active requests publish their chosen coordination contacts so donors can
+  // call immediately. Patient identity and internal references remain limited
+  // to the owner and accepted participants.
   const { contacts, patient_name, patient_reference, ...safeRequest } = request;
+  const privilegedViewer = requestOwner || acceptedParticipant;
   const enrichedRequest = {
     ...safeRequest,
-    ...((requestOwner || acceptedParticipant) ? { contacts: contacts || [], patient_name, patient_reference, requester_phone: requester?.phone } : {}),
+    ...(shouldExposeRequestContacts(request.status, privilegedViewer) ? { contacts: contacts || [] } : {}),
+    ...(privilegedViewer ? { patient_name, patient_reference, requester_phone: requester?.phone } : {}),
     requester_name: request.requester_name || requester?.name || 'Verified requester'
   };
 
-  const matches = requestOwner ? await findDonorMatches(request.location, request.blood_group, request.user_id, false) : [];
+  const donorMatches = requestOwner ? await findRequestDonors({
+    bloodGroup: request.blood_group,
+    district: request.location.area_name,
+    upazila: request.upazila || request.location.area_name,
+    requesterUserId: request.user_id,
+    page: 1,
+    pageSize: 6,
+    facilityCode: request.collection_facility_code,
+    facilityName: request.hospital_name,
+    orderSeed: request.id.replaceAll('-', ''),
+    excludeRequester: true
+  }) : null;
+  const matches = donorMatches ? [...donorMatches.registered, ...donorMatches.directory] : [];
 
-  res.json({ request: enrichedRequest, matches, responses: viewerResponses.map(response => responsePayload(response, viewerId)) });
+  res.json({
+    request: enrichedRequest,
+    matches,
+    match_total: donorMatches?.pagination.total || 0,
+    responses: viewerResponses.map(response => responsePayload(response, viewerId))
+  });
 });
 
 app.patch('/api/requests/:id/details', async (req, res) => {

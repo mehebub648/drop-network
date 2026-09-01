@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.115`
+Current version: `0.0.116`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -135,9 +135,9 @@ Refresh the district facility files from the public DGHS registry with:
   (Medical Library)`, while manual entry remains available. Registry inclusion
   is not proof that transfusion is currently available; requesters must confirm
   collection, screening, and transfusion arrangements directly.
-- Requesters invite eligible donors privately. Donors can accept, decline,
-  report arrival/donation, and reveal coordination contacts only after
-  acceptance. Every agreed donor receives one persisted follow-up timeline.
+- Active request pages publish the chosen patient-side contact so donors can
+  call immediately, while donor search numbers remain masked and purpose-bound.
+  Donors can accept, decline, and report arrival or donation. Every agreed donor receives one persisted follow-up timeline.
   Donor and requester report independently; matching donation answers confirm
   the record, conflicts become disputed, and requester-only answers never
   change another person's profile. The request owner sees masked contacted

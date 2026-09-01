@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.115`
+Current application version: `0.0.116`
 
 ## Overview
 
@@ -472,11 +472,12 @@ API routes:
   than a count that omits the directory.
 - `GET /api/requests` lists active, non-expired public blood requests without
   requester phone or contact details and returns bounded pagination metadata.
-- `GET /api/requests/:id` returns request details and donor matches. Contact
-  details are purpose-limited to the request owner and donors who accepted an
-  invitation; `requester_phone` stays owner-only. Donor match records expose
-  each account's non-sensitive `is_verified` flag without making request
-  contacts generally available to signed-in members.
+- `GET /api/requests/:id` publishes the chosen coordination contacts while a
+  request is active or partially fulfilled, then removes them from public
+  responses after fulfilment, cancellation, or expiry. Patient identity and
+  internal references remain purpose-limited. Request owners receive a preview
+  from the same registered-plus-imported upazila matcher used by donor search;
+  public viewers are not shown a fabricated zero-match section.
 - `PATCH /api/requests/:id/details` lets the request owner update patient, requester, date, and contacts.
 - `POST /api/requests/:id/comments` adds a comment with anonymous rate limits.
 - `DELETE /api/requests/:id/comments/:commentId` lets the request owner delete comments.
