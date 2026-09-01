@@ -28,6 +28,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   const [newComment, setNewComment] = useState('');
   const [anonName, setAnonName] = useState('');
   const [copied, setCopied] = useState(false);
+  const [copiedContact, setCopiedContact] = useState<string | null>(null);
   const [reportTarget, setReportTarget] = useState<{ type: 'REQUEST' | 'COMMENT', id: string } | null>(null);
   const [reportReason, setReportReason] = useState('OTHER');
   const [reportDetails, setReportDetails] = useState('');
@@ -46,6 +47,16 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       });
+    }
+  };
+
+  const copyContact = async (phone: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(phone);
+      setCopiedContact(key);
+      setTimeout(() => setCopiedContact(current => current === key ? null : current), 2000);
+    } catch {
+      setActionMessage({ type: 'error', text: 'Could not copy the phone number.' });
     }
   };
 
@@ -562,24 +573,37 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               </p>
             </div>
 
-            {request.contacts?.map((contact: any, index: number) => (
-              <div key={`${contact.phone}-${index}`} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{contact.type || 'Contact'}</p>
-                    <p className="truncate font-bold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</p>
+            {request.contacts?.map((contact: any, index: number) => {
+              const contactKey = `${contact.phone}-${index}`;
+              return (
+                <div key={contactKey} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{contact.type || 'Contact'}</p>
+                      <p className="truncate font-bold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <a
+                        href={`tel:${contact.phone}`}
+                        aria-label={`Call ${contact.name || 'request contact'}`}
+                        className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-primary-dark"
+                      >
+                        <Phone className="h-4 w-4" /> Call
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => copyContact(contact.phone, contactKey)}
+                        aria-label={`Copy ${contact.name || 'request contact'} phone number`}
+                        className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100"
+                      >
+                        <Copy className="h-4 w-4" /> {copiedContact === contactKey ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
                   </div>
-                  <a
-                    href={`tel:${contact.phone}`}
-                    aria-label={`Call ${contact.name || 'request contact'}`}
-                    className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-primary-dark"
-                  >
-                    <Phone className="h-4 w-4" /> Call
-                  </a>
+                  <p className="mt-2 break-all text-sm font-semibold text-slate-600">{contact.phone}</p>
                 </div>
-                <p className="mt-2 break-all text-sm font-semibold text-slate-600">{contact.phone}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
