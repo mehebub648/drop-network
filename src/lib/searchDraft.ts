@@ -13,6 +13,8 @@ export const SEARCH_DRAFT_KEY = 'drop_search_flow_v1';
 
 export type RequesterRole = 'PATIENT' | 'RELATIVE' | 'THIRD_PARTY';
 export type NeededWindow = 'WITHIN_HOURS' | 'TODAY' | 'WITHIN_2_3_DAYS' | 'PLANNED';
+export type BloodComponent = 'WHOLE_BLOOD' | 'RED_CELLS' | 'PLATELETS' | 'PLASMA';
+export type RequestReason = 'SURGERY' | 'ACCIDENT_BLEEDING' | 'CHILDBIRTH' | 'ANAEMIA' | 'THALASSEMIA' | 'CANCER_TREATMENT' | 'OTHER';
 
 export type SearchDraft = {
   blood_group: string;
@@ -24,6 +26,9 @@ export type SearchDraft = {
   patient_title: 'MR' | 'MST' | '';
   patient_name: string;
   patient_age: string;
+  blood_component: BloodComponent | '';
+  units_required: string;
+  request_reason: RequestReason | '';
   requester_name: string;
   /** The coordinator's private account/verification number. Never sent in the request body. */
   requester_phone: string;
@@ -45,6 +50,9 @@ export const EMPTY_DRAFT: SearchDraft = {
   patient_title: '',
   patient_name: '',
   patient_age: '',
+  blood_component: '',
+  units_required: '',
+  request_reason: '',
   requester_name: '',
   requester_phone: '',
   requester_relation: '',
@@ -93,12 +101,18 @@ export function startsAfterBloodGroup(params: URLSearchParams) {
 
 export function hasPatientDetails(draft: SearchDraft) {
   const age = Number(draft.patient_age);
+  const units = Number(draft.units_required);
   return Boolean(
     draft.patient_title &&
     draft.patient_name.trim() &&
     Number.isInteger(age) &&
     age >= 1 &&
-    age <= 120
+    age <= 120 &&
+    draft.blood_component &&
+    Number.isInteger(units) &&
+    units >= 1 &&
+    units <= 20 &&
+    draft.request_reason
   );
 }
 
@@ -147,6 +161,9 @@ export function searchRequestPayload(draft: SearchDraft) {
     patient_title: draft.patient_title,
     patient_name: draft.patient_name,
     patient_age: Number(draft.patient_age),
+    blood_component: draft.blood_component,
+    units_required: Number(draft.units_required),
+    request_reason: draft.request_reason,
     ...requesterFields,
     needed_window: draft.needed_window || undefined
   };

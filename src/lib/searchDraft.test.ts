@@ -19,6 +19,9 @@ const completeDraft = (patch: Partial<SearchDraft> = {}): SearchDraft => ({
   patient_title: 'MR',
   patient_name: 'Patient Name',
   patient_age: '32',
+  blood_component: 'WHOLE_BLOOD',
+  units_required: '2',
+  request_reason: 'SURGERY',
   requester_name: 'Volunteer Name',
   requester_phone: '01800000000',
   requester_relation: 'Brother',
@@ -39,6 +42,9 @@ test('completed patient and requester sections can be skipped when a draft is re
   assert.equal(hasPatientDetails(completeDraft()), true);
   assert.equal(hasPatientDetails(completeDraft({ patient_age: '0' })), false);
   assert.equal(hasPatientDetails(completeDraft({ patient_name: ' ' })), false);
+  assert.equal(hasPatientDetails(completeDraft({ blood_component: '' })), false);
+  assert.equal(hasPatientDetails(completeDraft({ units_required: '0' })), false);
+  assert.equal(hasPatientDetails(completeDraft({ request_reason: '' })), false);
 
   assert.equal(hasRequesterDetails(completeDraft()), true);
   assert.equal(hasRequesterDetails(completeDraft({ requester_phone: '' })), false);
@@ -59,6 +65,9 @@ test('request payload omits stale contact fields after changing to patient', () 
   assert.equal('contact_name' in payload, false);
   assert.equal('contact_phone' in payload, false);
   assert.equal('requester_phone' in payload, false);
+  assert.equal(payload.blood_component, 'WHOLE_BLOOD');
+  assert.equal(payload.units_required, 2);
+  assert.equal(payload.request_reason, 'SURGERY');
 });
 
 test('request payload includes only fields relevant to the selected coordinator role', () => {

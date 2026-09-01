@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
-import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, MapPin, MessageCircle, Phone, Plus, Share2, Trash2, User as UserIcon, Users } from 'lucide-react';
+import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, HeartPulse, MapPin, MessageCircle, Phone, Plus, Share2, Trash2, User as UserIcon, Users } from 'lucide-react';
 import { api, BROWSER_FINGERPRINT, type ContactedDonorSummary, type SearchDonorCard } from '../lib/api';
 import { compatibleDonorsFor } from '../lib/blood';
 import {
@@ -13,6 +13,16 @@ import { cn } from '../lib/utils';
 import { UrgencyBadge } from '../components/UrgencyBadge';
 import VerifiedBadge from '../components/VerifiedBadge';
 import ModalPortal from '../components/ModalPortal';
+
+const REQUEST_REASON_LABELS: Record<string, string> = {
+  SURGERY: 'Surgery',
+  ACCIDENT_BLEEDING: 'Accident or bleeding',
+  CHILDBIRTH: 'Childbirth',
+  ANAEMIA: 'Anaemia',
+  THALASSEMIA: 'Thalassemia',
+  CANCER_TREATMENT: 'Cancer treatment',
+  OTHER: 'Other medical need'
+};
 
 export default function RequestDetailsPage({ user }: { user: any }) {
   const { id } = useParams();
@@ -39,7 +49,11 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     const neededText = data.request.needed_by
       ? `by ${new Date(data.request.needed_by).toLocaleDateString('en-GB')}`
       : 'ASAP';
-    const text = `URGENT: ${data.request.blood_group} blood needed in ${data.request.location.area_name} ${neededText}. Details & contact: ${url}`;
+    const component = (data.request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
+    const reason = REQUEST_REASON_LABELS[data.request.request_reason];
+    const units = data.request.units_required || 1;
+    const need = `${units} unit${units === 1 ? '' : 's'} of ${component}`;
+    const text = `URGENT: ${data.request.blood_group} ${need} needed${reason ? ` for ${reason.toLowerCase()}` : ''} in ${data.request.location.area_name} ${neededText}. Details & contact: ${url}`;
     if (target === 'whatsapp') {
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
     } else {
@@ -221,6 +235,8 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     ? new Date(request.needed_by).toLocaleDateString('en-GB')
     : 'As soon as possible';
   const componentLabel = (request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
+  const unitsRequired = request.units_required || 1;
+  const reasonLabel = REQUEST_REASON_LABELS[request.request_reason];
   const donorSearchQuery = new URLSearchParams({
     blood_group: request.blood_group,
     district: request.location.area_name,
@@ -342,7 +358,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           )}
         </div>
 
-        <div className="relative z-0 mt-6 grid grid-cols-2 gap-2.5 border-t border-rose-100 pt-5 sm:grid-cols-4">
+        <div className="relative z-0 mt-6 grid grid-cols-2 gap-2.5 border-t border-rose-100 pt-5 lg:grid-cols-5">
           <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
             <MapPin className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
             <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Location</p>
@@ -357,7 +373,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
             <Droplet className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
             <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Amount</p>
-            <p className="mt-1 text-sm font-bold text-slate-800">{request.units_required || 1} unit · {componentLabel}</p>
+            <p className="mt-1 text-sm font-bold text-slate-800">{unitsRequired} unit{unitsRequired === 1 ? '' : 's'} · {componentLabel}</p>
           </div>
           <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
             <Users className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
@@ -368,6 +384,13 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               ))}
             </p>
           </div>
+          {reasonLabel && (
+            <div className="col-span-2 rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100 lg:col-span-1">
+              <HeartPulse className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Reason</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{reasonLabel}</p>
+            </div>
+          )}
         </div>
 
         {request.status === 'ACTIVE' && (
@@ -470,7 +493,8 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Patient Name</label>
-                <input 
+                <input
+                  required
                   type="text" value={editData.patient_name} onChange={e => setEditData({...editData, patient_name: e.target.value})}
                   className="w-full px-4 py-3 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary text-sm font-medium outline-none" placeholder="Enter patient name..."
                 />

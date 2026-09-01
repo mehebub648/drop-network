@@ -9,7 +9,9 @@ import { getUpazilasForDistrict } from '../../lib/upazilas';
 import {
   hasPatientDetails,
   hasRequesterDetails,
+  type BloodComponent,
   type NeededWindow,
+  type RequestReason,
   type SearchDraft
 } from '../../lib/searchDraft';
 import ModalPortal from '../ModalPortal';
@@ -23,6 +25,23 @@ const NEEDED_WINDOWS: Array<{ value: NeededWindow; label: string }> = [
   { value: 'TODAY', label: 'Today' },
   { value: 'WITHIN_2_3_DAYS', label: 'In 2 to 3 days' },
   { value: 'PLANNED', label: 'Planned, later this week' }
+];
+
+const BLOOD_COMPONENTS: Array<{ value: BloodComponent; label: string }> = [
+  { value: 'WHOLE_BLOOD', label: 'Whole blood' },
+  { value: 'RED_CELLS', label: 'Red cells' },
+  { value: 'PLATELETS', label: 'Platelets' },
+  { value: 'PLASMA', label: 'Plasma' }
+];
+
+const REQUEST_REASONS: Array<{ value: RequestReason; label: string }> = [
+  { value: 'SURGERY', label: 'Surgery' },
+  { value: 'ACCIDENT_BLEEDING', label: 'Accident or bleeding' },
+  { value: 'CHILDBIRTH', label: 'Childbirth' },
+  { value: 'ANAEMIA', label: 'Anaemia' },
+  { value: 'THALASSEMIA', label: 'Thalassemia' },
+  { value: 'CANCER_TREATMENT', label: 'Cancer treatment' },
+  { value: 'OTHER', label: 'Other medical need' }
 ];
 
 /**
@@ -217,6 +236,8 @@ export default function RequestGate({
       : "I'm a third-party volunteer";
   const patientLabel = `${draft.patient_title === 'MR' ? 'Mr.' : 'Mst.'} ${draft.patient_name}`.trim();
   const neededWindowLabel = NEEDED_WINDOWS.find(option => option.value === draft.needed_window)?.label || 'As soon as possible';
+  const componentLabel = BLOOD_COMPONENTS.find(option => option.value === draft.blood_component)?.label || '';
+  const reasonLabel = REQUEST_REASONS.find(option => option.value === draft.request_reason)?.label || '';
   const accountPhone = user?.phone || draft.requester_phone;
   const requestOwnerName = role === 'PATIENT' ? patientLabel : draft.requester_name;
   const contactLabel = role === 'PATIENT'
@@ -318,6 +339,24 @@ export default function RequestGate({
               <label className="dialog-field sm:col-span-2">
                 <span>Patient full name</span>
                 <input required value={draft.patient_name} onChange={event => set({ patient_name: event.target.value })} className="input" />
+              </label>
+              <label className="dialog-field">
+                <span>Blood component</span>
+                <select required value={draft.blood_component} onChange={event => set({ blood_component: event.target.value as BloodComponent })} className="input">
+                  <option value="">Select</option>
+                  {BLOOD_COMPONENTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="dialog-field">
+                <span>Units needed</span>
+                <input required type="number" inputMode="numeric" min={1} max={20} value={draft.units_required} onChange={event => set({ units_required: event.target.value })} className="input" />
+              </label>
+              <label className="dialog-field sm:col-span-2">
+                <span>Reason blood is needed</span>
+                <select required value={draft.request_reason} onChange={event => set({ request_reason: event.target.value as RequestReason })} className="input">
+                  <option value="">Select</option>
+                  {REQUEST_REASONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
               </label>
             </div>
 
@@ -474,6 +513,10 @@ export default function RequestGate({
             <div className="request-review-grid">
               <div className="request-review-card">
                 <span><small>Patient</small><strong>{patientLabel}</strong><span>Age {draft.patient_age}</span></span>
+                <button type="button" onClick={() => setStep('patient')}>Change</button>
+              </div>
+              <div className="request-review-card">
+                <span><small>Blood needed</small><strong>{draft.units_required} unit{draft.units_required === '1' ? '' : 's'} · {componentLabel}</strong><span>{reasonLabel}</span></span>
                 <button type="button" onClick={() => setStep('patient')}>Change</button>
               </div>
               <div className="request-review-card">

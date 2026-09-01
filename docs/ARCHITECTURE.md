@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.120`
+Current application version: `0.0.121`
 
 ## Overview
 
@@ -74,6 +74,9 @@ Entry points:
   from the patient search but remain editable as the donor's home location.
   Role-aware guidance identifies whose information belongs in every field, and
   review keeps the patient, request owner, and donor contact visibly separate.
+  The patient stage requires a full patient name plus the blood component,
+  units needed, and one broad public reason category; it does not collect a
+  detailed diagnosis.
 - `src/components/DonorPreferencesFields.tsx` manages bounded preferred areas,
   facilities, travel willingness, and recurring Asia/Dhaka windows. The
   facility picker uses the same generated DGHS snapshot as request search.

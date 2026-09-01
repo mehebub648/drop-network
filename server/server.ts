@@ -128,6 +128,7 @@ const REQUEST_STATUSES = ['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_
 const AVAILABILITY_STATUSES = ['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'] as const;
 const CONTACT_TYPES = ['PATIENT', 'RELATIVE', 'HOSPITAL', 'OTHER'] as const;
 const BLOOD_COMPONENTS = ['WHOLE_BLOOD', 'RED_CELLS', 'PLATELETS', 'PLASMA'] as const;
+const REQUEST_REASONS = ['SURGERY', 'ACCIDENT_BLEEDING', 'CHILDBIRTH', 'ANAEMIA', 'THALASSEMIA', 'CANCER_TREATMENT', 'OTHER'] as const;
 const REQUESTER_RELATIONSHIPS = ['SELF', 'FAMILY', 'FRIEND', 'HOSPITAL_STAFF', 'VOLUNTEER', 'OTHER'] as const;
 const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
 // SIGN_IN serves the blood request flow, where the requester gives a phone
@@ -386,6 +387,7 @@ type BloodRequest = {
   expires_at: string;
   status: (typeof REQUEST_STATUSES)[number];
   blood_component?: (typeof BLOOD_COMPONENTS)[number];
+  request_reason?: (typeof REQUEST_REASONS)[number];
   units_required?: number;
   units_pledged?: number;
   units_confirmed?: number;
@@ -3252,9 +3254,11 @@ app.post('/api/me/donor-profile', async (req, res) => {
   }
 });
 
-function parseCompleteRequest(body: Record<string, unknown>) {
+function parseCompleteRequest(body: Record<string, unknown>, requireRequestReason = true) {
   const blood_group = body.blood_group;
   const blood_component = body.blood_component;
+  const request_reason = body.request_reason;
+  const parsedRequestReason = isOneOf(request_reason, REQUEST_REASONS) ? request_reason : undefined;
   const location = parseLocation(body.location);
   const needed_by = parseDate(body.needed_by);
   const contacts = parseContacts(body.contacts);
@@ -3270,6 +3274,7 @@ function parseCompleteRequest(body: Record<string, unknown>) {
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return { error: 'Valid blood group is required' } as const;
   if (!isOneOf(blood_component, BLOOD_COMPONENTS)) return { error: 'Valid blood component is required' } as const;
+  if (!parsedRequestReason && (requireRequestReason || request_reason !== undefined)) return { error: 'Reason blood is needed is required' } as const;
   if (!location) return { error: 'Valid location is required' } as const;
   if (!needed_by || new Date(needed_by).getTime() <= Date.now()) return { error: 'Needed-by time must be in the future' } as const;
   if (!units_required) return { error: 'Units required must be between 1 and 20' } as const;
@@ -3281,7 +3286,7 @@ function parseCompleteRequest(body: Record<string, unknown>) {
 
   return {
     value: {
-      blood_group, blood_component, location, upazila, needed_by, contacts, units_required,
+      blood_group, blood_component, ...(parsedRequestReason ? { request_reason: parsedRequestReason } : {}), location, upazila, needed_by, contacts, units_required,
       hospital_name, hospital_address, ward, patient_reference, patient_name,
       requester_name, requester_relationship
     }
@@ -3300,11 +3305,10 @@ const REQUESTER_ROLE_RELATIONSHIPS: Record<(typeof REQUESTER_ROLES)[number], (ty
  * `parseCompleteRequest` above is deliberately left alone: it still guards
  * `POST /api/requests`, whose output feeds the detail editor and the admin
  * surfaces, and loosening it would degrade those records to serve a different
- * flow. What the search flow does not ask for is derived here, with a reason:
+ * flow. The search flow now collects component, quantity, and a broad reason
+ * so the published request does not silently claim every patient needs one
+ * unit of whole blood. What remains derived here is:
  *
- *   blood_component  WHOLE_BLOOD - volunteers calling donors are not making a
- *                    component decision, and this flow never asks a clinician.
- *   units_required   1 - one donor per call; progress accounting needs a number.
  *   needed_by        from the optional timing question, or absent for "now".
  *   hospital_address,
  *   patient_reference  not collected; both are optional on the record.
@@ -3315,6 +3319,9 @@ const REQUESTER_ROLE_RELATIONSHIPS: Record<(typeof REQUESTER_ROLES)[number], (ty
  */
 function parseSearchRequest(body: Record<string, unknown>, requesterPhone: string) {
   const blood_group = body.blood_group;
+  const blood_component = body.blood_component;
+  const units_required = parsePositiveInteger(body.units_required);
+  const request_reason = body.request_reason;
   const districtName = cleanString(body.district, 80);
   const location = districtName ? getLocationByName(districtName) : null;
   const requester_role = body.requester_role;
@@ -3333,6 +3340,9 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
   const needed_window = parseOptionalEnum(body.needed_window, NEEDED_WINDOWS);
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return { error: 'Valid blood group is required' } as const;
+  if (!isOneOf(blood_component, BLOOD_COMPONENTS)) return { error: 'Valid blood component is required' } as const;
+  if (!units_required) return { error: 'Units required must be between 1 and 20' } as const;
+  if (!isOneOf(request_reason, REQUEST_REASONS)) return { error: 'Reason blood is needed is required' } as const;
   if (!location) return { error: 'Valid Bangladesh district is required' } as const;
   const upazila = parseUpazila(location.area_name, body.upazila);
   if (!upazila) return { error: 'Choose an upazila that belongs to the selected district' } as const;
@@ -3377,8 +3387,9 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
       blood_group,
       location,
       upazila,
-      blood_component: 'WHOLE_BLOOD' as const,
-      units_required: 1,
+      blood_component,
+      units_required,
+      request_reason,
       hospital_name: collection_facility,
       collection_facility_code,
       patient_title,
@@ -5314,15 +5325,17 @@ app.get('/api/requests/:id', async (req, res) => {
     return res.status(404).json({ error: 'Not found' });
   }
   res.setHeader('Cache-Control', 'no-store');
-  // Active requests publish their chosen coordination contacts so donors can
-  // call immediately. Patient identity and internal references remain limited
-  // to the owner and accepted participants.
+  // Active requests publish their chosen coordination contacts and patient
+  // name so donors can understand whom the request is for and call immediately.
+  // Internal patient references remain limited to the owner and participants.
   const { contacts, patient_name, patient_reference, ...safeRequest } = request;
   const privilegedViewer = requestOwner || acceptedParticipant;
+  const activePublicRequest = ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status);
   const enrichedRequest = {
     ...safeRequest,
     ...(shouldExposeRequestContacts(request.status, privilegedViewer) ? { contacts: contacts || [] } : {}),
-    ...(privilegedViewer ? { patient_name, patient_reference, requester_phone: requester?.phone } : {}),
+    ...((privilegedViewer || activePublicRequest) ? { patient_name } : {}),
+    ...(privilegedViewer ? { patient_reference, requester_phone: requester?.phone } : {}),
     requester_name: request.requester_name || requester?.name || 'Verified requester'
   };
 
@@ -5356,7 +5369,7 @@ app.patch('/api/requests/:id/details', async (req, res) => {
       return res.status(403).json({ error: 'Only the request owner can update details' });
     }
 
-    const parsed = parseCompleteRequest({ ...requests[requestIndex], ...req.body });
+    const parsed = parseCompleteRequest({ ...requests[requestIndex], ...req.body }, false);
     if ('error' in parsed) return validationError(res, parsed.error);
     requests[requestIndex] = { ...requests[requestIndex], ...parsed.value };
     requests[requestIndex].timeline = [...(requests[requestIndex].timeline || []), {
