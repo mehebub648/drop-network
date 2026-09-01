@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { CheckCircle2, Clock, HeartPulse, LockKeyhole, MapPin, Save, Stethoscope } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Clock, HeartPulse, LockKeyhole, MapPin, Save, Stethoscope } from 'lucide-react';
 import DonationExperienceFields from '../../components/DonationExperienceFields';
 import DonorPreferencesFields, { type DonorPreferenceDraft } from '../../components/DonorPreferencesFields';
 import { api } from '../../lib/api';
@@ -138,12 +138,13 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </div>
         </header>
 
-        <section className="profile-form-section">
-          <div className="profile-section-heading">
+        <details className="profile-form-section profile-collapsible" open>
+          <summary className="profile-section-heading">
             <span><MapPin aria-hidden="true" /></span>
             <div><h2>Search details</h2><p>These details help people find you when you are available.</p></div>
-          </div>
-          <div className="profile-form-grid">
+            <ChevronDown className="profile-section-chevron" aria-hidden="true" />
+          </summary>
+          <div className="profile-section-body profile-form-grid">
             <label>Blood group
               <select id="donor-blood-group" value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input">
                 {BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}
@@ -162,22 +163,24 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
               <small>Without an upazila, your profile will not appear in donor search results.</small>
             </label>
           </div>
-        </section>
+        </details>
 
-        <section className="profile-form-section">
-          <div className="profile-section-heading">
+        <details className="profile-form-section profile-collapsible">
+          <summary className="profile-section-heading">
             <span><MapPin aria-hidden="true" /></span>
             <div><h2>Where and when donation is convenient</h2><p>Optional preferences improve matching without publishing your private schedule or note.</p></div>
-          </div>
-          <DonorPreferencesFields value={preferences} onChange={setPreferences} homeDistrict={district} />
-        </section>
+            <ChevronDown className="profile-section-chevron" aria-hidden="true" />
+          </summary>
+          <div className="profile-section-body"><DonorPreferencesFields value={preferences} onChange={setPreferences} homeDistrict={district} /></div>
+        </details>
 
-        <section className="profile-form-section profile-health-section">
-          <div className="profile-section-heading">
+        <details className="profile-form-section profile-health-section profile-collapsible">
+          <summary className="profile-section-heading">
             <span><Stethoscope aria-hidden="true" /></span>
             <div><h2>Private health details</h2><p>Helpful context for keeping your availability honest.</p></div>
-          </div>
-          <div className="profile-form-grid">
+            <ChevronDown className="profile-section-chevron" aria-hidden="true" />
+          </summary>
+          <div className="profile-section-body profile-form-grid">
             <label>Age <em>Optional</em>
               <input id="donor-age" type="number" inputMode="numeric" min={16} max={70} value={age} onChange={event => setAge(event.target.value)} className="input" />
             </label>
@@ -204,29 +207,33 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           {medicalConditions.trim() && status === 'AVAILABLE' && (
             <p className="profile-health-reminder">If you are currently unwell, consider changing your availability to “Sick or recovering”.</p>
           )}
-        </section>
+        </details>
 
-        <section className="profile-form-section">
-          <div className="profile-section-heading">
+        <details className="profile-form-section profile-collapsible">
+          <summary className="profile-section-heading">
             <span><Clock aria-hidden="true" /></span>
             <div><h2>Donation experience</h2><p>Add only what you remember. Exact dates are not required.</p></div>
+            <ChevronDown className="profile-section-chevron" aria-hidden="true" />
+          </summary>
+          <div className="profile-section-body">
+            <DonationExperienceFields
+              idPrefix="donor-profile"
+              value={donationExperience}
+              onChange={setDonationExperience}
+              optional
+              minimumCount={user.donor_profile?.donation_history?.length || 0}
+            />
+            <p className="profile-section-footnote">Your last-donation summary and lifetime count can appear publicly while you are available. Detailed records stay private.</p>
           </div>
-          <DonationExperienceFields
-            idPrefix="donor-profile"
-            value={donationExperience}
-            onChange={setDonationExperience}
-            optional
-            minimumCount={user.donor_profile?.donation_history?.length || 0}
-          />
-          <p className="profile-section-footnote">Your last-donation summary and lifetime count can appear publicly while you are available. Detailed records stay private.</p>
-        </section>
+        </details>
 
-        <section className="profile-form-section">
-          <div className="profile-section-heading">
+        <details className="profile-form-section profile-collapsible" open>
+          <summary className="profile-section-heading">
             <span><HeartPulse aria-hidden="true" /></span>
             <div><h2>Availability</h2><p>Pause your listing any time. You can return when you are ready.</p></div>
-          </div>
-          <div className="profile-form-grid">
+            <ChevronDown className="profile-section-chevron" aria-hidden="true" />
+          </summary>
+          <div className="profile-section-body profile-form-grid">
             <label className="profile-grid-wide">Current status
               <select id="donor-status" value={status} onChange={event => setStatus(event.target.value as AvailabilityStatus)} className="input">
                 {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -239,7 +246,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
               </label>
             )}
           </div>
-        </section>
+        </details>
 
         <footer className="profile-editor-actions">
           <div aria-live="polite">

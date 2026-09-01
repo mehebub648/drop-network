@@ -18,7 +18,8 @@
 - Task, account, authentication, and protected workflow routes do not inherit
   the promotional footer. The remaining mobile information footer is compact.
 - Member identity appears once; mobile navigation opens from an accessible
-  account-section sheet instead of an overflowing horizontal rail.
+  account-section sheet, and optional donor-profile fields stay available in
+  collapsible sections with a persistent Save action.
 - Community preview and post management are collapsed secondary actions rather
   than competing with the editor.
 - Information and legal pages retain their content while adding a compact
