@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.124`
+Current application version: `0.0.125`
 
 ## Overview
 
@@ -136,10 +136,10 @@ Entry points:
 
 Routes:
 
-- `/` is a task-first donor search page. Blood group, location,
-  collection-facility, and requester-role questions remain staged, but metrics,
-  promotional sections, and repeated explanations have been removed. The draft
-  persists into `/directory`; Requests and donor-profile actions remain compact
+- `/` is the task-first entry to donor search and asks only for the blood group.
+  Submitting that choice opens `/directory` at the location question, with the
+  selected group and saved draft preserved so the route change continues rather
+  than restarts the flow. Requests and donor-profile actions remain compact
   secondary links.
 - `/requests` uses a compact divided list of 20-request public pages. Blood
   group, district, urgency, and page filters remain persisted in the URL. A
@@ -161,9 +161,10 @@ Routes:
 - `/request/new` no longer exists and redirects to `/directory`. Posting a blood
   request is not a separate form any more: searching for donors is how a request
   is created (see below).
-- `/directory` is the combined search and request flow. It asks for blood group,
-  district and upazila together, collection facility, and requester role in a
-  guided sequence with nothing pre-selected - a wrong default silently searches the wrong
+- `/directory` is the combined search and request flow. A home-page handoff starts
+  at district and upazila for the selected blood group; a direct visit starts at
+  blood group. Collection facility and requester role follow in the same guided
+  sequence, with nothing pre-selected - a wrong default silently searches the wrong
   place. No stage label or progress indicator surrounds those questions. After
   a search, the page continues with a compact summary of the carried
   criteria and an in-place refine panel instead of repeating the initial hero.

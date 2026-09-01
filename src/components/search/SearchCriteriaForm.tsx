@@ -57,7 +57,8 @@ export default function SearchCriteriaForm({
   nextLabel = 'Continue',
   compact = false,
   initialStep = 0,
-  skipBloodGroup = false
+  skipBloodGroup = false,
+  handoffAfterBloodGroup = false
 }: {
   value: Criteria;
   onChange: (next: Criteria) => void;
@@ -68,6 +69,7 @@ export default function SearchCriteriaForm({
   compact?: boolean;
   initialStep?: number;
   skipBloodGroup?: boolean;
+  handoffAfterBloodGroup?: boolean;
 }) {
   const firstStep = skipBloodGroup ? 1 : Math.max(0, Math.min(QUESTIONS.length - 1, initialStep));
   const [activeStep, setActiveStep] = useState(firstStep);
@@ -145,6 +147,10 @@ export default function SearchCriteriaForm({
 
   const next = () => {
     if (!stepComplete) return;
+    if (activeStep === 0 && handoffAfterBloodGroup) {
+      onSubmit();
+      return;
+    }
     if (activeStep < QUESTIONS.length - 1) {
       setFacilityOpen(false);
       setActiveStep(step => step + 1);
@@ -399,7 +405,7 @@ export default function SearchCriteriaForm({
         <button data-search-navigation type="submit" disabled={!stepComplete || submitting} className="primary-button disabled:cursor-not-allowed disabled:opacity-60">
           {submitting
             ? 'Searching...'
-            : activeStep === QUESTIONS.length - 1
+            : activeStep === QUESTIONS.length - 1 || (activeStep === 0 && handoffAfterBloodGroup)
               ? submitLabel
               : nextLabel}
         </button>

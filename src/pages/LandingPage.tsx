@@ -72,9 +72,7 @@ export default function LandingPage({ user }: { user: any }) {
   const search = () => {
     writeSearchDraft({ ...draft, request_id: undefined });
     const query = new URLSearchParams({
-      blood_group: draft.blood_group,
-      district: draft.district,
-      upazila: draft.upazila
+      blood_group: draft.blood_group
     });
     navigate(`/directory?${query.toString()}`);
   };
@@ -85,7 +83,7 @@ export default function LandingPage({ user }: { user: any }) {
         <div className="landing-task-copy">
           <span className="landing-task-icon" aria-hidden="true"><HeartHandshake /></span>
           <h1>Find a blood donor</h1>
-          <p>Search by blood group and collection area. Contact details remain protected.</p>
+          <p>Choose the blood group to begin. The collection area comes next, and contact details remain protected.</p>
         </div>
 
         <div id="donor-search" className="landing-task-search scroll-mt-24">
@@ -93,9 +91,9 @@ export default function LandingPage({ user }: { user: any }) {
             value={criteria}
             onChange={updateCriteria}
             onSubmit={search}
-            nextLabel="Continue"
-            submitLabel="Search donors"
+            submitLabel="Continue to location"
             compact
+            handoffAfterBloodGroup
           />
         </div>
       </section>

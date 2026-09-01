@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.124`
+Current version: `0.0.125`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -85,10 +85,10 @@ Refresh the district facility files from the public DGHS registry with:
   Production automatically disables a persisted bypass and refuses attempts to
   enable it. `/ready` also stays unavailable until SMS and metrics protection
   are configured.
-- The complete donor search starts on `/`: blood group, district, upazila,
-  collection facility, and requester role are asked one at a time and carry
-  into `/directory`. The interface shows only the current question and answer,
-  without stage labels, progress graphics, or repeated instructions.
+- Donor search starts on `/` with blood group only, then continues on
+  `/directory` with district, upazila, collection facility, and requester role.
+  The selected blood group and saved draft carry across that route handoff, so
+  the interface shows each question once without restarting the flow.
   Phone-verified, opted-in donors are ranked first and explicitly labelled before
   attributed public listings. Requesters can sort by recommendation, recent
   confirmation, location fit, donation total, contact reliability, or name,
