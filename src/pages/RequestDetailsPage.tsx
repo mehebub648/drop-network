@@ -556,37 +556,40 @@ export default function RequestDetailsPage({ user }: { user: any }) {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 fade-in sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
-              <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Patient</p>
-              <p className="font-bold text-slate-900">{request.patient_name || 'Name not provided'}</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
-              <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Requested by</p>
-              <p className="font-bold text-slate-900">{request.requester_name || 'Anonymous'}</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
-              <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Needed by</p>
-              <p className="flex items-center gap-2 font-bold text-slate-900">
-                <Calendar className="w-4 h-4 text-primary" />
-                {neededLabel}
-              </p>
-            </div>
+          <div className="grid gap-3 fade-in lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+            <dl className="overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-100 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
+              <div className="p-4 sm:min-h-28">
+                <dt className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Patient</dt>
+                <dd className="font-bold text-slate-900">{request.patient_name || 'Name not provided'}</dd>
+              </div>
+              <div className="border-t border-slate-200 p-4 sm:min-h-28 sm:border-t-0">
+                <dt className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Requested by</dt>
+                <dd className="font-bold text-slate-900">{request.requester_name || 'Anonymous'}</dd>
+              </div>
+              <div className="border-t border-slate-200 p-4 sm:min-h-28 sm:border-t-0">
+                <dt className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Needed by</dt>
+                <dd className="flex items-center gap-2 font-bold text-slate-900">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  {neededLabel}
+                </dd>
+              </div>
+            </dl>
 
-            {request.contacts?.map((contact: any, index: number) => {
-              const contactKey = `${contact.phone}-${index}`;
-              return (
-                <div key={contactKey} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+            <div className="grid gap-3">
+              {request.contacts?.map((contact: any, index: number) => {
+                const contactKey = `${contact.phone}-${index}`;
+                return (
+                  <div key={contactKey} className="flex min-h-28 items-stretch justify-between gap-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
+                    <div className="min-w-0 self-center">
                       <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{contact.type || 'Contact'}</p>
                       <p className="truncate font-bold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</p>
+                      <p className="mt-1 break-all text-sm font-semibold text-slate-600">{contact.phone}</p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex w-28 shrink-0 flex-col justify-center gap-2">
                       <a
                         href={`tel:${contact.phone}`}
                         aria-label={`Call ${contact.name || 'request contact'}`}
-                        className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-primary-dark"
+                        className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                       >
                         <Phone className="h-4 w-4" /> Call
                       </a>
@@ -594,16 +597,16 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                         type="button"
                         onClick={() => copyContact(contact.phone, contactKey)}
                         aria-label={`Copy ${contact.name || 'request contact'} phone number`}
-                        className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100"
+                        aria-live="polite"
+                        className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                       >
                         <Copy className="h-4 w-4" /> {copiedContact === contactKey ? 'Copied' : 'Copy'}
                       </button>
                     </div>
                   </div>
-                  <p className="mt-2 break-all text-sm font-semibold text-slate-600">{contact.phone}</p>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </section>
