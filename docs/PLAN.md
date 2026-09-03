@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.144`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.145`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -12,6 +12,16 @@ delivered.
 ## Bucket 1 - Fixable in-repo (no credentials, no external service)
 
 ### Code quality / polish
+
+- [ ] **Complete the native Android migration.** Inventory every app-visible
+  route and API contract, publish the complete language-neutral v1 schema, then
+  replace each remaining WebView handoff with a Flutter screen while preserving
+  authentication, privacy gates, deep links, uploads, downloads, offline
+  recovery, and the UX-001 through UX-016 workflow invariants.
+- [ ] **Extract the browser frontend from the backend runtime.** Preserve public
+  SEO and social metadata, proxy browser `/api` calls through the web origin,
+  and remove Vite/static delivery from the API only after independent build and
+  production checks exist.
 
 - [ ] **Post-implementation accessibility validation.** UX-001 through UX-016
   from the 1.0.11 Android-first audit are implemented. Re-capture the affected

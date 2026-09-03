@@ -84,7 +84,8 @@ import { escapeHtml, renderCommunityPostHtml, renderPublicOriginHtml } from './c
 import { inspectStaticAssets, type StaticAssetHealth } from './staticAssets';
 import { parseAvailabilityReason, parseMedicalConditions, parseRegistrationAvailability } from './donorProfile';
 import { DAILY_UNIQUE_SEARCH_LIMIT, DailySearchBudget } from './searchBudget';
-import { isTrustedCookieMutation, secureBearerMatches } from './httpSecurity';
+import { isTrustedCookieMutation, resolveSessionCredential, secureBearerMatches } from './httpSecurity';
+import { CURRENT_API_VERSION, rewriteVersionedApiUrl } from './apiVersioning';
 import { migrateDonationLedger, resolveDonationLedger } from './donationLedger';
 import { findDuplicateActiveRequest } from './requestDeduplication';
 import { REQUEST_REASONS, type RequestReason } from './requestReasons';
@@ -181,6 +182,15 @@ function publicOrigin(req: express.Request) {
 // express-rate-limit sees the real client IP instead of the proxy's.
 app.set('trust proxy', 1);
 
+app.use((req, res, next) => {
+  const rewrittenUrl = rewriteVersionedApiUrl(req.url);
+  if (!rewrittenUrl) return next();
+
+  req.url = rewrittenUrl;
+  res.set('X-Drop-API-Version', CURRENT_API_VERSION);
+  next();
+});
+
 // CSP is disabled in development because Vite's middleware-mode HMR relies on
 // inline scripts and websocket connections.
 app.use(helmet({
@@ -211,9 +221,10 @@ app.use(cors({
 app.use(express.json({ limit: '32kb' }));
 app.use(cookieParser());
 app.use((req, res, next) => {
+  const credential = getSessionCredential(req);
   if (isTrustedCookieMutation({
     method: req.method,
-    sessionToken: getSessionToken(req),
+    sessionToken: credential.transport === 'cookie' ? credential.token : '',
     origin: req.get('origin'),
     trustedOrigins: trustedMutationOrigins
   })) return next();
@@ -1532,9 +1543,15 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 
 const commentTimestamps: Record<string, number[]> = {};
 
+function getSessionCredential(req: express.Request) {
+  return resolveSessionCredential({
+    authorization: req.get('authorization'),
+    cookieToken: req.cookies?.[SESSION_COOKIE]
+  });
+}
+
 function getSessionToken(req: express.Request) {
-  const token = req.cookies?.[SESSION_COOKIE];
-  return typeof token === 'string' && token ? token : '';
+  return getSessionCredential(req).token;
 }
 
 function normalizeFingerprint(value: unknown) {

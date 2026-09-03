@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.144`
+Current application version: `0.0.145`
 
 ## Overview
 
@@ -21,6 +21,15 @@ hosted database integration. `server/sms.ts` can call Messavo's scoped
 automation API or a provider-neutral HTTP SMS gateway. Missing or incomplete
 delivery configuration fails closed in every environment, and codes are never
 written to application logs.
+
+The product is migrating toward three independently deployable applications:
+the backend API, the browser frontend, and the native Flutter app. During the
+transition, the established `/api/*` routes remain available and the native
+client uses the equivalent versioned `/api/v1/*` entry point. The versioned
+prefix is resolved before rate limiting and route handling, so both paths share
+the same validation, authorization, privacy, and data behavior. Physical
+frontend extraction and removal of Android WebView workflows happen only after
+native feature parity is verified.
 
 ## Runtime Flow
 
@@ -318,10 +327,13 @@ Security middleware:
   page request.
 - Passwords are hashed with bcrypt (10 rounds). Legacy plaintext records are
   transparently re-hashed on the next successful login.
-- Sessions are opaque UUID tokens indexed by token and delivered in an
-  httpOnly, `SameSite=Lax` cookie (`Secure` in production) with a 7-day TTL.
-  Every cookie-authenticated mutation must also carry an `Origin` matching
-  `APP_URL` or an explicitly allowed CORS origin.
+- Sessions are opaque UUID tokens indexed by token with a 7-day TTL. Browsers
+  receive them in an httpOnly, `SameSite=Lax` cookie (`Secure` in production),
+  and every cookie-authenticated mutation must carry an `Origin` matching
+  `APP_URL` or an explicitly allowed CORS origin. Native clients may send the
+  same revocable token as an `Authorization: Bearer` credential; bearer
+  authentication takes precedence when both transports are present and does
+  not use browser-origin CSRF checks.
 - API responses never include the `password` field (`sanitizeUser`).
 - Admin actions are capability-checked by `staff_role`. Member suspension,
   staff assignment, and session revocation enforce hierarchy and self/last-
@@ -348,7 +360,9 @@ Main data types:
 - `CommunityPost`, stored as a draft, published, hidden, or deleted document
   with an immutable public slug after first publication
 
-API routes:
+API routes below are available through the existing `/api/*` paths and the
+native-facing `/api/v1/*` compatibility prefix. Versioned responses include
+`X-Drop-API-Version: 1`.
 
 - `POST /api/auth/login` authenticates by phone and password, sets the
   `drop_session` cookie, and returns the sanitized user.

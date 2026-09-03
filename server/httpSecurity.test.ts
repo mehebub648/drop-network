@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isTrustedCookieMutation, secureBearerMatches } from './httpSecurity';
+import {
+  bearerTokenFromAuthorization,
+  isTrustedCookieMutation,
+  resolveSessionCredential,
+  secureBearerMatches
+} from './httpSecurity';
 
 const origins = new Set(['https://drop.example']);
 
@@ -13,6 +18,27 @@ test('cookie-authenticated mutations require the exact configured origin', () =>
 test('safe or unauthenticated requests do not require an origin', () => {
   assert.equal(isTrustedCookieMutation({ method: 'GET', sessionToken: 'session', origin: undefined, trustedOrigins: origins }), true);
   assert.equal(isTrustedCookieMutation({ method: 'POST', sessionToken: '', origin: undefined, trustedOrigins: origins }), true);
+});
+
+test('native bearer sessions take precedence over browser cookies', () => {
+  assert.deepEqual(resolveSessionCredential({
+    authorization: 'Bearer native-session',
+    cookieToken: 'browser-session'
+  }), { token: 'native-session', transport: 'bearer' });
+  assert.deepEqual(resolveSessionCredential({
+    authorization: undefined,
+    cookieToken: 'browser-session'
+  }), { token: 'browser-session', transport: 'cookie' });
+  assert.deepEqual(resolveSessionCredential({
+    authorization: 'Basic unsupported',
+    cookieToken: undefined
+  }), { token: '', transport: 'none' });
+});
+
+test('bearer parsing accepts the scheme case-insensitively and rejects whitespace', () => {
+  assert.equal(bearerTokenFromAuthorization('bearer native-session'), 'native-session');
+  assert.equal(bearerTokenFromAuthorization('Bearer two tokens'), '');
+  assert.equal(bearerTokenFromAuthorization(undefined), '');
 });
 
 test('metrics bearer comparison is exact and fails closed', () => {

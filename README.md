@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.130`
+Current version: `0.0.145`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -16,6 +16,15 @@ View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c
 - Deployment: [Windows](./docs/Deploy-windows.md) · [Ubuntu](./docs/Deploy-ubuntu.md)
 - Agent instructions: [AGENTS.md](./AGENTS.md)
 - Plan / backlog: [PLAN.md](./docs/PLAN.md)
+
+## Client separation
+
+Drop is migrating toward independently deployable backend, web, and native
+Android applications. Existing browser clients continue to use `/api/*`; native
+clients use the equivalent versioned `/api/v1/*` contract. Both prefixes reach
+the same server-side validation, permissions, privacy gates, and datastore.
+The current embedded Android workflows remain available until each one has a
+verified Flutter-native replacement.
 - Changelogs: [changelog/](./changelog/)
 
 ## Run With Docker
