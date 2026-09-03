@@ -573,14 +573,15 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                     <EmptyState icon={ShieldCheck} title="No donor contact evidence" description="Recorded reveal outcomes and owner disputes will appear here." />
                   ) : (
                     <div className="admin-record-list">
-                      {Object.entries(contactReports.aggregations).map(([donorRef, summary]) => {
+                      {Object.entries(contactReports.aggregations).map(([donorRef, summary], caseIndex) => {
                         const related = contactReports.items.filter(item => item.donor_ref === donorRef);
                         const disputes = related.filter(item => item.kind === 'DISPUTE' && !related.some(resolution => resolution.kind === 'STAFF_RESOLUTION' && new Date(resolution.created_at).getTime() > new Date(item.created_at).getTime() && resolution.categories?.some((category: string) => item.categories?.includes(category))));
                         const reporters = new Set(related.filter(item => item.kind === 'CALL_OUTCOME').map(item => item.actor_id)).size;
                         const state = contactReports.states[donorRef] || { suspended: false };
+                        const donorKind = humanize(related[0]?.donor_kind || (donorRef.startsWith('imp:') ? 'IMPORTED' : 'REGISTERED'));
                         return <article key={donorRef} className="admin-record">
                           <div className="record-icon record-icon-amber"><ShieldAlert className="h-5 w-5" /></div>
-                          <div className="record-primary record-primary-grow"><div><div className="record-title-row"><h3>{donorRef}</h3><StatusBadge value={state.suspended ? 'SUSPENDED' : 'ACTIVE'} /></div><p>{reporters} distinct reporter{reporters === 1 ? '' : 's'} · {related.length} append-only evidence record{related.length === 1 ? '' : 's'}</p><div className="mt-2 flex flex-wrap gap-2">{Object.entries(summary).filter(([, count]) => count > 0).map(([category, count]) => <span key={category} className="admin-badge">{count} {humanize(category)}</span>)}</div>{disputes.map(dispute => <div key={dispute.id} className="record-note"><strong>Owner dispute:</strong> {dispute.note}<div className="mt-2"><ActionButton label="Resolve dispute" disabled={busy === `contact-${donorRef}-RESOLVE_DISPUTE`} onClick={() => contactReportAction(donorRef, 'RESOLVE_DISPUTE', dispute.id)} /></div></div>)}</div></div>
+                          <div className="record-primary record-primary-grow"><div><div className="record-title-row"><h3>Contact case {caseIndex + 1}: {donorKind} donor</h3><StatusBadge value={state.suspended ? 'SUSPENDED' : 'ACTIVE'} /></div><p>{reporters} distinct reporter{reporters === 1 ? '' : 's'} · {related.length} append-only evidence record{related.length === 1 ? '' : 's'}</p><div className="mt-2 flex flex-wrap gap-2">{Object.entries(summary).filter(([, count]) => count > 0).map(([category, count]) => <span key={category} className="admin-badge">{count} {humanize(category)}</span>)}</div><details className="technical-reference"><summary>Exact donor reference</summary><code>{donorRef}</code></details>{disputes.map(dispute => <div key={dispute.id} className="record-note"><strong>Owner dispute:</strong> {dispute.note}<div className="mt-2"><ActionButton label="Resolve dispute" disabled={busy === `contact-${donorRef}-RESOLVE_DISPUTE`} onClick={() => contactReportAction(donorRef, 'RESOLVE_DISPUTE', dispute.id)} /></div></div>)}</div></div>
                           <div className="record-actions">{state.suspended ? <ActionButton label="Restore donor" disabled={busy === `contact-${donorRef}-RESTORE`} onClick={() => contactReportAction(donorRef, 'RESTORE')} /> : <ActionButton label="Suppress donor" danger disabled={busy === `contact-${donorRef}-SUSPEND`} onClick={() => contactReportAction(donorRef, 'SUSPEND')} />}</div>
                         </article>;
                       })}
@@ -595,13 +596,15 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                   emptyTitle="No reports in the queue"
                   renderRecord={report => {
                     const reportedPost = report.target_type === 'POST' ? communityById.get(report.target_id) : undefined;
+                    const primaryLabel = reportedPost?.title || `${humanize(report.target_type)} report: ${humanize(report.reason)}`;
                     return (
                       <article key={report.id} className="admin-record">
                         <div className="record-icon record-icon-amber"><AlertTriangle className="h-5 w-5" /></div>
                         <div className="record-primary record-primary-grow">
                           <div>
-                            <div className="record-title-row"><h3>{humanize(report.reason)}</h3><StatusBadge value={report.status} /></div>
-                            <p>{report.target_type} · {report.target_id}</p>
+                            <div className="record-title-row"><h3>{primaryLabel}</h3><StatusBadge value={report.status} /></div>
+                            <p>{humanize(report.reason)} · {humanize(report.target_type)}</p>
+                            <details className="technical-reference"><summary>Exact target reference</summary><code>{report.target_id}</code></details>
                             <p className="record-note">{report.details || 'No additional details were supplied.'}</p>
                             {reportedPost ? (
                               <CommunityPostInspection post={reportedPost} nested />

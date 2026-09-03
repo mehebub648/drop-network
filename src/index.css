@@ -1738,6 +1738,27 @@ body {
   color: #9f1239;
 }
 
+.technical-reference {
+  margin-top: 0.5rem;
+  color: #475467;
+  font-size: 0.72rem;
+}
+
+.technical-reference summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #344054;
+  font-weight: 800;
+}
+
+.technical-reference code {
+  display: block;
+  max-width: 100%;
+  margin-top: 0.35rem;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .donor-summary-dialog {
   width: min(100%, 42rem);
 }
