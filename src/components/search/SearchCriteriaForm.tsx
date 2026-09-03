@@ -4,7 +4,9 @@ import {
   Check,
   ChevronDown,
   LoaderCircle,
-  MapPin
+  MapPin,
+  Search,
+  X
 } from 'lucide-react';
 import { BLOOD_GROUPS } from '../../lib/blood';
 import { BD_LOCATION_NAMES } from '../../lib/locations';
@@ -41,6 +43,124 @@ const STEP_HELP = [
 
 function normalized(value: string) {
   return value.trim().toLocaleLowerCase('en');
+}
+
+function DistrictPicker({ value, onChange }: { value: string; onChange: (district: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const titleId = useId();
+  const resultId = useId();
+  const filteredDistricts = useMemo(() => {
+    const needle = normalized(query);
+    return needle ? BD_LOCATION_NAMES.filter(name => normalized(name).includes(needle)) : BD_LOCATION_NAMES;
+  }, [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusTimer = window.setTimeout(() => searchRef.current?.focus(), 0);
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      window.setTimeout(() => openerRef.current?.focus(), 0);
+    };
+  }, [open]);
+
+  const close = () => {
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <>
+      <button
+        ref={openerRef}
+        type="button"
+        autoFocus
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`District: ${value || 'not selected'}`}
+        onClick={() => setOpen(true)}
+        className="input relative flex items-center gap-3 pl-11 pr-10 text-left"
+      >
+        <MapPin className="pointer-events-none absolute left-4 h-4 w-4 text-primary" aria-hidden="true" />
+        <span className={value ? 'text-slate-900' : 'text-slate-500'}>{value || 'Choose a district'}</span>
+        <ChevronDown className="pointer-events-none absolute right-4 h-4 w-4 text-slate-500" aria-hidden="true" />
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end bg-slate-950/45 p-0 sm:items-center sm:justify-center sm:p-5"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) close();
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="flex max-h-[85dvh] w-full flex-col rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-6"
+          >
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">Location</p>
+              <h3 id={titleId} className="mt-1 text-xl font-extrabold text-slate-950">Choose a district</h3>
+            </div>
+            <label className="relative mt-4 block">
+              <span className="sr-only">Search districts</span>
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                aria-describedby={resultId}
+                placeholder="Type a district name"
+                className="input pl-11 pr-20"
+              />
+              {query && (
+                <button type="button" onClick={() => setQuery('')} className="absolute right-1 top-1 flex min-h-10 items-center gap-1 rounded-xl px-2 text-xs font-extrabold text-primary hover:bg-rose-50">
+                  <X className="h-4 w-4" aria-hidden="true" /> Clear
+                </button>
+              )}
+            </label>
+            <p id={resultId} role="status" aria-live="polite" className="mt-3 text-xs font-bold text-slate-600">
+              {filteredDistricts.length} district{filteredDistricts.length === 1 ? '' : 's'}
+            </p>
+            <div role="listbox" aria-label="Districts" className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 p-1.5">
+              {filteredDistricts.map(district => (
+                <button
+                  key={district}
+                  type="button"
+                  role="option"
+                  aria-selected={district === value}
+                  onClick={() => {
+                    onChange(district);
+                    close();
+                  }}
+                  className={`flex min-h-12 w-full items-center justify-between rounded-xl px-3 text-left text-sm font-bold ${district === value ? 'bg-rose-50 text-primary' : 'text-slate-800 hover:bg-slate-50'}`}
+                >
+                  {district}
+                  {district === value && <Check className="h-4 w-4" aria-hidden="true" />}
+                </button>
+              ))}
+              {filteredDistricts.length === 0 && (
+                <p className="p-4 text-sm font-semibold text-slate-600">No district matches that search.</p>
+              )}
+            </div>
+            <button type="button" onClick={close} className="button button-secondary mt-4 w-full">Close district picker</button>
+          </section>
+        </div>
+      )}
+    </>
+  );
 }
 
 /**
@@ -239,29 +359,19 @@ export default function SearchCriteriaForm({
 
         {activeStep === 1 && (
           <div className="mt-5 grid max-w-2xl gap-4 sm:grid-cols-2">
-            <label className="block">
+            <div>
               <span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">District</span>
-              <span className="relative block">
-                <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
-                <select
-                  required
-                  autoFocus
-                  value={value.district}
-                  onChange={event => onChange({
+              <DistrictPicker
+                value={value.district}
+                onChange={district => onChange({
                     ...value,
-                    district: event.target.value,
+                    district,
                     upazila: '',
                     collection_facility: '',
                     collection_facility_code: undefined
                   })}
-                  className="input appearance-none pl-11 pr-10"
-                >
-                  <option value="">Choose a district</option>
-                  {BD_LOCATION_NAMES.map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-              </span>
-            </label>
+              />
+            </div>
 
             <label className="block">
               <span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Upazila or thana</span>
