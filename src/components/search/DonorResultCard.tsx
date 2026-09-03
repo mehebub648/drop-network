@@ -29,10 +29,9 @@ export default function DonorResultCard({
   const availability = availabilityLabel(donor.availability_status);
 
   return (
-    <article className="theme-card group relative flex h-full min-w-0 flex-col overflow-hidden p-5 sm:p-6">
-      <span className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-rose-300 to-transparent opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
-      <div className="flex items-start gap-4">
-        <span className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.25rem] border border-red-100 bg-[radial-gradient(circle_at_35%_25%,#fff_0%,#fff1f2_48%,#ffe4e6_100%)] text-xl font-extrabold text-red-700 shadow-inner">
+    <article className="donor-result-row group flex min-w-0 flex-col gap-4 py-5 sm:flex-row sm:items-center sm:py-6">
+      <div className="flex min-w-0 flex-1 items-start gap-4">
+        <span className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-red-200 bg-rose-50 text-lg font-extrabold text-red-700">
           {donor.blood_group}
           <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-[3px] border-white bg-red-500" aria-hidden="true" />
         </span>
@@ -82,7 +81,7 @@ export default function DonorResultCard({
         </div>
       </div>
 
-      <div className="mt-auto grid grid-cols-2 gap-2 pt-5">
+      <div className="grid grid-cols-2 gap-2 sm:w-64 sm:shrink-0">
         <button type="button" onClick={() => onView(donor)} className="button button-secondary w-full gap-2">
           <Eye className="h-4 w-4" aria-hidden="true" />
           View profile

@@ -382,7 +382,7 @@ export default function DonorSearchPage({
             />
           ) : (
             <>
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="donor-result-list divide-y divide-slate-200 border-y border-slate-200">
                 {donors.map(donor => (
                   <DonorResultCard
                     key={donor.donor_ref}

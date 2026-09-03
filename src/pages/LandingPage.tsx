@@ -102,6 +102,14 @@ export default function LandingPage({ user }: { user: any }) {
           <span className="landing-task-icon" aria-hidden="true"><HeartHandshake /></span>
           <h1>Find a blood donor</h1>
           <p>Search by blood group, then choose where the patient will receive blood. No account is needed to begin.</p>
+          <img
+            className="landing-task-doodle"
+            src="/images/doodles/facility-doodle.webp"
+            alt=""
+            width="640"
+            height="640"
+            aria-hidden="true"
+          />
         </div>
 
         <div id="donor-search" className="landing-task-search scroll-mt-24">

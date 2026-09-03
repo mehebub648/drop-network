@@ -144,12 +144,13 @@ Entry points:
   helpers: urgency derivation and the donor eligibility calculation.
 - `server/requestReasons.ts` owns the bounded, searchable transfusion-indication
   taxonomy used by both request validation and the frontend picker.
-- `src/index.css` defines the responsive doodle-led cartoon system: a white
-  canvas, white surfaces with soft neutral boundaries and shadows, lightweight
-  decorative marks behind the shared layout, generated editorial illustrations,
-  a shared 92rem content rail, deep-red actions, semantic success/availability
-  color, focus and reduced-motion behavior, admin workspace layout, shared
-  controls, and Tailwind CSS usage.
+- `src/index.css` defines the responsive, card-free doodle system: a warm paper
+  canvas, open sections separated by ruled lines and whitespace, lightweight
+  decorative marks, editorial illustrations, a shared 92rem content rail,
+  deep-red actions, semantic success/availability color, focus and
+  reduced-motion behavior, admin workspace layout, shared controls, and
+  Tailwind CSS usage. Dialogs and form controls retain bounded surfaces where
+  their interaction state must remain unambiguous.
 
 Routes:
 
@@ -408,13 +409,13 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   the shuffled order remains stable across pagination. Explicit name sorting
   stays alphabetical. Alternative sorts retain the verified-member tier. Optional collection
   facility context adds a safe match reason without returning raw preferences.
-  Result cards show the masked phone beneath the donor name and keep separate
+  Flat result rows show the masked phone beneath the donor name and keep separate
   “View profile” and “Call donor” actions. The search-scoped profile summary shows the masked number, safe
   donation summary, match reasons, attribution, and active contact summary
   without creating a browsable donor-profile route. Guests also see the short
   claim route for unclaimed imports; signed-in members do not. Authenticated searches include
   the requester's own profile when it is available, eligible, blood-compatible,
-  and matched to the searched area. That card is pinned first and cannot start
+  and matched to the searched area. That row is pinned first and cannot start
   a self-contact reveal.
 - `POST /api/search/requests` creates and publishes in one step, because the
   flow has a single submit. It requires explicit consent, resolves the district

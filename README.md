@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.147`
+Current version: `0.0.148`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -109,10 +109,13 @@ Refresh the district facility files from the public DGHS registry with:
   and can limit results to the exact group or phone-verified profiles. Donors
   tied on every active priority field are shuffled using an opaque stable
   `order_seed`, avoiding repeated or missing results across pages; explicit
-  name sorting remains alphabetical. Cards show the masked phone directly
-  beneath the donor's name while full contact remains behind the recorded
-  request-and-reveal flow. Cards also explain area, facility, or current-time preference matches without exposing
-  a donor's stored schedule. Every result stays masked until the protected
+  name sorting remains alphabetical. Flat result rows show the masked phone
+  directly beneath the donor's name while full contact remains behind the
+  recorded request-and-reveal flow. Rows also explain area, facility, or
+  current-time preference matches without exposing
+  a donor's stored schedule. The browser interface uses open, ruled sections,
+  restrained doodle artwork, and whitespace instead of card-based page layouts.
+  Every result stays masked until the protected
   request and one-at-a-time reveal workflow opens a contact. Opening a contact
   displays a non-dismissible call-outcome dialog over the current page; the
   rest of Drop remains unavailable across navigation and reloads until that
