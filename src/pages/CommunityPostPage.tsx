@@ -274,7 +274,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
       </div>
 
       {post.type === 'DONATION_STORY' && (
-        <section className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-5" aria-labelledby="share-donation-story">
+        <section className="mt-6 border-y border-rose-300 py-5" aria-labelledby="share-donation-story">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h2 id="share-donation-story" className="font-extrabold text-slate-950">Share this donation story</h2><p className="mt-1 text-xs leading-5 text-slate-600">This permanent link uses only the public details reviewed by the donor.</p></div>
             <div className="flex flex-wrap gap-2">
@@ -289,13 +289,13 @@ export default function CommunityPostPage({ user }: { user: any }) {
       )}
 
       {post.type === 'HEALTH_SUGGESTION' && (
-        <aside className="mt-6 flex gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
+        <aside className="mt-6 flex gap-4 border-y border-amber-300 py-5 text-sm leading-6 text-amber-950">
           <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
           <p><strong>This is community guidance, not medical advice.</strong> Check symptoms, treatment, medicines, and donation eligibility with a qualified clinician or collection facility.</p>
         </aside>
       )}
 
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5" aria-labelledby="report-community-post">
+      <section className="mt-6 border-y border-slate-200 py-5" aria-labelledby="report-community-post">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 id="report-community-post" className="text-sm font-extrabold text-slate-900">See something unsafe or private?</h2>
@@ -337,7 +337,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
         )}
       </section>
 
-      <footer className="mt-8 flex flex-col gap-4 rounded-3xl border border-rose-100 bg-rose-50 p-6 text-slate-950 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+      <footer className="mt-8 flex flex-col gap-4 border-y border-rose-200 py-6 text-slate-950 sm:flex-row sm:items-center sm:justify-between sm:py-8">
         <div>
           <h2 className="text-xl font-extrabold">Have something useful to share?</h2>
           <p className="mt-1 text-sm leading-6 text-slate-600">Publish a donation experience or a responsible health suggestion.</p>

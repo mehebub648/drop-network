@@ -56,7 +56,7 @@ export default function CommunityPage({ user }: { user: any }) {
 
   return (
     <div className="space-y-8 sm:space-y-10">
-      <header className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10 lg:flex lg:items-end lg:justify-between lg:gap-10">
+      <header className="border-b border-slate-200 py-6 sm:py-10 lg:flex lg:items-end lg:justify-between lg:gap-10">
         <div className="max-w-3xl">
           <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Drop community</p>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
@@ -106,11 +106,11 @@ export default function CommunityPage({ user }: { user: any }) {
         </div>
 
         {!data && !error ? (
-          <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-3" role="status" aria-label="Loading community posts">
+          <div className="mt-6 divide-y divide-slate-200 border-y border-slate-200" role="status" aria-label="Loading community posts">
             {[0, 1, 2].map(item => (
-              <div key={item} className="theme-card overflow-hidden border border-slate-100" aria-hidden="true">
-                <div className="aspect-[16/9] animate-pulse bg-slate-100" />
-                <div className="space-y-4 p-6">
+              <div key={item} className="grid gap-5 py-6 sm:grid-cols-[12rem_minmax(0,1fr)]" aria-hidden="true">
+                <div className="aspect-[4/3] animate-pulse bg-slate-100" />
+                <div className="space-y-4">
                   <div className="h-4 w-2/5 animate-pulse rounded bg-slate-100" />
                   <div className="h-7 w-4/5 animate-pulse rounded bg-slate-100" />
                   <div className="h-20 animate-pulse rounded bg-slate-100" />
@@ -136,7 +136,7 @@ export default function CommunityPage({ user }: { user: any }) {
             <Link to="/community" className="mt-5 inline-flex min-h-11 items-center font-extrabold text-primary hover:text-primary-dark">View all community posts</Link>
           </div>
         ) : data ? (
-          <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-6 border-t border-slate-200">
             {data.posts.map(post => <CommunityPostCard key={post.id} post={post} />)}
           </div>
         ) : null}
@@ -164,7 +164,7 @@ export default function CommunityPage({ user }: { user: any }) {
         </nav>
       )}
 
-      <aside className="flex gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
+      <aside className="flex gap-4 border-y border-amber-300 py-5 text-sm leading-6 text-amber-950">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
         <p><strong>Community content is not medical care.</strong> Health suggestions are member-written. Confirm medical decisions and donation eligibility with a qualified clinician or collection facility.</p>
       </aside>

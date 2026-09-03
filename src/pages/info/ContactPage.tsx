@@ -18,8 +18,8 @@ export default function ContactPage() {
 
   return (
     <InfoPage eyebrow="Contact" title="How can we help?" intro="Send an account, privacy, safety, or partnership request to the Drop operations queue.">
-      <p className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-700">This form creates a ticket in the Drop operations queue. Response times vary, so include a safe way to contact you and keep the reference shown after submission.</p>
-      <form onSubmit={submit} className="rounded-2xl border border-slate-200 p-5 space-y-4">
+      <p className="border-y border-slate-200 py-4 text-sm text-slate-700">This form creates a ticket in the Drop operations queue. Response times vary, so include a safe way to contact you and keep the reference shown after submission.</p>
+      <form onSubmit={submit} className="space-y-4 border-b border-slate-200 pb-6">
         <div className="flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-primary" /><h2 className="m-0">Contact operations</h2></div>
         <div className="grid sm:grid-cols-2 gap-3"><input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Your name" className="px-4 py-3 rounded-xl border" /><select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="px-4 py-3 rounded-xl border"><option value="SUPPORT">Account support</option><option value="SAFETY">Safety or abuse</option><option value="PRIVACY">Privacy</option><option value="PARTNERSHIP">Hospital / NGO partnership</option></select></div>
         <div className="grid sm:grid-cols-2 gap-3"><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Email" className="px-4 py-3 rounded-xl border" /><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="Bangladesh phone" className="px-4 py-3 rounded-xl border" /></div>

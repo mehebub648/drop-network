@@ -266,7 +266,7 @@ export default function DonorSearchPage({
             <div>
               <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex min-w-0 items-start gap-4 sm:items-center sm:gap-5">
-                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-red-100 bg-white text-2xl font-extrabold text-red-700 shadow-sm sm:h-20 sm:w-20 sm:text-3xl">
+                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-red-200 bg-rose-50 text-2xl font-extrabold text-red-700 sm:h-20 sm:w-20 sm:text-3xl">
                     {bloodGroup}
                   </span>
                   <div className="min-w-0">
@@ -279,7 +279,7 @@ export default function DonorSearchPage({
               </div>
 
               {!contextComplete && (
-                <div role="status" className="mt-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div role="status" className="mt-5 flex flex-col gap-3 border-y border-amber-300 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-semibold leading-6 text-amber-950">
                     Add the collection place and your role before asking to contact a donor.
                   </p>
@@ -316,7 +316,7 @@ export default function DonorSearchPage({
           </div>
 
           {refineOpen && (
-            <div id="sort-and-refine-panel" className="fade-in mb-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div id="sort-and-refine-panel" className="fade-in mb-5 border-y border-slate-200 py-5">
               {!loading && !error && results && (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,1fr)_minmax(10rem,0.7fr)_auto_auto] lg:items-end">
                   <label className="text-sm font-extrabold text-slate-800">Sort donor matches
@@ -423,7 +423,7 @@ export default function DonorSearchPage({
         </section>
       )}
 
-      <aside className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 sm:p-5">
+      <aside className="border-y border-emerald-300 py-5">
         <div className="flex gap-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
             <ShieldCheck className="h-5 w-5" aria-hidden="true" />

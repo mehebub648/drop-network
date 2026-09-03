@@ -307,7 +307,7 @@ export default function SearchCriteriaForm({
   };
 
   return (
-    <form onSubmit={submit} className={`surface p-5 ${compact ? 'sm:p-6' : 'sm:p-7'}`}>
+    <form onSubmit={submit} className={`search-criteria-form surface p-5 ${compact ? 'sm:p-6' : 'sm:p-7'}`}>
       <div className="mb-4 flex min-h-9 items-center justify-between gap-3">
         <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">
           {activeStep > 0 && value.blood_group ? `Finding ${value.blood_group} donors` : 'Donor search'}

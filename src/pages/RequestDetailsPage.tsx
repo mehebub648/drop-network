@@ -320,7 +320,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       )}
 
       {/* Main Request Header */}
-      <section className="relative overflow-hidden rounded-[2rem] border border-rose-100 bg-gradient-to-br from-white via-white to-rose-50/70 p-5 shadow-[0_16px_48px_-32px_rgba(136,19,55,0.45)] md:p-8">
+      <section className="relative overflow-hidden border-y border-rose-200 py-6 md:py-8">
         {request.status === 'FULFILLED' && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
             <div className="w-16 h-16 bg-green-100 text-green-700 rounded-full flex items-center justify-center mb-4">
@@ -343,7 +343,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
 
         <div className="relative z-0 flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div className="flex min-w-0 items-start gap-4 md:gap-5">
-             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-red-100 bg-white text-2xl font-extrabold text-red-700 shadow-sm md:h-20 md:w-20 md:text-3xl">
+             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-red-200 bg-rose-50 text-2xl font-extrabold text-red-700 md:h-20 md:w-20 md:text-3xl">
                {request.blood_group}
              </div>
              <div className="min-w-0 flex-1">
@@ -370,23 +370,23 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         </div>
 
         <div className="relative z-0 mt-6 grid grid-cols-2 gap-2.5 border-t border-rose-100 pt-5 lg:grid-cols-5">
-          <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
+          <div className="border-l border-slate-200 p-3">
             <MapPin className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
             <p className="request-metadata-label">Location</p>
             <p className="mt-1 text-sm font-bold text-slate-800">{request.hospital_address || request.location.area_name}</p>
             {request.hospital_address && <p className="mt-0.5 text-xs font-semibold text-slate-500">{request.location.area_name}</p>}
           </div>
-          <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
+          <div className="border-l border-slate-200 p-3">
             <Calendar className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
             <p className="request-metadata-label">Needed by</p>
             <p className="mt-1 text-sm font-bold text-slate-800">{neededLabel}</p>
           </div>
-          <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
+          <div className="border-l border-slate-200 p-3">
             <Droplet className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
             <p className="request-metadata-label">Amount</p>
             <p className="mt-1 text-sm font-bold text-slate-800">{unitsRequired} unit{unitsRequired === 1 ? '' : 's'} · {componentLabel}</p>
           </div>
-          <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
+          <div className="border-l border-slate-200 p-3">
             <Users className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
             <p className="request-metadata-label">Compatible</p>
             <p className="mt-1 flex flex-wrap gap-1">
@@ -396,7 +396,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
             </p>
           </div>
           {reasonLabel && (
-            <div className="col-span-2 rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100 lg:col-span-1">
+            <div className="col-span-2 border-l border-slate-200 p-3 lg:col-span-1">
               <HeartPulse className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
               <p className="request-metadata-label">Reason</p>
               <p className="mt-1 text-sm font-bold text-slate-800">{reasonLabel}</p>
@@ -406,7 +406,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         </div>
 
         {request.status === 'ACTIVE' && (
-          <div className="relative z-0 mt-5 flex flex-col gap-3 rounded-2xl border border-rose-100 bg-white/85 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative z-0 mt-5 flex flex-col gap-3 border-y border-rose-200 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="px-1">
               <p className="text-sm font-extrabold text-slate-900">Help this request reach donors</p>
               <p className="text-xs font-medium text-slate-500">Share only the public request link.</p>
@@ -593,7 +593,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           </div>
         ) : (
           <div className="grid gap-3 fade-in lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-            <dl className="overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-100 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
+            <dl className="border-y border-slate-200 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
               <div className="p-4 sm:min-h-28">
                 <dt className="request-metadata-label mb-1">Patient</dt>
                 <dd className="font-bold text-slate-900">{request.patient_name || 'Name not provided'}</dd>
@@ -615,7 +615,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               {request.contacts?.map((contact: any, index: number) => {
                 const contactKey = `${contact.phone}-${index}`;
                 return (
-                  <div key={contactKey} className="flex min-h-28 items-stretch justify-between gap-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
+                  <div key={contactKey} className="flex min-h-28 items-stretch justify-between gap-4 border-b border-slate-200 py-4">
                     <div className="min-w-0 self-center">
                       <p className="request-metadata-label mb-1">{contact.type || 'Contact'}</p>
                       <p className="truncate font-bold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</p>
@@ -665,10 +665,10 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           {matches.length === 0 ? (
             <div className="theme-card border border-slate-100 bg-white p-5 text-sm font-semibold text-slate-600 shadow-sm">No matching donor is listed in this upazila yet. Try a neighbouring upazila from donor search.</div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="divide-y divide-slate-200 border-y border-slate-200">
               {matches.map(match => (
-                <div key={match.donor_ref} className="theme-card flex items-center gap-4 border border-slate-100 bg-white p-4 shadow-sm">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-100 bg-rose-50 text-lg font-extrabold text-primary">{match.blood_group}</div>
+                <div key={match.donor_ref} className="flex items-center gap-4 py-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-rose-200 bg-rose-50 text-lg font-extrabold text-primary">{match.blood_group}</div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><p className="truncate font-extrabold text-slate-900">{match.name}</p>{match.donor_kind === 'REGISTERED' && <VerifiedBadge verified={Boolean(match.is_verified)} compact />}</div>
                     <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{match.phone_masked} · {match.upazila}</p>
@@ -692,7 +692,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         
         <div className="mb-5 space-y-5">
           {(!request.comments || request.comments.length === 0) ? (
-            <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">No updates yet.</p>
+            <p className="border-y border-slate-200 py-4 text-sm font-medium text-slate-500">No updates yet.</p>
           ) : (
             request.comments.map((c: any) => (
               <div key={c.id} className="flex gap-4">
