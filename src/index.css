@@ -1718,6 +1718,28 @@ body {
   width: min(100%, 46rem);
 }
 
+.admin-controlled-action {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1rem;
+  border: 1px solid #fdb022;
+  border-radius: 1rem;
+  background: #fffaeb;
+  padding: 1rem;
+}
+
+.admin-controlled-action > div { min-width: 0; }
+.admin-controlled-action span { display: block; color: #b54708; font-size: 0.68rem; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+.admin-controlled-action strong { display: block; margin-top: 0.25rem; color: #7a2e0e; }
+.admin-controlled-action p { margin: 0.35rem 0 0; color: #7a2e0e; font-size: 0.76rem; line-height: 1.5; }
+
+@media (max-width: 639px) {
+  .admin-controlled-action { align-items: stretch; flex-direction: column; }
+  .admin-controlled-action .button { width: 100%; }
+}
+
 .admin-nav-count {
   display: inline-flex;
   min-width: 1.55rem;

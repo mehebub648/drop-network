@@ -780,16 +780,35 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                     title="System status"
                     description="Safe runtime and policy information. Secrets, password hashes, OTPs, and session tokens are never shown."
                   />
+                  <div className="admin-guidance mb-5 border-amber-200 bg-amber-50">
+                    <ShieldAlert className="h-6 w-6 text-amber-700" />
+                    <div className="flex-1">
+                      <strong>OTP bypass status</strong>
+                      <p>
+                        {overview.system?.otp_bypass_enabled
+                          ? 'Active: phone ownership checks are bypassed across registration, sign-in, recovery, phone changes, and listing removal.'
+                          : 'Off: all phone-protected actions require the configured OTP channel.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="system-grid">
+                    {Object.entries(overview.system || {}).map(([key, value]) => (
+                      <div key={key} className="system-card">
+                        {key.includes('database') || key.includes('storage') ? <Database className="h-5 w-5" /> : <Server className="h-5 w-5" />}
+                        <span>{humanize(key)}</span>
+                        <strong>{formatSystemValue(value)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  {Object.keys(overview.system || {}).length === 0 && (
+                    <EmptyState icon={Server} title="No system summary returned" description="The API is healthy, but this deployment has not exposed the safe system summary yet." />
+                  )}
                   {can('MANAGE_SYSTEM') && (
-                    <div className="admin-guidance mb-5 flex-wrap border-amber-200 bg-amber-50 sm:flex-nowrap">
-                      <ShieldAlert className="h-6 w-6 text-amber-700" />
-                      <div className="flex-1">
-                        <strong>OTP bypass test mode</strong>
-                        <p>
-                          {overview.system?.otp_bypass_enabled
-                            ? 'Active: phone ownership checks are bypassed across registration, sign-in, recovery, phone changes, and listing removal.'
-                            : 'Off: all phone-protected actions require the configured OTP channel.'}
-                        </p>
+                    <div className="admin-controlled-action">
+                      <div>
+                        <span>Controlled action</span>
+                        <strong>Change OTP bypass test mode</strong>
+                        <p>The existing confirmation dialog and required reason will be recorded in the audit trail before this setting changes.</p>
                       </div>
                       <button
                         type="button"
@@ -816,18 +835,6 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                         {overview.system?.otp_bypass_enabled ? 'Disable bypass' : 'Enable bypass'}
                       </button>
                     </div>
-                  )}
-                  <div className="system-grid">
-                    {Object.entries(overview.system || {}).map(([key, value]) => (
-                      <div key={key} className="system-card">
-                        {key.includes('database') || key.includes('storage') ? <Database className="h-5 w-5" /> : <Server className="h-5 w-5" />}
-                        <span>{humanize(key)}</span>
-                        <strong>{formatSystemValue(value)}</strong>
-                      </div>
-                    ))}
-                  </div>
-                  {Object.keys(overview.system || {}).length === 0 && (
-                    <EmptyState icon={Server} title="No system summary returned" description="The API is healthy, but this deployment has not exposed the safe system summary yet." />
                   )}
                   <div className="admin-guidance">
                     <ShieldCheck className="h-6 w-6" />
