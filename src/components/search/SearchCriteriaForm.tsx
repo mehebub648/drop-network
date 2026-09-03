@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   Building2,
   Check,
@@ -79,6 +79,7 @@ export default function SearchCriteriaForm({
   const [facilityLoading, setFacilityLoading] = useState(false);
   const [facilityLoadFailed, setFacilityLoadFailed] = useState(false);
   const facilityListId = useId();
+  const facilityInputRef = useRef<HTMLInputElement>(null);
   const question = activeStep === 1 && value.blood_group
     ? `Where is ${value.blood_group} blood needed?`
     : QUESTIONS[activeStep];
@@ -300,6 +301,7 @@ export default function SearchCriteriaForm({
             >
               <Building2 className="pointer-events-none absolute left-4 top-6 z-10 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
               <input
+                ref={facilityInputRef}
                 id={`${facilityListId}-input`}
                 required
                 autoFocus
@@ -332,6 +334,21 @@ export default function SearchCriteriaForm({
 
               {facilityOpen && (facilityLoading || facilityLoadFailed || matchingFacilities.length > 0 || Boolean(value.collection_facility.trim())) && (
                 <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
+                  <div className="flex min-h-11 items-center justify-between gap-3 border-b border-slate-100 px-3">
+                    <span className="text-xs font-bold text-slate-600" role="status" aria-live="polite">
+                      {facilityLoading ? 'Loading suggestions' : `${matchingFacilities.length} suggestion${matchingFacilities.length === 1 ? '' : 's'}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        facilityInputRef.current?.blur();
+                        setFacilityOpen(false);
+                      }}
+                      className="min-h-10 rounded-lg px-2 text-xs font-extrabold text-primary hover:bg-rose-50"
+                    >
+                      Hide keyboard
+                    </button>
+                  </div>
                   {facilityLoading ? (
                     <div id={facilityListId} role="status" className="flex items-center gap-2 p-4 text-sm font-semibold text-slate-600">
                       <LoaderCircle className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
@@ -342,7 +359,7 @@ export default function SearchCriteriaForm({
                       Type the hospital or blood bank instead.
                     </div>
                   ) : matchingFacilities.length ? (
-                    <ul id={facilityListId} role="listbox" aria-label={`Registered facilities in ${value.district}`} className="max-h-64 overflow-y-auto p-1.5">
+                    <ul id={facilityListId} role="listbox" aria-label={`Registered facilities in ${value.district}`} className="max-h-48 overflow-y-auto overscroll-contain p-1.5">
                       {matchingFacilities.map((item, index) => (
                         <li key={item.registryCode}>
                           <button
@@ -388,7 +405,7 @@ export default function SearchCriteriaForm({
         )}
       </div>
 
-      <div className={`${compact ? 'mt-4' : 'mt-5'} flex items-center gap-3`}>
+      <div className={`${compact ? 'mt-4' : 'mt-5'} search-step-navigation flex items-center gap-3`}>
         {activeStep > firstStep && (
           <button
             type="button"
