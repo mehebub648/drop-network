@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.124`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.143`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,9 +13,11 @@ delivered.
 
 ### Code quality / polish
 
-- [ ] **Rendered accessibility/browser audit.** Keyboard/focus and reduced
-  motion foundations exist, but complete WCAG 2.2 AA review, screen-reader
-  testing, target-size/contrast audit, and responsive browser matrix remain.
+- [ ] **Post-implementation accessibility validation.** UX-001 through UX-016
+  from the 1.0.11 Android-first audit are implemented. Re-capture the affected
+  journeys after release, complete a human TalkBack pass on physical hardware,
+  and run the remaining keyboard, 200% text, contrast, and low-bandwidth checks
+  recorded in `artifacts/ux-research/drop-ux-audit-v1.0.11-2026-09-03.html`.
 
 - [ ] **Pervasive `any` and limited focused tests.** Blood-domain and privacy
   helper coverage now exists; add direct donor-search/admin API integration and
