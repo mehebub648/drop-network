@@ -49,6 +49,7 @@ test('completed patient and requester sections can be skipped when a draft is re
   assert.equal(hasPatientDetails(completeDraft({ patient_age: '0' })), false);
   assert.equal(hasPatientDetails(completeDraft({ patient_name: ' ' })), false);
   assert.equal(hasPatientDetails(completeDraft({ blood_component: '' })), false);
+  assert.equal(hasPatientDetails(completeDraft({ blood_component: 'NOT_SURE' })), true);
   assert.equal(hasPatientDetails(completeDraft({ units_required: '0' })), false);
   assert.equal(hasPatientDetails(completeDraft({ units_required: '11' })), false);
   assert.equal(hasPatientDetails(completeDraft({ request_reason: '' })), false);

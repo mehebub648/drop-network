@@ -17,6 +17,7 @@ export type RequesterRole = 'PATIENT' | 'RELATIVE' | 'THIRD_PARTY';
 export type NeededWindow = 'WITHIN_HOURS' | 'TODAY' | 'WITHIN_2_3_DAYS' | 'PLANNED';
 export type PatientSex = 'MALE' | 'FEMALE';
 export type BloodComponent =
+  | 'NOT_SURE'
   | 'WHOLE_BLOOD'
   | 'RED_CELLS'
   | 'PLATELETS'
@@ -63,7 +64,7 @@ export const EMPTY_DRAFT: SearchDraft = {
   patient_sex: '',
   patient_name: '',
   patient_age: '',
-  blood_component: '',
+  blood_component: 'NOT_SURE',
   units_required: '',
   request_reason: '',
   request_reason_details: '',
@@ -94,7 +95,8 @@ export function readSearchDraft(): SearchDraft {
     return {
       ...EMPTY_DRAFT,
       ...storedDraft,
-      patient_sex: storedDraft.patient_sex || legacySex
+      patient_sex: storedDraft.patient_sex || legacySex,
+      blood_component: storedDraft.blood_component || 'NOT_SURE'
     };
   } catch {
     return { ...EMPTY_DRAFT };

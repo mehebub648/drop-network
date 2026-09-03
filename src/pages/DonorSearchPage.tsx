@@ -294,14 +294,8 @@ export default function DonorSearchPage({
       </section>
 
       {hasQuery && (
-        <section aria-labelledby="search-results-heading">
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-primary">Step 2 · Donor matches</p>
-              <h2 id="search-results-heading" className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
-                Choose who to contact
-              </h2>
-            </div>
+        <section aria-label="Donor matches">
+          <div className="mb-5 flex items-center gap-2 sm:justify-end">
             <div className="flex w-full items-center gap-2 sm:w-auto sm:self-auto">
               {!loading && results && (
                 <span className="inline-flex min-h-11 items-center rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-extrabold text-rose-800">

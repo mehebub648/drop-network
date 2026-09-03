@@ -48,7 +48,7 @@ export default function RequestReasonCombobox({
 
   return (
     <div
-      className="relative"
+      className="request-reason-combobox relative"
       onBlur={event => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
       }}
@@ -93,7 +93,7 @@ export default function RequestReasonCombobox({
       </button>
 
       {open && (
-        <ul id={listId} role="listbox" aria-label="Common reasons blood is needed" className="mt-2 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10">
+        <ul id={listId} role="listbox" aria-label="Common reasons blood is needed" className="request-reason-options mt-2 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10">
           {options.map((option, index) => (
             <li key={option.value}>
               <button

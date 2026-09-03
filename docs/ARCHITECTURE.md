@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.127`
+Current application version: `0.0.128`
 
 ## Overview
 
@@ -75,12 +75,16 @@ Entry points:
   Role-aware guidance identifies whose information belongs in every field, and
   review keeps the patient, request owner, and donor contact visibly separate.
   Patient details use two short stages: explicit gender, age, and full name,
-  followed by 1-10 bags, the hospital-requested blood component, and one broad
-  public reason category. Common components appear first, followed by specialist
-  component options and an explicit doctor-specified fallback. The searchable
+  followed by a broad public reason, the hospital-requested blood component,
+  and a 1-10 bag dropdown. The reason offers a conservative component suggestion
+  that the requester can change; broad indications default to Not sure so the
+  hospital remains the clinical authority. Common components appear first,
+  followed by specialist options and a doctor-specified fallback. The searchable
   reason list is shared with server validation, ranked by reported Bangladesh
   transfusion patterns, and keeps Other last with an optional bounded broad
-  description; it does not collect a detailed diagnosis.
+  description; it does not collect a detailed diagnosis. Patient stages use a
+  compact mobile layout, while the reason menu overlays the form instead of
+  pushing its actions below the viewport.
 - `src/components/DonorPreferencesFields.tsx` manages bounded preferred areas,
   facilities, travel willingness, and recurring Asia/Dhaka windows. The
   facility picker uses the same generated DGHS snapshot as request search.

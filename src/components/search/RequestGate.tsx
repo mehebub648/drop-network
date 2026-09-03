@@ -15,7 +15,7 @@ import {
   type PatientSex,
   type SearchDraft
 } from '../../lib/searchDraft';
-import { requestReasonLabel } from '../../lib/requestReasons';
+import { recommendedBloodComponentForReason, requestReasonLabel } from '../../lib/requestReasons';
 import ModalPortal from '../ModalPortal';
 import RequestReasonCombobox from './RequestReasonCombobox';
 import RequesterRolePicker from './RequesterRolePicker';
@@ -32,6 +32,7 @@ const NEEDED_WINDOWS: Array<{ value: NeededWindow; label: string }> = [
 ];
 
 const BLOOD_COMPONENTS: Array<{ value: BloodComponent; label: string }> = [
+  { value: 'NOT_SURE', label: 'Not sure — confirm with hospital' },
   { value: 'RED_CELLS', label: 'Packed red blood cells (PRBC)' },
   { value: 'WHOLE_BLOOD', label: 'Whole blood' },
   { value: 'PLATELETS', label: 'Platelet concentrate' },
@@ -92,6 +93,7 @@ export default function RequestGate({
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [componentSuggested, setComponentSuggested] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const donorUpazilas = useMemo(() => getUpazilasForDistrict(donorDistrict), [donorDistrict]);
 
@@ -304,10 +306,19 @@ export default function RequestGate({
     if (!user) set({ requester_phone: value });
   };
 
+  const chooseRequestReason = (requestReason: SearchDraft['request_reason']) => {
+    if (!requestReason) return;
+    set({
+      request_reason: requestReason,
+      blood_component: recommendedBloodComponentForReason(requestReason)
+    });
+    setComponentSuggested(true);
+  };
+
   return (
     <ModalPortal onClose={onClose}>
       <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="request-gate-title">
-        <div className="action-dialog request-gate-dialog">
+        <div className={`action-dialog request-gate-dialog ${step.startsWith('patient-') ? 'request-patient-dialog' : ''}`}>
           <button ref={closeRef} type="button" onClick={onClose} className="icon-button dialog-close" aria-label="Close">
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -334,7 +345,7 @@ export default function RequestGate({
         )}
 
         {step === 'patient-identity' && (
-          <form onSubmit={submitPatientIdentity} className="fade-in">
+          <form onSubmit={submitPatientIdentity} className="fade-in request-patient-form">
             {patientContext('patient-identity')}
 
             <div className="request-form-heading">
@@ -371,30 +382,49 @@ export default function RequestGate({
         )}
 
         {step === 'patient-need' && (
-          <form onSubmit={submitPatientNeed} className="fade-in">
+          <form onSubmit={submitPatientNeed} className="fade-in request-patient-form">
             {patientContext('patient-need')}
 
             <div className="request-form-heading">
               <small>Blood requirement · Step 2 of 2</small>
               <h2 id="request-gate-title">What does the patient need?</h2>
-              <p>Use the component and quantity requested by the hospital.</p>
+              <p>We can suggest a component, but follow the hospital’s request.</p>
             </div>
 
             <div className="grid gap-x-4 sm:grid-cols-2">
-              <label className="dialog-field">
-                <span>How many bags are needed?</span>
-                <input required type="number" inputMode="numeric" min={1} max={10} value={draft.units_required} onChange={event => set({ units_required: event.target.value })} className="input" />
+              <label className="dialog-field sm:col-span-2">
+                <span>Reason blood is needed</span>
+                <RequestReasonCombobox value={draft.request_reason} onChange={chooseRequestReason} />
               </label>
               <label className="dialog-field">
                 <span>Blood component</span>
-                <select required value={draft.blood_component} onChange={event => set({ blood_component: event.target.value as BloodComponent })} className="input">
-                  <option value="">Select</option>
+                <select
+                  required
+                  value={draft.blood_component}
+                  onChange={event => {
+                    set({ blood_component: event.target.value as BloodComponent });
+                    setComponentSuggested(false);
+                  }}
+                  className="input"
+                >
                   {BLOOD_COMPONENTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
+                <small className="component-guidance" aria-live="polite">
+                  {componentSuggested
+                    ? draft.blood_component === 'NOT_SURE'
+                      ? 'No single safe match for this broad reason. Check the hospital slip.'
+                      : 'Suggested from the reason. Change it if the hospital requested something else.'
+                    : 'Use the component written on the hospital slip.'}
+                </small>
               </label>
-              <label className="dialog-field sm:col-span-2">
-                <span>Reason blood is needed</span>
-                <RequestReasonCombobox value={draft.request_reason} onChange={requestReason => set({ request_reason: requestReason })} />
+              <label className="dialog-field">
+                <span>How many bags are needed?</span>
+                <select required value={draft.units_required} onChange={event => set({ units_required: event.target.value })} className="input">
+                  <option value="">Select</option>
+                  {Array.from({ length: 10 }, (_, index) => index + 1).map(count => (
+                    <option key={count} value={count}>{count} {count === 1 ? 'bag' : 'bags'}</option>
+                  ))}
+                </select>
               </label>
               {draft.request_reason === 'OTHER' && (
                 <label className="dialog-field sm:col-span-2">

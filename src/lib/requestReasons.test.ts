@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { matchingRequestReasonOptions } from './requestReasons';
+import { matchingRequestReasonOptions, recommendedBloodComponentForReason } from './requestReasons';
 
 test('indications keep the Bangladesh frequency order and Other last', () => {
   const options = matchingRequestReasonOptions('');
@@ -17,4 +17,12 @@ test('plain-language and clinical synonyms find the intended indication', () => 
 
 test('an unmatched search still offers Other', () => {
   assert.deepEqual(matchingRequestReasonOptions('not in this list').map(option => option.value), ['OTHER']);
+});
+
+test('component suggestions are conservative and fall back when the reason is broad', () => {
+  assert.equal(recommendedBloodComponentForReason('ANAEMIA'), 'RED_CELLS');
+  assert.equal(recommendedBloodComponentForReason('THALASSEMIA'), 'RED_CELLS');
+  assert.equal(recommendedBloodComponentForReason('LIVER_CLOTTING'), 'PLASMA');
+  assert.equal(recommendedBloodComponentForReason('SURGERY'), 'NOT_SURE');
+  assert.equal(recommendedBloodComponentForReason('OTHER'), 'NOT_SURE');
 });
