@@ -210,7 +210,27 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     } catch (error: any) { setActionMessage({ type: 'error', text: error.message || 'Could not submit the report.' }); }
   };
 
-  if (loading) return <div className="flex justify-center p-12"><div className="w-10 h-10 border-[3px] border-rose-100 border-t-primary rounded-full animate-spin"></div></div>;
+  if (loading) return (
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex min-w-0 items-center gap-3">
+        <Link
+          to="/requests"
+          aria-label="Back to blood requests"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Link>
+        <div className="min-w-0">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary">Blood request</p>
+          <h2 className="text-xl font-extrabold tracking-tight text-slate-950 md:text-2xl">Request details</h2>
+        </div>
+      </div>
+      <div role="status" aria-live="polite" aria-busy="true" className="surface flex min-h-48 flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-rose-100 border-t-primary" aria-hidden="true" />
+        <p className="text-sm font-bold text-slate-700">Loading request details…</p>
+      </div>
+    </div>
+  );
   if (loadError) return (
     <div className="max-w-3xl mx-auto theme-card p-10 text-center border border-slate-100">
       <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
@@ -240,7 +260,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   const donorSearchPath = `/directory?${donorSearchQuery.toString()}`;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 fade-in">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <Link
