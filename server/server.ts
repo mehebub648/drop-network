@@ -4704,11 +4704,67 @@ app.get('/api/admin/call-reports', async (req, res) => {
   }
 });
 
+function safeAuditActorSummary(actorId: string) {
+  if (actorId === 'system') return { type: 'System', label: 'System automation' };
+  if (actorId === 'anonymous') return { type: 'Visitor', label: 'Anonymous visitor' };
+  if (actorId === 'self-service') return { type: 'Self-service', label: 'Verified self-service flow' };
+  const actor = users.find(user => user.id === actorId);
+  if (!actor) return { type: 'Account', label: 'Account no longer available' };
+  return {
+    type: actor.staff_role ? `${actor.staff_role.toLowerCase()} staff` : 'Member',
+    label: actor.name || 'Unnamed account'
+  };
+}
+
+function safeAuditTargetSummary(event: AuditEvent, postsById: Map<string, CommunityPost>) {
+  const fallback = { type: event.target_type || 'Record', label: `${(event.target_type || 'Record').replaceAll('_', ' ').toLowerCase()} no longer available` };
+  if (event.target_type === 'USER') {
+    const target = users.find(user => user.id === event.target_id);
+    return target ? { type: target.staff_role ? 'Staff account' : 'Member account', label: target.name || 'Unnamed account' } : fallback;
+  }
+  if (event.target_type === 'REQUEST') {
+    const target = requests.find(request => request.id === event.target_id);
+    return target ? { type: 'Blood request', label: `${target.blood_group} request at ${target.hospital_name || target.location.area_name}` } : fallback;
+  }
+  if (event.target_type === 'POST') {
+    const target = postsById.get(event.target_id);
+    return target ? { type: 'Community post', label: target.title } : fallback;
+  }
+  if (event.target_type === 'REPORT') {
+    const target = moderationReports.find(report => report.id === event.target_id);
+    return target ? { type: 'Safety report', label: `${target.reason.replaceAll('_', ' ').toLowerCase()} report about ${target.target_type.toLowerCase()}` } : fallback;
+  }
+  if (event.target_type === 'SUPPORT_TICKET') {
+    const target = supportTickets.find(ticket => ticket.id === event.target_id);
+    return target ? { type: 'Support ticket', label: `${target.category.toLowerCase()} message from ${target.name}` } : fallback;
+  }
+  if (event.target_type === 'ORGANIZATION') {
+    const target = organizations.find(organization => organization.id === event.target_id);
+    return target ? { type: 'Organization', label: target.name } : fallback;
+  }
+  if (event.target_type === 'DONOR') {
+    const reference = parseDonorRef(event.target_id);
+    return { type: 'Donor contact record', label: reference?.kind === 'IMPORTED' ? 'Imported directory donor' : reference?.kind === 'REGISTERED' ? 'Registered donor' : 'Donor record no longer available' };
+  }
+  if (event.target_type === 'IMPORTED_DONOR') return { type: 'Imported donor', label: 'Imported directory listing' };
+  if (event.target_type === 'SESSION') return { type: 'Session', label: 'Account sign-in session' };
+  if (event.target_type === 'COMMENT') return { type: 'Comment', label: 'Blood-request comment' };
+  return fallback;
+}
+
 app.get('/api/admin/audit', asyncRoute(async (req, res) => {
   const auth = requireStaffCapability(req, res, 'VIEW_AUDIT');
   if (!auth) return;
   const auditEvents: AuditEvent[] = await getAllFromTable('common_audit_events');
-  res.json(auditEvents.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 500));
+  const recentEvents = auditEvents.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 500);
+  const postIds = [...new Set(recentEvents.filter(event => event.target_type === 'POST').map(event => event.target_id))];
+  const postResults = await Promise.all(postIds.map(async id => [id, await getCommunityPostById(id)] as const));
+  const postsById = new Map(postResults.filter((entry): entry is readonly [string, CommunityPost] => Boolean(entry[1])));
+  res.json(recentEvents.map(event => ({
+    ...event,
+    actor_summary: safeAuditActorSummary(event.actor_id),
+    target_summary: safeAuditTargetSummary(event, postsById)
+  })));
 }));
 
 app.get('/api/organizations', (_req, res) => {

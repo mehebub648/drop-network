@@ -761,8 +761,9 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                           <span className="audit-dot" aria-hidden="true" />
                           <div>
                             <div className="record-title-row"><h3>{humanize(event.action)}</h3><StatusBadge value={event.target_type} tone="purple" /></div>
-                            <p>Actor {event.actor_id} · Target {event.target_id}</p>
+                            <p><strong>{event.actor_summary?.label || 'Account no longer available'}</strong> ({event.actor_summary?.type || 'Account'}) · <strong>{event.target_summary?.label || 'Record no longer available'}</strong> ({event.target_summary?.type || humanize(event.target_type)})</p>
                             <time>{formatDateTime(event.created_at)}</time>
+                            <details className="technical-reference"><summary>Exact audit identifiers</summary><code>Actor: {event.actor_id}</code><code>Target: {event.target_id}</code></details>
                             {event.metadata && <details><summary>View change metadata</summary><pre>{JSON.stringify(event.metadata, null, 2)}</pre></details>}
                           </div>
                         </article>
