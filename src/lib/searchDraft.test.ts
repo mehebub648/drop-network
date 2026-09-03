@@ -108,6 +108,12 @@ test('request payload includes the public call contact but excludes private requ
   const relative = searchRequestPayload(completeDraft({ requester_role: 'RELATIVE' }));
   assert.equal('requester_name' in relative, false);
   assert.equal('requester_relation' in relative, false);
+  assert.equal('contact_owner' in relative, true);
+  assert.equal('contact_name' in relative, true);
+  assert.equal('contact_phone' in relative, true);
+  if (!('contact_owner' in relative) || !('contact_name' in relative) || !('contact_phone' in relative)) {
+    assert.fail('relative call contact fields were omitted');
+  }
   assert.equal(relative.contact_owner, 'RELATIVE');
   assert.equal(relative.contact_name, 'Relative Name');
   assert.equal(relative.contact_phone, '01700000000');
