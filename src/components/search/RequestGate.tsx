@@ -1,11 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { HeartPulse, ShieldCheck, X } from 'lucide-react';
-import DonorAvailabilityFields, { type RegistrationAvailability } from '../DonorAvailabilityFields';
 import OtpDeliveryStatus from '../OtpDeliveryStatus';
 import { api, type OtpDelivery } from '../../lib/api';
-import { BLOOD_GROUPS } from '../../lib/blood';
-import { BD_LOCATION_NAMES, getLocationByName } from '../../lib/locations';
-import { getUpazilasForDistrict } from '../../lib/upazilas';
 import {
   hasPatientIdentity,
   hasPatientNeed,
@@ -22,7 +18,7 @@ import RequesterRolePicker from './RequesterRolePicker';
 
 type PatientStep = 'patient-identity' | 'patient-need';
 type RequestStep = PatientStep | 'requester' | 'review';
-type Step = 'role' | RequestStep | 'phone' | 'code' | 'password' | 'signup' | 'signup-donor';
+type Step = 'role' | RequestStep | 'phone' | 'code' | 'password';
 
 const NEEDED_WINDOWS: Array<{ value: NeededWindow; label: string }> = [
   { value: 'WITHIN_HOURS', label: 'Within hours' },
@@ -83,19 +79,12 @@ export default function RequestGate({
   const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [password, setPassword] = useState('');
   const [name, setName] = useState(() => draft.requester_role === 'PATIENT' ? draft.patient_name : draft.requester_name);
-  const [token, setToken] = useState('');
   const [accountName, setAccountName] = useState('');
-  const [donorGroup, setDonorGroup] = useState('');
-  const [donorDistrict, setDonorDistrict] = useState(() => draft.district);
-  const [donorUpazila, setDonorUpazila] = useState(() => draft.upazila);
-  const [donorAvailability, setDonorAvailability] = useState<RegistrationAvailability>('');
-  const [availabilityReason, setAvailabilityReason] = useState('');
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [componentSuggested, setComponentSuggested] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const donorUpazilas = useMemo(() => getUpazilasForDistrict(donorDistrict), [donorDistrict]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -161,7 +150,6 @@ export default function RequestGate({
   };
 
   const continueAfterVerification = async (result: any) => {
-    setToken(result.verification_token);
     setAccountName(result.name || '');
     if (result.account_exists) {
       // Signing in with the verified or explicitly bypassed challenge is
@@ -170,11 +158,17 @@ export default function RequestGate({
       await onReady();
       return;
     }
-    setStep('signup');
+    const requesterName = role === 'PATIENT' ? draft.patient_name.trim() : name.trim();
+    await api.registerRequester(phone, requesterName, result.verification_token);
+    await onReady();
   };
 
   const sendCode = (event: FormEvent) => {
     event.preventDefault();
+    if (role !== 'PATIENT' && !name.trim()) {
+      setError('Enter the full name of the person submitting this request.');
+      return;
+    }
     void run(async () => {
       const result = await api.requestOtp(phone, 'SIGN_IN');
       setDelivery(result);
@@ -203,43 +197,6 @@ export default function RequestGate({
     });
   };
 
-  const registerAccount = () => {
-    if (!donorGroup) return setError('Choose your blood group to create your donor profile.');
-    if (!donorDistrict) return setError('Choose the district where you live.');
-    if (!donorUpazila || !donorUpazilas.some(item => item.value === donorUpazila)) return setError('Choose your home upazila.');
-    if (!donorAvailability) return setError('Choose whether you are available to donate.');
-    void run(async () => {
-      const location = getLocationByName(donorDistrict);
-      if (!location) throw new Error('Choose a supported district.');
-      await api.register(
-        phone,
-        name,
-        password,
-        token,
-        donorGroup,
-        location,
-        {
-          upazila: donorUpazila,
-          availability_status: donorAvailability,
-          availability_reason: donorAvailability === 'NOT_AVAILABLE' ? availabilityReason : undefined
-        }
-      );
-      await onReady();
-    });
-  };
-
-  const submitSignup = (event: FormEvent) => {
-    event.preventDefault();
-    setError('');
-    if (!donorGroup) return setError('Choose your blood group to create your donor profile.');
-    setStep('signup-donor');
-  };
-
-  const completeSignup = (event: FormEvent) => {
-    event.preventDefault();
-    registerAccount();
-  };
-
   const role = draft.requester_role;
   const roleLabel = role === 'PATIENT'
     ? "I'm the patient"
@@ -251,15 +208,12 @@ export default function RequestGate({
   const componentLabel = BLOOD_COMPONENTS.find(option => option.value === draft.blood_component)?.label || '';
   const reasonLabel = requestReasonLabel(draft.request_reason);
   const accountPhone = user?.phone || draft.requester_phone;
-  const requestOwnerName = role === 'PATIENT' ? patientLabel : draft.requester_name;
   const contactLabel = role === 'PATIENT'
     ? patientLabel
-    : role === 'RELATIVE'
-      ? `${draft.requester_name} · Relative`
-      : draft.contact_owner === 'RELATIVE'
-        ? `${draft.contact_name} · Relative`
-        : `${draft.patient_name} · Patient`;
-  const donorContactPhone = role === 'THIRD_PARTY' ? draft.contact_phone : accountPhone;
+    : draft.contact_owner === 'RELATIVE'
+      ? `${draft.contact_name} · Relative`
+      : `${draft.patient_name} · Patient`;
+  const donorContactPhone = role === 'PATIENT' ? accountPhone : draft.contact_phone;
   const editRole = (returnStep: RequestStep) => {
     setRoleReturnStep(returnStep);
     setError('');
@@ -312,6 +266,7 @@ export default function RequestGate({
     if (requesterRole === 'PATIENT' && draft.requester_role !== 'PATIENT') {
       next.requester_phone = '';
       setPhone(user?.phone || '');
+      setName(draft.patient_name);
     } else if (requesterRole !== 'PATIENT' && user?.phone) {
       setPhone(user.phone);
     }
@@ -461,34 +416,12 @@ export default function RequestGate({
         {step === 'requester' && (
           <form onSubmit={submitRequester} className="fade-in request-flow-form">
             {requestFlowContext('requester')}
-            {requestFlowHeader(4, role === 'THIRD_PARTY' ? 'Add contact details' : 'Where should donors call?', role === 'THIRD_PARTY' ? 'Keep the request owner separate from the patient-side contact.' : 'Use the mobile number that donors can call about this request.')}
+            {requestFlowHeader(4, 'Where should donors call?', role === 'PATIENT' ? 'This number will also secure your private Drop account.' : 'Add one patient-side contact. Your own account details come next and stay private.')}
 
             <div className="grid gap-x-4 sm:grid-cols-2">
-              {role !== 'PATIENT' && (
-                <label className="dialog-field sm:col-span-2">
-                  <span>Your full name</span>
-                  <input required value={draft.requester_name} onChange={event => set({ requester_name: event.target.value })} className="input" />
-                </label>
-              )}
-
-              {role !== 'PATIENT' && !user && (
-                <label className="dialog-field sm:col-span-2">
-                  <span>{role === 'RELATIVE' ? 'Your mobile number' : 'Your mobile number (request owner)'}</span>
-                  <input
-                    required
-                    type="tel"
-                    inputMode="tel"
-                    placeholder="01XXXXXXXXX"
-                    value={draft.requester_phone}
-                    onChange={event => updateVerificationPhone(event.target.value)}
-                    className="input"
-                  />
-                </label>
-              )}
-
               {role === 'PATIENT' && !user && (
                 <label className="dialog-field sm:col-span-2">
-                  <span>Your mobile number</span>
+                  <span>Your mobile number · donor call contact</span>
                   <input
                     required
                     type="tel"
@@ -502,53 +435,47 @@ export default function RequestGate({
               )}
 
               {user?.phone && (
-                <div className="request-verified-contact sm:col-span-2">
+                <div className={`request-verified-contact sm:col-span-2 ${role === 'PATIENT' ? '' : 'request-private-account'}`}>
                   <span>
-                    <small>Verified mobile number</small>
+                    <small>{role === 'PATIENT' ? 'Verified donor call contact' : 'Private verified account'}</small>
                     <strong>{user.phone}</strong>
+                    {role !== 'PATIENT' && <span>Used to manage this request. Never shown publicly.</span>}
                   </span>
                   <ShieldCheck className="h-5 w-5" aria-hidden="true" />
                 </div>
               )}
 
-              {role === 'RELATIVE' && (
-                <div className="request-data-section is-contact sm:col-span-2" role="note">
-                  <strong>Donors will call this number</strong>
-                  <span>We’ll verify it before publishing the request.</span>
-                </div>
-              )}
-
               {role === 'PATIENT' && (
                 <div className="request-data-section is-contact sm:col-span-2" role="note">
-                  <strong>Donors will call this number</strong>
-                  <span>We’ll verify it before publishing the request.</span>
+                  <strong>One number, two purposes</strong>
+                  <span>This number is OTP-verified for your account and published so donors can call you.</span>
                 </div>
               )}
 
-              {role === 'THIRD_PARTY' && (
+              {role !== 'PATIENT' && (
                 <>
-                  <div className="request-data-section is-contact sm:col-span-2">
-                    <strong>Donor contact</strong>
-                    <span>Enter the patient or relative whom donors should call. This number will appear publicly while the request is active.</span>
-                  </div>
                   <label className="dialog-field sm:col-span-2">
-                    <span>Whose patient-side number should donors get?</span>
+                    <span>Who should donors call?</span>
                     <select required value={draft.contact_owner} onChange={event => set({ contact_owner: event.target.value as 'PATIENT' | 'RELATIVE' })} className="input">
                       <option value="">Select</option>
-                      <option value="PATIENT">The patient's number</option>
-                      <option value="RELATIVE">A relative's number</option>
+                      <option value="PATIENT">The patient</option>
+                      <option value="RELATIVE">A patient’s relative</option>
                     </select>
-                  </label>
-                  <label className="dialog-field">
-                    <span>{draft.contact_owner === 'RELATIVE' ? "Relative's contact number" : "Patient's contact number"}</span>
-                    <input required type="tel" inputMode="tel" placeholder="01XXXXXXXXX" value={draft.contact_phone} onChange={event => set({ contact_phone: event.target.value })} className="input" />
                   </label>
                   {draft.contact_owner === 'RELATIVE' && (
                     <label className="dialog-field">
-                      <span>Relative's name</span>
+                      <span>Relative’s name</span>
                       <input required value={draft.contact_name} onChange={event => set({ contact_name: event.target.value })} className="input" />
                     </label>
                   )}
+                  <label className={`dialog-field ${draft.contact_owner === 'PATIENT' ? 'sm:col-span-2' : ''}`}>
+                    <span>{draft.contact_owner === 'RELATIVE' ? 'Relative’s call number' : 'Patient’s call number'}</span>
+                    <input required type="tel" inputMode="tel" placeholder="01XXXXXXXXX" value={draft.contact_phone} onChange={event => set({ contact_phone: event.target.value })} className="input" />
+                  </label>
+                  <div className="request-data-section is-contact sm:col-span-2" role="note">
+                    <strong>Published call contact</strong>
+                    <span>This number is not verified by Drop. Only this chosen patient-side contact is published; your verified account details stay private.</span>
+                  </div>
                 </>
               )}
             </div>
@@ -578,8 +505,8 @@ export default function RequestGate({
               <div className="request-review-card">
                 <span>
                   <small>Call contact</small>
-                  <strong>{contactLabel} · {donorContactPhone || 'Verify next'}</strong>
-                  <span>Managed by {requestOwnerName || 'request owner'}{role === 'PATIENT' ? '' : ` · ${roleLabel}`}</span>
+                  <strong>{contactLabel} · {donorContactPhone || 'Add a number'}</strong>
+                  <span>{role === 'PATIENT' ? 'Verified before publishing' : 'Patient-side call number · Not verified by Drop'}</span>
                 </span>
                 <button type="button" onClick={() => setStep('requester')}>Change</button>
               </div>
@@ -595,7 +522,7 @@ export default function RequestGate({
             <label className="request-consent">
               <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0" />
               <span>
-                I may publish these details and contact number while the request is active. I won’t reshare donor numbers.
+                I may publish the patient details and chosen call number while the request is active. My private account details are not published, and I won’t reshare donor numbers.
               </span>
             </label>
 
@@ -603,7 +530,7 @@ export default function RequestGate({
             <div className="dialog-actions">
               <button type="button" onClick={() => setStep('requester')} className="button button-secondary">Back</button>
               <button type="submit" disabled={busy} className="button button-primary">
-                {busy ? 'Saving...' : user ? 'Publish & call donor' : 'Verify & call donor'}
+                {busy ? 'Saving...' : user ? 'Publish & call donor' : 'Verify account & call'}
               </button>
             </div>
           </form>
@@ -611,15 +538,26 @@ export default function RequestGate({
 
         {step === 'phone' && (
           <form onSubmit={sendCode}>
-            <h2 id="request-gate-title">Verify your contact number</h2>
+            <h2 id="request-gate-title">Verify the requester</h2>
             <p>
-              We use this number for your Drop account and request ownership. It stays separate from
-              the patient-side contact you added for donors.
+              {role === 'PATIENT'
+                ? 'Verify the same number donors will call. We’ll also use it for your private Drop account.'
+                : 'These are the form submitter’s private account details. They are not published on the blood request.'}
             </p>
+            {role !== 'PATIENT' && (
+              <label className="dialog-field">
+                <span>Your full name · private</span>
+                <input required autoFocus value={name} onChange={event => setName(event.target.value)} className="input" />
+              </label>
+            )}
             <label className="dialog-field">
-              <span>Your Bangladesh mobile number</span>
-              <input required autoFocus type="tel" inputMode="tel" placeholder="01XXXXXXXXX" value={phone} onChange={event => updateVerificationPhone(event.target.value)} className="input" />
+              <span>{role === 'PATIENT' ? 'Your Bangladesh mobile number' : 'Your Bangladesh mobile number · private'}</span>
+              <input required autoFocus={role === 'PATIENT'} type="tel" inputMode="tel" placeholder="01XXXXXXXXX" value={phone} onChange={event => updateVerificationPhone(event.target.value)} className="input" />
             </label>
+            <div className="request-data-section is-contact" role="note">
+              <strong>{role === 'PATIENT' ? 'Verified and published as the call contact' : 'Verified for account ownership only'}</strong>
+              <span>{role === 'PATIENT' ? 'A successful OTP check lets donors call this number.' : 'The patient-side call number is separate and does not need OTP verification.'}</span>
+            </div>
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
               <button type="button" onClick={() => setStep('review')} className="button button-secondary">Back</button>
@@ -674,88 +612,6 @@ export default function RequestGate({
           </form>
         )}
 
-        {step === 'signup' && (
-          <form onSubmit={submitSignup}>
-            <h2 id="request-gate-title">Finish your account</h2>
-            <p>
-              This number is new here. A short account keeps your request together and lets donors
-              reach you back.
-            </p>
-            <div className="grid gap-x-4 sm:grid-cols-2">
-              <label className="dialog-field sm:col-span-2">
-                <span>Your name</span>
-                <input required autoFocus value={name} onChange={event => setName(event.target.value)} className="input" />
-              </label>
-              <label className="dialog-field sm:col-span-2">
-                <span>Password (at least 8 characters)</span>
-                <input required type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} className="input" />
-              </label>
-              <label className="dialog-field sm:col-span-2">
-                <span>Your blood group</span>
-                <select required value={donorGroup} onChange={event => setDonorGroup(event.target.value)} className="input">
-                  <option value="">Choose blood group</option>
-                  {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
-                </select>
-              </label>
-            </div>
-            <p className="mt-3 text-xs leading-5 text-slate-500">
-              Every account includes a donor profile. You decide whether it appears in live donor searches next.
-            </p>
-            {error && <p className="dialog-error">{error}</p>}
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setStep('phone')} className="button button-secondary">Back</button>
-              <button type="submit" disabled={busy} className="button button-primary">
-                Continue
-              </button>
-            </div>
-          </form>
-        )}
-
-        {step === 'signup-donor' && (
-          <form onSubmit={completeSignup}>
-            <h2 id="request-gate-title">Set your donor availability</h2>
-            <p>
-              We filled these from your search. Change them if the patient's treatment area is not where you live.
-            </p>
-            <div className="grid gap-x-4 sm:grid-cols-2">
-              <label className="dialog-field">
-                <span>Your home district</span>
-                <select
-                  required
-                  value={donorDistrict}
-                  onChange={event => {
-                    const nextDistrict = event.target.value;
-                    setDonorDistrict(nextDistrict);
-                    setDonorUpazila(getUpazilasForDistrict(nextDistrict)[0]?.value || '');
-                  }}
-                  className="input"
-                >
-                  <option value="">Choose district</option>
-                  {BD_LOCATION_NAMES.map(district => <option key={district} value={district}>{district}</option>)}
-                </select>
-              </label>
-              <label className="dialog-field">
-                <span>Your home upazila</span>
-                <select required value={donorUpazila} onChange={event => setDonorUpazila(event.target.value)} className="input">
-                  <option value="">Choose upazila</option>
-                  {donorUpazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </label>
-            </div>
-            <DonorAvailabilityFields
-              idPrefix="request-signup"
-              value={donorAvailability}
-              onChange={setDonorAvailability}
-              reason={availabilityReason}
-              onReasonChange={setAvailabilityReason}
-            />
-            {error && <p className="dialog-error">{error}</p>}
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setStep('signup')} className="button button-secondary">Back</button>
-              <button type="submit" disabled={busy} className="button button-primary">{busy ? 'Creating...' : 'Create profile and continue'}</button>
-            </div>
-          </form>
-        )}
         </div>
       </div>
     </ModalPortal>

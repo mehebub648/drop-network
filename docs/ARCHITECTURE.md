@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.129`
+Current application version: `0.0.130`
 
 ## Overview
 
@@ -68,13 +68,12 @@ Entry points:
   donor result card, and `RequestGate`. The gate reuses completed draft answers,
   keeps the current search in one compact editable context card, and presents
   role, patient identity, blood requirement, contact, and review as an explicit
-  five-step journey before verification, required donor-profile basics, and an explicit
-  availability choice into short stages. Age, weight, and donation experience
-  stay in the full donor-profile editor instead of blocking onboarding. When
-  onboarding begins from search, the donor's district and upazila are prefilled
-  from the patient search but remain editable as the donor's home location.
+  five-step journey before requester verification. A patient requester uses one
+  verified number for both account ownership and donor calls. Otherwise the
+  verified requester identity remains private and the separately chosen patient-side
+  call number is published by consent without being presented as phone-verified.
   Role-aware guidance identifies whose information belongs in every field, and
-  review keeps the patient, request owner, and donor contact visibly separate.
+  review keeps the patient, private request owner, and public call contact separate.
   Choosing the relative role is sufficient; the flow does not ask for a more
   specific family relationship.
   Patient details use two short stages: explicit gender, age, and full name,
@@ -188,8 +187,11 @@ Routes:
   Previously completed search, role,
   patient, and contact answers are summarized rather than requested again and
   remain editable. Separate patient identity, blood requirement, contact, and
-  review stages carry explicit publication consent before the inline sign-in;
-  publishing the request is what
+  review stages carry explicit publication consent before inline requester verification.
+  Existing members sign in there; a new verified phone becomes a minimal member
+  account automatically without a separate registration or donor-profile form.
+  Only the chosen call contact is published, while the request owner remains private.
+  Publishing the request is what
   unmasks the number. The keyboard-operable
   facility combobox preloads and searches only the selected district. The
   generated snapshot includes every DGHS registry function except the two
@@ -368,11 +370,12 @@ API routes:
 - `POST /api/auth/otp/login` exchanges a verified `SIGN_IN` challenge for a
   session, so a requester is not blocked by a forgotten password. The password
   path is unchanged and still offered.
-- `POST /api/auth/register` consumes a registration or `SIGN_IN` token and
-  creates a verified user with a donor profile. Blood group, location, and an
-  explicit available/not-available choice are required. An available choice
-  receives a server timestamp and enters donor matching; an unavailable choice
-  may include a private reason that is never projected into donor search.
+- `POST /api/auth/register` consumes a registration or `SIGN_IN` token. Standard
+  donor registration creates a verified user with a donor profile and requires
+  blood group, location, and an explicit available/not-available choice. The
+  request workflow sends `registration_context: REQUEST` after OTP verification
+  to create a minimal passwordless member account without a donor profile; the
+  new member may add a donor profile later.
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `POST /api/auth/reset-password` consumes a verified recovery challenge,
   changes the password, and revokes every existing session.

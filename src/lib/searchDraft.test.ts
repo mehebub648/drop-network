@@ -55,8 +55,9 @@ test('completed patient and requester sections can be skipped when a draft is re
   assert.equal(hasPatientDetails(completeDraft({ request_reason: '' })), false);
 
   assert.equal(hasRequesterDetails(completeDraft()), true);
-  assert.equal(hasRequesterDetails(completeDraft({ requester_phone: '' })), false);
-  assert.equal(hasRequesterDetails(completeDraft({ requester_phone: '' }), '01800000000'), true);
+  assert.equal(hasRequesterDetails(completeDraft({ requester_name: '', requester_phone: '' })), true);
+  assert.equal(hasRequesterDetails(completeDraft({ contact_phone: '' })), false);
+  assert.equal(hasRequesterDetails(completeDraft({ contact_owner: '' })), false);
   assert.equal(hasRequesterDetails(completeDraft({ contact_name: '' })), false);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT' })), true);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', requester_phone: '' })), false);
@@ -88,11 +89,11 @@ test('Other can carry an optional broad description without leaking stale text',
   assert.equal(known.request_reason_details, undefined);
 });
 
-test('request payload includes only fields relevant to the selected coordinator role', () => {
+test('request payload includes the public call contact but excludes private requester details', () => {
   const patientContact = searchRequestPayload(completeDraft({
     contact_owner: 'PATIENT'
   }));
-  assert.equal(patientContact.requester_name, 'Volunteer Name');
+  assert.equal('requester_name' in patientContact, false);
   assert.equal('contact_owner' in patientContact, true);
   assert.equal('contact_phone' in patientContact, true);
   if (!('contact_owner' in patientContact) || !('contact_phone' in patientContact)) {
@@ -105,9 +106,10 @@ test('request payload includes only fields relevant to the selected coordinator 
   assert.equal('requester_relation' in patientContact, false);
 
   const relative = searchRequestPayload(completeDraft({ requester_role: 'RELATIVE' }));
-  assert.equal(relative.requester_name, 'Volunteer Name');
+  assert.equal('requester_name' in relative, false);
   assert.equal('requester_relation' in relative, false);
-  assert.equal('contact_owner' in relative, false);
-  assert.equal('contact_phone' in relative, false);
+  assert.equal(relative.contact_owner, 'RELATIVE');
+  assert.equal(relative.contact_name, 'Relative Name');
+  assert.equal(relative.contact_phone, '01700000000');
   assert.equal('requester_phone' in relative, false);
 });

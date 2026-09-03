@@ -43,12 +43,14 @@ export type SearchDraft = {
   units_required: string;
   request_reason: RequestReason | '';
   request_reason_details: string;
+  /** The form submitter's private account name. Never sent in the request body. */
   requester_name: string;
   /** The coordinator's private account/verification number. Never sent in the request body. */
   requester_phone: string;
   requester_relation: string;
   contact_owner: 'PATIENT' | 'RELATIVE' | '';
   contact_name: string;
+  /** Public patient-side call number. Published by consent, not OTP-verified. */
   contact_phone: string;
   needed_window: NeededWindow | '';
   /** Set once the request is published, so a reload does not publish twice. */
@@ -157,11 +159,8 @@ export function hasPatientDetails(draft: SearchDraft) {
 export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone = '') {
   const requesterPhone = draft.requester_phone.trim() || verifiedRequesterPhone.trim();
   if (draft.requester_role === 'PATIENT') return Boolean(requesterPhone);
-  if (draft.requester_role === 'RELATIVE') {
-    return Boolean(draft.requester_name.trim() && requesterPhone);
-  }
-  if (draft.requester_role !== 'THIRD_PARTY') return false;
-  if (!draft.requester_name.trim() || !requesterPhone || !draft.contact_owner || !draft.contact_phone.trim()) return false;
+  if (draft.requester_role !== 'RELATIVE' && draft.requester_role !== 'THIRD_PARTY') return false;
+  if (!draft.contact_owner || !draft.contact_phone.trim()) return false;
   if (draft.contact_owner === 'RELATIVE') {
     return Boolean(draft.contact_name.trim());
   }
@@ -170,22 +169,17 @@ export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone =
 
 /** The body `POST /api/search/requests` expects. */
 export function searchRequestPayload(draft: SearchDraft) {
-  const requesterFields = draft.requester_role === 'RELATIVE'
-    ? {
-        requester_name: draft.requester_name || undefined
-      }
-    : draft.requester_role === 'THIRD_PARTY'
-      ? {
-          requester_name: draft.requester_name || undefined,
-          contact_owner: draft.contact_owner || undefined,
-          contact_phone: draft.contact_phone || undefined,
-          ...(draft.contact_owner === 'RELATIVE'
-            ? {
-                contact_name: draft.contact_name || undefined
-              }
-            : {})
-        }
-      : {};
+  const contactFields = draft.requester_role === 'PATIENT'
+    ? {}
+    : {
+        contact_owner: draft.contact_owner || undefined,
+        contact_phone: draft.contact_phone || undefined,
+        ...(draft.contact_owner === 'RELATIVE'
+          ? {
+              contact_name: draft.contact_name || undefined
+            }
+          : {})
+      };
 
   return {
     blood_group: draft.blood_group,
@@ -201,7 +195,7 @@ export function searchRequestPayload(draft: SearchDraft) {
     units_required: Number(draft.units_required),
     request_reason: draft.request_reason,
     request_reason_details: draft.request_reason === 'OTHER' ? draft.request_reason_details.trim() || undefined : undefined,
-    ...requesterFields,
+    ...contactFields,
     needed_window: draft.needed_window || undefined
   };
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { shouldExposeRequestContacts } from './requestVisibility';
+import { shouldExposeRequestContacts, shouldExposeRequesterIdentity } from './requestVisibility';
 
 test('active request contacts are public for urgent coordination', () => {
   assert.equal(shouldExposeRequestContacts('ACTIVE'), true);
@@ -15,4 +15,10 @@ test('closed request contacts stop being public', () => {
 
 test('owners and accepted participants retain purpose-limited access', () => {
   assert.equal(shouldExposeRequestContacts('FULFILLED', true), true);
+});
+
+test('search-flow requester identity stays private outside privileged views', () => {
+  assert.equal(shouldExposeRequesterIdentity('SEARCH_V1'), false);
+  assert.equal(shouldExposeRequesterIdentity('SEARCH_V1', true), true);
+  assert.equal(shouldExposeRequesterIdentity(undefined), true);
 });

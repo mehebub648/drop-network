@@ -253,6 +253,21 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to register');
   },
 
+  async registerRequester(phone: string, name: string, verificationToken: string) {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        phone,
+        name,
+        verification_token: verificationToken,
+        registration_context: 'REQUEST',
+        fingerprint: BROWSER_FINGERPRINT
+      })
+    });
+    return readJsonOrThrow(res, 'Failed to create your request account');
+  },
+
   async getMe() {
     const res = await fetch(`${API_BASE}/me`, {
       headers: getHeaders()

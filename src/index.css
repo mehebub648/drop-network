@@ -3691,6 +3691,14 @@ input[type='radio'] {
   font-size: 0.82rem;
 }
 
+.request-verified-contact > span > span {
+  margin-top: 0.08rem;
+  color: #047857;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .request-review-grid {
   gap: 0;
   overflow: hidden;

@@ -40,7 +40,7 @@ import {
   SEARCH_SORTS,
   type SearchSort
 } from './donorSearch';
-import { shouldExposeRequestContacts } from './requestVisibility';
+import { shouldExposeRequestContacts, shouldExposeRequesterIdentity } from './requestVisibility';
 import {
   parseDonorPreferences,
   type DonorPreferences
@@ -1675,6 +1675,9 @@ function publicRequestPayload(request: BloodRequest) {
     patient_title,
     patient_sex,
     patient_age,
+    requester_name,
+    requester_role,
+    requester_relationship,
     requester_relation,
     contact_owner,
     timeline,
@@ -1682,7 +1685,13 @@ function publicRequestPayload(request: BloodRequest) {
   } = request;
   return {
     ...safeRequest,
-    requester_name: request.requester_name || requester?.name || 'Anonymous',
+    ...(shouldExposeRequesterIdentity(request.flow_version)
+      ? {
+          requester_name: requester_name || requester?.name || 'Anonymous',
+          requester_role,
+          requester_relationship
+        }
+      : { requester_name: 'Verified requester' }),
     comment_count: comments?.length || 0
   };
 }
@@ -2780,6 +2789,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const name = cleanString(req.body?.name, 100);
   const password = cleanString(req.body?.password, 128);
+  const requesterOnly = req.body?.registration_context === 'REQUEST';
   const bodyFingerprint = normalizeFingerprint(req.body?.fingerprint);
   const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
   const blood_group = req.body?.blood_group;
@@ -2803,17 +2813,41 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     undefined,
     []
   );
+  let donorProfile: DonorProfile | undefined;
 
-  if (!phone || !name || !password) return validationError(res, 'Phone, name, and password are required');
+  if (!phone || !name || (!requesterOnly && !password)) {
+    return validationError(res, requesterOnly ? 'Phone and name are required' : 'Phone, name, and password are required');
+  }
   if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before registering' });
-  if (password.length < 8) return validationError(res, 'Password must be at least 8 characters');
-  if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
-  if (!location) return validationError(res, 'Valid location is required');
-  if ('error' in registrationAvailability) return validationError(res, registrationAvailability.error);
-  if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
-  if (age === null) return validationError(res, 'Age must be between 16 and 70');
-  if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
-  if ('error' in donationDetails) return validationError(res, donationDetails.error);
+  if (!requesterOnly && password.length < 8) return validationError(res, 'Password must be at least 8 characters');
+  if (!requesterOnly) {
+    if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
+    if (!location) return validationError(res, 'Valid location is required');
+    if ('error' in registrationAvailability) return validationError(res, registrationAvailability.error);
+    if (upazila === null) return validationError(res, 'Choose an upazila that belongs to the selected district');
+    if (age === null) return validationError(res, 'Age must be between 16 and 70');
+    if (weight_kg === null) return validationError(res, 'Weight must be between 30 and 200 kg');
+    if ('error' in donationDetails) return validationError(res, donationDetails.error);
+
+    const registeredAt = new Date().toISOString();
+    const { status: availability_status, reason: availability_reason } = registrationAvailability.value;
+    donorProfile = {
+      blood_group,
+      location,
+      ...(upazila ? { upazila } : {}),
+      ...(age ? { age } : {}),
+      ...(weight_kg ? { weight_kg } : {}),
+      ...(donationDetails.value.last_donation ? { last_donation: donationDetails.value.last_donation } : {}),
+      ...(donationDetails.value.last_donation_date ? { last_donation_date: donationDetails.value.last_donation_date } : {}),
+      ...(donationDetails.value.donation_count !== undefined ? { donation_count: donationDetails.value.donation_count } : {}),
+      donations_before_history: donationDetails.value.donations_before_history,
+      availability_status,
+      ...(availability_reason ? { availability_reason } : {}),
+      ...(availability_status === 'AVAILABLE' ? { availability_confirmed_at: registeredAt } : {}),
+      deferral_status: 'NONE',
+      availability_history: [{ status: availability_status, changed_at: registeredAt }]
+    };
+  }
   if (users.find(u => u.phone === phone)) {
     return res.status(400).json({ error: 'Phone already registered' });
   }
@@ -2822,32 +2856,14 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     id: uuidv4(),
     phone,
     name,
-    password: await bcrypt.hash(password, BCRYPT_ROUNDS),
+    ...(password ? { password: await bcrypt.hash(password, BCRYPT_ROUNDS) } : {}),
     // Normal registration reaches this point after a purpose-bound OTP
     // challenge. Explicit superadmin-controlled test mode can bypass proof.
     is_verified: true,
     phone_verified_at: new Date().toISOString(),
     roles: ['MEMBER'],
     created_at: new Date().toISOString(),
-  };
-
-  const registeredAt = new Date().toISOString();
-  const { status: availability_status, reason: availability_reason } = registrationAvailability.value;
-  user.donor_profile = {
-    blood_group,
-    location,
-    ...(upazila ? { upazila } : {}),
-    ...(age ? { age } : {}),
-    ...(weight_kg ? { weight_kg } : {}),
-    ...(donationDetails.value.last_donation ? { last_donation: donationDetails.value.last_donation } : {}),
-    ...(donationDetails.value.last_donation_date ? { last_donation_date: donationDetails.value.last_donation_date } : {}),
-    ...(donationDetails.value.donation_count !== undefined ? { donation_count: donationDetails.value.donation_count } : {}),
-    donations_before_history: donationDetails.value.donations_before_history,
-    availability_status,
-    ...(availability_reason ? { availability_reason } : {}),
-    ...(availability_status === 'AVAILABLE' ? { availability_confirmed_at: registeredAt } : {}),
-    deferral_status: 'NONE',
-    availability_history: [{ status: availability_status, changed_at: registeredAt }]
+    ...(donorProfile ? { donor_profile: donorProfile } : {})
   };
 
   users.push(user);
@@ -3332,11 +3348,13 @@ const REQUESTER_ROLE_RELATIONSHIPS: Record<(typeof REQUESTER_ROLES)[number], (ty
  *   hospital_address,
  *   patient_reference  not collected; both are optional on the record.
  *
- * The requester's own phone is taken from their verified account rather than
- * from the request body, so the number attached to a request is always one
- * somebody proved they control.
+ * The requester's name and phone are taken from their verified account rather
+ * than from the request body. They remain private unless the patient is also
+ * the requester and deliberately uses that verified number as the call contact.
+ * Patient-side contact numbers supplied by another requester are published by
+ * consent but are not described as phone-verified.
  */
-function parseSearchRequest(body: Record<string, unknown>, requesterPhone: string) {
+function parseSearchRequest(body: Record<string, unknown>, requesterPhone: string, requesterName: string) {
   const blood_group = body.blood_group;
   const blood_component = body.blood_component;
   const units_required = parsePositiveInteger(body.units_required, 10);
@@ -3356,7 +3374,6 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
   const patient_age = parseOptionalInteger(body.patient_age, 0, 120);
   const collection_facility = cleanString(body.collection_facility, 160);
   const collection_facility_code = optionalCleanString(body.collection_facility_code, 40);
-  const requester_name = optionalCleanString(body.requester_name, 120);
   const requester_relation = optionalCleanString(body.requester_relation, 60);
   const contact_owner = parseOptionalEnum(body.contact_owner, CONTACT_OWNERS);
   const contact_name = optionalCleanString(body.contact_name, 80);
@@ -3383,24 +3400,15 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
   if (body.consent !== true) return { error: 'Explicit publication consent is required' } as const;
 
   const contacts: ContactDetail[] = [];
-  let resolvedRequesterName = requester_name;
 
   if (requester_role === 'PATIENT') {
-    resolvedRequesterName = patient_name;
     contacts.push({ name: patient_name, phone: requesterPhone, type: 'PATIENT' });
-  } else if (requester_role === 'RELATIVE') {
-    if (!requester_name) return { error: 'Your name is required' } as const;
-    contacts.push({ name: requester_name, phone: requesterPhone, type: 'RELATIVE' });
   } else {
-    if (!requester_name) return { error: 'Your name is required' } as const;
     if (!contact_owner) return { error: "Say whose number this is: the patient's or a relative's" } as const;
     if (!contact_phone) return { error: 'A valid Bangladesh contact number is required' } as const;
     if (contact_owner === 'RELATIVE' && !contact_name) {
       return { error: "The relative's name is required" } as const;
     }
-    // The volunteer's own number first, then the number that belongs to the
-    // patient's side. A donor calling back should reach either.
-    contacts.push({ name: requester_name, phone: requesterPhone, type: 'OTHER' });
     contacts.push({
       name: contact_owner === 'PATIENT' ? patient_name : contact_name!,
       phone: contact_phone,
@@ -3423,10 +3431,10 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
       patient_name,
       patient_age,
       requester_role,
-      requester_name: resolvedRequesterName!,
+      requester_name: requesterName,
       requester_relationship: REQUESTER_ROLE_RELATIONSHIPS[requester_role],
       requester_relation,
-      contact_owner: requester_role === 'THIRD_PARTY' ? contact_owner : undefined,
+      contact_owner: requester_role === 'PATIENT' ? undefined : contact_owner,
       needed_window,
       needed_by: needed_window
         ? new Date(Date.now() + NEEDED_WINDOW_HOURS[needed_window] * 3_600_000).toISOString()
@@ -3446,7 +3454,7 @@ app.post('/api/search/requests', async (req, res) => {
   if (!auth) return res.status(401).json({ error: 'Log in to publish a request' });
   if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before creating a request' });
 
-  const parsed = parseSearchRequest(req.body || {}, auth.user.phone);
+  const parsed = parseSearchRequest(req.body || {}, auth.user.phone, auth.user.name);
   if ('error' in parsed) return validationError(res, parsed.error);
 
   const recent = duplicateActiveRequest(parsed.value);
@@ -3875,15 +3883,14 @@ app.get('/api/me/donor-requests', async (req, res) => {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 50)
     .map(request => {
-      const requester = users.find(user => user.id === request.user_id);
       const response = donorResponses.find(item =>
         item.request_id === request.id && item.donor_id === auth.user.id
       );
       return {
         ...publicRequestPayload(request),
-        // Masked until the donor says they can help, mirroring how the donor's
-        // own number is treated on the requester's side.
-        requester_phone_masked: maskPhone(requester?.phone || ''),
+        // Mask the chosen patient-side call contact, never the private account
+        // number of a different person coordinating the request.
+        requester_phone_masked: maskPhone(request.contacts?.[0]?.phone || ''),
         my_response_status: response?.status || null,
         contacts: response && ['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status)
           ? request.contacts || []
@@ -5363,15 +5370,35 @@ app.get('/api/requests/:id', async (req, res) => {
   // Active requests publish their chosen coordination contacts and patient
   // name so donors can understand whom the request is for and call immediately.
   // Internal patient references remain limited to the owner and participants.
-  const { contacts, patient_name, patient_reference, ...safeRequest } = request;
+  const {
+    contacts,
+    patient_name,
+    patient_reference,
+    requester_name,
+    requester_role,
+    requester_relationship,
+    requester_relation,
+    contact_owner,
+    ...safeRequest
+  } = request;
   const privilegedViewer = requestOwner || acceptedParticipant;
   const activePublicRequest = ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status);
+  const exposeRequesterIdentity = shouldExposeRequesterIdentity(request.flow_version, requestOwner);
   const enrichedRequest = {
     ...safeRequest,
     ...(shouldExposeRequestContacts(request.status, privilegedViewer) ? { contacts: contacts || [] } : {}),
     ...((privilegedViewer || activePublicRequest) ? { patient_name } : {}),
-    ...(privilegedViewer ? { patient_reference, requester_phone: requester?.phone } : {}),
-    requester_name: request.requester_name || requester?.name || 'Verified requester'
+    ...(privilegedViewer ? { patient_reference } : {}),
+    ...(requestOwner ? { requester_phone: requester?.phone } : {}),
+    ...(exposeRequesterIdentity
+      ? {
+          requester_name: requester_name || requester?.name || 'Verified requester',
+          requester_role,
+          requester_relationship,
+          requester_relation,
+          contact_owner
+        }
+      : { requester_name: 'Verified requester' })
   };
 
   const donorMatches = requestOwner ? await findRequestDonors({
