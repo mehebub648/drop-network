@@ -44,15 +44,15 @@ export default function SecurityPage() {
       <form onSubmit={submit} className="mt-7 space-y-5 max-w-xl">
         <div>
           <label htmlFor="current-password" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Current password</label>
-          <input id="current-password" type="password" required value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary" />
+          <input id="current-password" type="password" autoComplete="current-password" required value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="security-password-input" />
         </div>
         <div>
           <label htmlFor="new-password" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">New password</label>
-          <input id="new-password" type="password" minLength={8} required value={newPassword} onChange={event => setNewPassword(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary" />
+          <input id="new-password" type="password" autoComplete="new-password" minLength={8} required value={newPassword} onChange={event => setNewPassword(event.target.value)} className="security-password-input" />
         </div>
         <div>
           <label htmlFor="confirm-password" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Confirm new password</label>
-          <input id="confirm-password" type="password" minLength={8} required value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} className="w-full px-4 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-primary" />
+          <input id="confirm-password" type="password" autoComplete="new-password" minLength={8} required value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} className="security-password-input" />
         </div>
         {message && <p className={message.type === 'success' ? 'text-green-700 font-bold text-sm' : 'text-red-600 font-bold text-sm'}>{message.text}</p>}
         <button disabled={saving} className="px-5 py-3 bg-primary text-white rounded-xl font-bold inline-flex items-center gap-2 hover:bg-primary-dark disabled:opacity-50"><KeyRound className="w-4 h-4" /> {saving ? 'Changing...' : 'Change password'}</button>

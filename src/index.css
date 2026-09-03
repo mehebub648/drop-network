@@ -8,6 +8,7 @@
   --color-text: #17171b;
   --color-text-muted: #667085;
   --color-metadata: #475467;
+  --color-field-boundary: #667085;
   --color-border: #e4e7ec;
   --color-teal-300: #fda4af;
   --font-sans: 'Trebuchet MS', 'Segoe UI', Arial, sans-serif;
@@ -66,6 +67,22 @@ body {
   letter-spacing: 0.08em;
   line-height: 1rem;
   text-transform: uppercase;
+}
+
+.security-password-input {
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 1rem;
+  border: 2px solid var(--color-field-boundary);
+  border-radius: 1rem;
+  background: #f8fafc;
+  color: #0f172a;
+  outline: none;
+}
+
+.security-password-input:focus {
+  border-color: #c8102e;
+  box-shadow: 0 0 0 3px rgba(200, 16, 46, 0.2);
 }
 
 .theme-card {
