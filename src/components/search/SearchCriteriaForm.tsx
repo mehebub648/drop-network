@@ -16,6 +16,7 @@ import {
   type RegisteredCollectionFacility
 } from '../../lib/collectionFacilities';
 import type { RequesterRole } from '../../lib/searchDraft';
+import ModalPortal from '../ModalPortal';
 import RequesterRolePicker from './RequesterRolePicker';
 
 export type Criteria = {
@@ -59,17 +60,9 @@ function DistrictPicker({ value, onChange }: { value: string; onChange: (distric
 
   useEffect(() => {
     if (!open) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     const focusTimer = window.setTimeout(() => searchRef.current?.focus(), 0);
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('keydown', closeOnEscape);
     return () => {
       window.clearTimeout(focusTimer);
-      document.removeEventListener('keydown', closeOnEscape);
-      document.body.style.overflow = previousOverflow;
       window.setTimeout(() => openerRef.current?.focus(), 0);
     };
   }, [open]);
@@ -97,67 +90,69 @@ function DistrictPicker({ value, onChange }: { value: string; onChange: (distric
       </button>
 
       {open && (
-        <div
-          className="fixed inset-0 z-[100] flex items-end bg-slate-950/45 p-0 sm:items-center sm:justify-center sm:p-5"
-          onMouseDown={event => {
-            if (event.target === event.currentTarget) close();
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            className="flex max-h-[85dvh] w-full flex-col rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-6"
+        <ModalPortal onClose={close}>
+          <div
+            className="fixed inset-0 z-[100] flex items-end bg-slate-950/45 p-0 sm:items-center sm:justify-center sm:p-5"
+            onMouseDown={event => {
+              if (event.target === event.currentTarget) close();
+            }}
           >
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">Location</p>
-              <h3 id={titleId} className="mt-1 text-xl font-extrabold text-slate-950">Choose a district</h3>
-            </div>
-            <label className="relative mt-4 block">
-              <span className="sr-only">Search districts</span>
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-              <input
-                ref={searchRef}
-                type="search"
-                value={query}
-                onChange={event => setQuery(event.target.value)}
-                aria-describedby={resultId}
-                placeholder="Type a district name"
-                className="input pl-11 pr-20"
-              />
-              {query && (
-                <button type="button" onClick={() => setQuery('')} className="absolute right-1 top-1 flex min-h-10 items-center gap-1 rounded-xl px-2 text-xs font-extrabold text-primary hover:bg-rose-50">
-                  <X className="h-4 w-4" aria-hidden="true" /> Clear
-                </button>
-              )}
-            </label>
-            <p id={resultId} role="status" aria-live="polite" className="mt-3 text-xs font-bold text-slate-600">
-              {filteredDistricts.length} district{filteredDistricts.length === 1 ? '' : 's'}
-            </p>
-            <div role="listbox" aria-label="Districts" className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 p-1.5">
-              {filteredDistricts.map(district => (
-                <button
-                  key={district}
-                  type="button"
-                  role="option"
-                  aria-selected={district === value}
-                  onClick={() => {
-                    onChange(district);
-                    close();
-                  }}
-                  className={`flex min-h-12 w-full items-center justify-between rounded-xl px-3 text-left text-sm font-bold ${district === value ? 'bg-rose-50 text-primary' : 'text-slate-800 hover:bg-slate-50'}`}
-                >
-                  {district}
-                  {district === value && <Check className="h-4 w-4" aria-hidden="true" />}
-                </button>
-              ))}
-              {filteredDistricts.length === 0 && (
-                <p className="p-4 text-sm font-semibold text-slate-600">No district matches that search.</p>
-              )}
-            </div>
-            <button type="button" onClick={close} className="button button-secondary mt-4 w-full">Close district picker</button>
-          </section>
-        </div>
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={titleId}
+              className="flex max-h-[85dvh] w-full flex-col rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-6"
+            >
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">Location</p>
+                <h3 id={titleId} className="mt-1 text-xl font-extrabold text-slate-950">Choose a district</h3>
+              </div>
+              <label className="relative mt-4 block">
+                <span className="sr-only">Search districts</span>
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                  aria-describedby={resultId}
+                  placeholder="Type a district name"
+                  className="input pl-11 pr-20"
+                />
+                {query && (
+                  <button type="button" onClick={() => setQuery('')} className="absolute right-1 top-1 flex min-h-10 items-center gap-1 rounded-xl px-2 text-xs font-extrabold text-primary hover:bg-rose-50">
+                    <X className="h-4 w-4" aria-hidden="true" /> Clear
+                  </button>
+                )}
+              </label>
+              <p id={resultId} role="status" aria-live="polite" className="mt-3 text-xs font-bold text-slate-600">
+                {filteredDistricts.length} district{filteredDistricts.length === 1 ? '' : 's'}
+              </p>
+              <div role="listbox" aria-label="Districts" className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 p-1.5">
+                {filteredDistricts.map(district => (
+                  <button
+                    key={district}
+                    type="button"
+                    role="option"
+                    aria-selected={district === value}
+                    onClick={() => {
+                      onChange(district);
+                      close();
+                    }}
+                    className={`flex min-h-12 w-full items-center justify-between rounded-xl px-3 text-left text-sm font-bold ${district === value ? 'bg-rose-50 text-primary' : 'text-slate-800 hover:bg-slate-50'}`}
+                  >
+                    {district}
+                    {district === value && <Check className="h-4 w-4" aria-hidden="true" />}
+                  </button>
+                ))}
+                {filteredDistricts.length === 0 && (
+                  <p className="p-4 text-sm font-semibold text-slate-600">No district matches that search.</p>
+                )}
+              </div>
+              <button type="button" onClick={close} className="button button-secondary mt-4 w-full">Close district picker</button>
+            </section>
+          </div>
+        </ModalPortal>
       )}
     </>
   );
