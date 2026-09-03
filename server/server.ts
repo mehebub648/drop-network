@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports } from './db';
 import { claimSlugForPublicId, evaluateClaim, maskPhone, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
-import { BD_LOCATION_NAMES, getLocationByName } from './locations';
+import { BD_LOCATIONS, BD_LOCATION_NAMES, getLocationByName } from './locations';
 import { resolveRegistrationLocation } from './registrationLocation';
 import { getFollowUpSmsProvider, getSmsProvider, isFollowUpSmsConfigured, isSmsConfigured, type SmsDeliveryStatus } from './sms';
 import { getUpazilaByName, getUpazilaVariants, getUpazilasForDistrict } from './upazilas';
@@ -5428,7 +5428,14 @@ app.get('/api/requests', async (req, res) => {
 
 app.get('/api/meta/districts', (_req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.json({ items: BD_LOCATION_NAMES });
+  res.json({
+    items: BD_LOCATION_NAMES,
+    locations: BD_LOCATIONS.map(location => ({
+      name: location.area,
+      lat: location.lat,
+      lng: location.lng
+    }))
+  });
 });
 
 app.get('/api/meta/upazilas', (req, res) => {
