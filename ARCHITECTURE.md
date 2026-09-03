@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.132`
+Current application version: `0.0.133`
 
 Drop Network is a Docker-run Node/TypeScript React application with an Express
 API and a LanceDB datastore. The React frontend lives in `src/`, the server

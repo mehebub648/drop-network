@@ -4134,9 +4134,15 @@ html[data-drop-android='true'] .cartoon-panel { border-radius: 1rem; box-shadow:
   .profile-nav-dialog h2 { margin: 0; font-size: 1.25rem; font-weight: 900; }
   .profile-nav-dialog header button { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border-radius: 0.85rem; background: #f2f4f7; }
   .profile-nav-dialog header svg { width: 1.2rem; }
+  .profile-nav-dialog .profile-nav-group { display: block; }
   .profile-nav-dialog .profile-nav-group + .profile-nav-group { margin-top: 0.75rem; }
   .profile-nav-dialog .profile-nav-group > p { display: block; margin-top: 0.75rem; }
-  .profile-nav-dialog .profile-nav-link { min-height: 3rem; }
+  .profile-nav-dialog .profile-nav-group > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem; }
+  .profile-nav-dialog .profile-nav-link { min-height: 3rem; white-space: normal; }
+}
+
+@media (max-width: 479px) {
+  .profile-nav-dialog .profile-nav-group > div { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 767px) {

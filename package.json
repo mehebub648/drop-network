@@ -1,7 +1,7 @@
 {
   "name": "drop-network",
   "private": true,
-  "version": "0.0.132",
+  "version": "0.0.133",
   "type": "module",
   "engines": {
     "node": ">=22.22.0"
