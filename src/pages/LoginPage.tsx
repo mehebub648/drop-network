@@ -6,6 +6,16 @@ import OtpDeliveryStatus from '../components/OtpDeliveryStatus';
 import { api, type OtpDelivery } from '../lib/api';
 import { getSafeReturnTo } from '../lib/navigation';
 
+function describeReturnTo(path: string) {
+  if (path === '/community/new') return 'Sign in to continue publishing. We’ll return you to your post.';
+  if (path.startsWith('/community/')) return 'Sign in to continue with this community post. We’ll return you to it.';
+  if (path.startsWith('/directory')) return 'Sign in to continue contacting a donor. We’ll return you to your donor search.';
+  if (path.startsWith('/request/')) return 'Sign in to continue with this blood request. We’ll return you to its details.';
+  if (path.startsWith('/follow-up')) return 'Sign in to continue your donation follow-up. We’ll return you to it.';
+  if (path.startsWith('/profile')) return 'Sign in to continue managing your account. We’ll return you to the same account section.';
+  return 'Sign in to continue. We’ll return you to the page you opened.';
+}
+
 export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | void }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -17,7 +27,9 @@ export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | 
   const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const returnTo = getSafeReturnTo(searchParams.get('returnTo'), '/profile');
+  const requestedReturnTo = searchParams.get('returnTo');
+  const returnTo = getSafeReturnTo(requestedReturnTo, '/profile');
+  const returnMessage = requestedReturnTo === returnTo ? describeReturnTo(returnTo) : '';
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
@@ -78,6 +90,11 @@ export default function LoginPage({ onLogin }: { onLogin: () => Promise<void> | 
       title="Welcome back"
       description="Sign in to reveal opted-in donor contacts, manage requests, and keep your own availability accurate."
     >
+      {returnMessage && (
+        <p role="status" className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold leading-6 text-rose-900">
+          {returnMessage}
+        </p>
+      )}
       <form onSubmit={mode === 'password' ? handleLogin : mode === 'phone' ? requestCode : verifyCode} className="space-y-5">
         {error && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
