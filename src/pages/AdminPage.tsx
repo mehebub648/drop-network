@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -136,6 +136,8 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  const contentRef = useRef<HTMLElement>(null);
+  const focusNewSectionRef = useRef(false);
 
   const capabilities = useMemo(() => {
     const resolved = overview?.viewer?.capabilities;
@@ -217,6 +219,25 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   useEffect(() => {
     void loadTab(activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!focusNewSectionRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const heading = contentRef.current?.querySelector<HTMLElement>('h2');
+      if (!heading) return;
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({ behavior: 'auto', block: 'start' });
+      focusNewSectionRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, loading]);
+
+  const selectTab = (tab: TabId) => {
+    if (tab === activeTab) return;
+    focusNewSectionRef.current = true;
+    setActiveTab(tab);
+  };
 
   const refresh = () => loadTab(activeTab);
 
@@ -301,7 +322,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => selectTab(tab.id)}
                   className={activeTab === tab.id ? 'is-active' : ''}
                   aria-current={activeTab === tab.id ? 'page' : undefined}
                   aria-label={`${tab.label}${count === undefined ? '' : `, ${count} item${count === 1 ? '' : 's'}`}${activeTab === tab.id ? ', current section' : ''}`}
@@ -320,7 +341,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
           </div>
         </aside>
 
-        <main className="admin-content">
+        <main ref={contentRef} className="admin-content">
           {error && <div role="alert" className="alert alert-error"><AlertTriangle className="h-5 w-5" />{error}</div>}
           {notice && <div role="status" className="alert alert-success"><CheckCircle2 className="h-5 w-5" />{notice}</div>}
           {loading && !overview ? <LoadingState /> : (
@@ -329,7 +350,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                 <OverviewPanel
                   overview={overview}
                   can={can}
-                  onNavigate={setActiveTab}
+                  onNavigate={selectTab}
                 />
               )}
 

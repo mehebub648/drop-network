@@ -1718,6 +1718,10 @@ body {
   width: min(100%, 46rem);
 }
 
+.admin-content h2 {
+  scroll-margin-top: 6.5rem;
+}
+
 .admin-controlled-action {
   display: flex;
   gap: 1rem;
