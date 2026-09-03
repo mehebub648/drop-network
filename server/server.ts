@@ -3390,14 +3390,13 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
     contacts.push({ name: patient_name, phone: requesterPhone, type: 'PATIENT' });
   } else if (requester_role === 'RELATIVE') {
     if (!requester_name) return { error: 'Your name is required' } as const;
-    if (!requester_relation) return { error: 'Your relationship to the patient is required' } as const;
     contacts.push({ name: requester_name, phone: requesterPhone, type: 'RELATIVE' });
   } else {
     if (!requester_name) return { error: 'Your name is required' } as const;
     if (!contact_owner) return { error: "Say whose number this is: the patient's or a relative's" } as const;
     if (!contact_phone) return { error: 'A valid Bangladesh contact number is required' } as const;
-    if (contact_owner === 'RELATIVE' && (!contact_name || !requester_relation)) {
-      return { error: "The relative's name and relationship to the patient are required" } as const;
+    if (contact_owner === 'RELATIVE' && !contact_name) {
+      return { error: "The relative's name is required" } as const;
     }
     // The volunteer's own number first, then the number that belongs to the
     // patient's side. A donor calling back should reach either.

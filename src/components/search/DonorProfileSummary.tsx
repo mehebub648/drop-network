@@ -160,7 +160,7 @@ export default function DonorProfileSummary({
             {donor.is_current_user ? (
               <Link to="/profile/donor" onClick={onClose} className="button button-primary gap-2"><UserRound className="h-4 w-4" aria-hidden="true" />Manage profile</Link>
             ) : (
-              <button type="button" onClick={onRequest} disabled={!donor.has_phone || busy} className="button button-primary gap-2"><Phone className="h-4 w-4" aria-hidden="true" />{busy ? 'Opening...' : 'Request contact'}</button>
+              <button type="button" onClick={onRequest} disabled={!donor.has_phone || busy} className="button button-primary gap-2"><Phone className="h-4 w-4" aria-hidden="true" />{busy ? 'Opening...' : 'Call donor'}</button>
             )}
           </div>
         </section>

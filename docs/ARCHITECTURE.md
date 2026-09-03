@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.128`
+Current application version: `0.0.129`
 
 ## Overview
 
@@ -66,14 +66,17 @@ Entry points:
 - `src/components/search/` holds the guided criteria form, combined district
   and upazila step, searchable facility combobox, shared requester-role picker,
   donor result card, and `RequestGate`. The gate reuses completed draft answers,
-  summarizes them with explicit Change actions, and splits patient, contacts,
-  review, verification, required donor-profile basics, and an explicit
+  keeps the current search in one compact editable context card, and presents
+  role, patient identity, blood requirement, contact, and review as an explicit
+  five-step journey before verification, required donor-profile basics, and an explicit
   availability choice into short stages. Age, weight, and donation experience
   stay in the full donor-profile editor instead of blocking onboarding. When
   onboarding begins from search, the donor's district and upazila are prefilled
   from the patient search but remain editable as the donor's home location.
   Role-aware guidance identifies whose information belongs in every field, and
   review keeps the patient, request owner, and donor contact visibly separate.
+  Choosing the relative role is sufficient; the flow does not ask for a more
+  specific family relationship.
   Patient details use two short stages: explicit gender, age, and full name,
   followed by a broad public reason, the hospital-requested blood component,
   and a 1-10 bag dropdown. The reason offers a conservative component suggestion
@@ -82,8 +85,8 @@ Entry points:
   followed by specialist options and a doctor-specified fallback. The searchable
   reason list is shared with server validation, ranked by reported Bangladesh
   transfusion patterns, and keeps Other last with an optional bounded broad
-  description; it does not collect a detailed diagnosis. Patient stages use a
-  compact mobile layout, while the reason menu overlays the form instead of
+  description; it does not collect a detailed diagnosis. Request stages use a
+  compact mobile layout with side-by-side actions, while the reason menu overlays the form instead of
   pushing its actions below the viewport.
 - `src/components/DonorPreferencesFields.tsx` manages bounded preferred areas,
   facilities, travel willingness, and recurring Asia/Dhaka windows. The
@@ -387,7 +390,7 @@ API routes:
   stays alphabetical. Alternative sorts retain the verified-member tier. Optional collection
   facility context adds a safe match reason without returning raw preferences.
   Result cards show the masked phone beneath the donor name and keep separate
-  “View profile” and “Request contact” actions. The search-scoped profile summary shows the masked number, safe
+  “View profile” and “Call donor” actions. The search-scoped profile summary shows the masked number, safe
   donation summary, match reasons, attribution, and active contact summary
   without creating a browsable donor-profile route. Guests also see the short
   claim route for unclaimed imports; signed-in members do not. Authenticated searches include

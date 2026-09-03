@@ -100,7 +100,7 @@ export default function DonorResultCard({
             className="button button-primary w-full gap-2"
           >
             <Phone className="h-4 w-4" aria-hidden="true" />
-            {busy ? 'Opening...' : 'Request contact'}
+            {busy ? 'Opening...' : 'Call donor'}
           </button>
         )}
       </div>

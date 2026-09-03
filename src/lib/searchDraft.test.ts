@@ -61,7 +61,7 @@ test('completed patient and requester sections can be skipped when a draft is re
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT' })), true);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', requester_phone: '' })), false);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', requester_phone: '' }), '01800000000'), true);
-  assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'RELATIVE', requester_relation: '' })), false);
+  assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'RELATIVE', requester_relation: '' })), true);
 });
 
 test('request payload omits stale contact fields after changing to patient', () => {
@@ -106,7 +106,7 @@ test('request payload includes only fields relevant to the selected coordinator 
 
   const relative = searchRequestPayload(completeDraft({ requester_role: 'RELATIVE' }));
   assert.equal(relative.requester_name, 'Volunteer Name');
-  assert.equal(relative.requester_relation, 'Brother');
+  assert.equal('requester_relation' in relative, false);
   assert.equal('contact_owner' in relative, false);
   assert.equal('contact_phone' in relative, false);
   assert.equal('requester_phone' in relative, false);

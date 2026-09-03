@@ -158,12 +158,12 @@ export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone =
   const requesterPhone = draft.requester_phone.trim() || verifiedRequesterPhone.trim();
   if (draft.requester_role === 'PATIENT') return Boolean(requesterPhone);
   if (draft.requester_role === 'RELATIVE') {
-    return Boolean(draft.requester_name.trim() && requesterPhone && draft.requester_relation.trim());
+    return Boolean(draft.requester_name.trim() && requesterPhone);
   }
   if (draft.requester_role !== 'THIRD_PARTY') return false;
   if (!draft.requester_name.trim() || !requesterPhone || !draft.contact_owner || !draft.contact_phone.trim()) return false;
   if (draft.contact_owner === 'RELATIVE') {
-    return Boolean(draft.contact_name.trim() && draft.requester_relation.trim());
+    return Boolean(draft.contact_name.trim());
   }
   return true;
 }
@@ -172,8 +172,7 @@ export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone =
 export function searchRequestPayload(draft: SearchDraft) {
   const requesterFields = draft.requester_role === 'RELATIVE'
     ? {
-        requester_name: draft.requester_name || undefined,
-        requester_relation: draft.requester_relation || undefined
+        requester_name: draft.requester_name || undefined
       }
     : draft.requester_role === 'THIRD_PARTY'
       ? {
@@ -182,7 +181,6 @@ export function searchRequestPayload(draft: SearchDraft) {
           contact_phone: draft.contact_phone || undefined,
           ...(draft.contact_owner === 'RELATIVE'
             ? {
-                requester_relation: draft.requester_relation || undefined,
                 contact_name: draft.contact_name || undefined
               }
             : {})

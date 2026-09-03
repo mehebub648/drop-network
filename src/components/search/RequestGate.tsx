@@ -77,7 +77,7 @@ export default function RequestGate({
     if (!hasRequesterDetails(draft, user?.phone)) return 'requester';
     return 'review';
   });
-  const [roleReturnStep, setRoleReturnStep] = useState<RequestStep>('patient-identity');
+  const [roleReturnStep, setRoleReturnStep] = useState<RequestStep | null>(null);
   const [phone, setPhone] = useState(() => draft.requester_phone || user?.phone || '');
   const [code, setCode] = useState('');
   const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
@@ -157,7 +157,7 @@ export default function RequestGate({
     event.preventDefault();
     if (!draft.requester_role) return setError('Choose how you are helping with this request.');
     setError('');
-    setStep(roleReturnStep === 'review' && !hasRequesterDetails(draft, user?.phone) ? 'requester' : roleReturnStep);
+    setStep(roleReturnStep === 'review' && !hasRequesterDetails(draft, user?.phone) ? 'requester' : roleReturnStep || 'patient-identity');
   };
 
   const continueAfterVerification = async (result: any) => {
@@ -248,7 +248,6 @@ export default function RequestGate({
       : "I'm a third-party volunteer";
   const patientLabel = draft.patient_name.trim();
   const patientSexLabel = draft.patient_sex === 'MALE' ? 'Male' : draft.patient_sex === 'FEMALE' ? 'Female' : '';
-  const neededWindowLabel = NEEDED_WINDOWS.find(option => option.value === draft.needed_window)?.label || 'As soon as possible';
   const componentLabel = BLOOD_COMPONENTS.find(option => option.value === draft.blood_component)?.label || '';
   const reasonLabel = requestReasonLabel(draft.request_reason);
   const accountPhone = user?.phone || draft.requester_phone;
@@ -256,9 +255,9 @@ export default function RequestGate({
   const contactLabel = role === 'PATIENT'
     ? patientLabel
     : role === 'RELATIVE'
-      ? `${draft.requester_name} · ${draft.requester_relation}`
+      ? `${draft.requester_name} · Relative`
       : draft.contact_owner === 'RELATIVE'
-        ? `${draft.contact_name} · ${draft.requester_relation}`
+        ? `${draft.contact_name} · Relative`
         : `${draft.patient_name} · Patient`;
   const donorContactPhone = role === 'THIRD_PARTY' ? draft.contact_phone : accountPhone;
   const editRole = (returnStep: RequestStep) => {
@@ -267,25 +266,45 @@ export default function RequestGate({
     setStep('role');
   };
 
-  const patientContext = (returnStep: PatientStep) => (
-    <>
-      <div className="request-context-summary">
+  const requestFlowHeader = (current: number, title: string, description?: string) => (
+    <header className="request-flow-heading">
+      <div className="request-flow-heading-meta">
+        <span>Call donor</span>
+        <span>Step {current} of 5</span>
+      </div>
+      <div
+        className="request-flow-progress"
+        role="progressbar"
+        aria-label="Blood request progress"
+        aria-valuemin={1}
+        aria-valuemax={5}
+        aria-valuenow={current}
+      >
+        <span style={{ width: `${current * 20}%` }} />
+      </div>
+      <h2 id="request-gate-title">{title}</h2>
+      {description && <p>{description}</p>}
+    </header>
+  );
+
+  const requestFlowContext = (returnStep?: RequestStep) => (
+    <div className="request-flow-context">
+      <div className="request-flow-search">
+        <strong className="request-flow-blood">{draft.blood_group}</strong>
         <span>
-          <small>Already provided</small>
-          <strong>{draft.blood_group} · {draft.upazila}, {draft.district}</strong>
+          <small>Current search</small>
+          <strong>{draft.upazila}, {draft.district}</strong>
           <span>{draft.collection_facility}</span>
         </span>
-        <button type="button" onClick={onEditSearch}>Change search</button>
+        <button type="button" onClick={onEditSearch}>Edit</button>
       </div>
-
-      <div className="requester-role-summary">
-        <span>
-          <small>Who you are</small>
-          <strong>{roleLabel}</strong>
-        </span>
-        <button type="button" onClick={() => editRole(returnStep)}>Change</button>
-      </div>
-    </>
+      {returnStep && (
+        <div className="request-flow-role">
+          <span>{roleLabel}</span>
+          <button type="button" onClick={() => editRole(returnStep)}>Edit role</button>
+        </div>
+      )}
+    </div>
   );
 
   const changeRequesterRole = (requesterRole: SearchDraft['requester_role']) => {
@@ -318,7 +337,7 @@ export default function RequestGate({
   return (
     <ModalPortal onClose={onClose}>
       <div className="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="request-gate-title">
-        <div className={`action-dialog request-gate-dialog ${step.startsWith('patient-') ? 'request-patient-dialog' : ''}`}>
+        <div className={`action-dialog request-gate-dialog ${['role', 'patient-identity', 'patient-need', 'requester', 'review'].includes(step) ? 'request-flow-dialog' : ''}`}>
           <button ref={closeRef} type="button" onClick={onClose} className="icon-button dialog-close" aria-label="Close">
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -327,34 +346,29 @@ export default function RequestGate({
           </span>
 
         {step === 'role' && (
-          <form onSubmit={submitRole} className="fade-in">
-            <h2 id="request-gate-title">How are you helping?</h2>
-            <p>Choose the role that best describes you for this request. You can change it again before publishing.</p>
+          <form onSubmit={submitRole} className="fade-in request-flow-form">
+            {requestFlowContext()}
+            {requestFlowHeader(1, 'Who are you helping?', 'Choose the closest option. You can edit it before publishing.')}
             <RequesterRolePicker
               value={draft.requester_role}
               onChange={changeRequesterRole}
               hideLegend
-              className="mt-5"
+              className="request-flow-role-picker"
             />
             {error && <p className="dialog-error">{error}</p>}
             <div className="dialog-actions">
-              <button type="button" onClick={() => setStep(roleReturnStep)} className="button button-secondary">Back</button>
-              <button type="submit" className="button button-primary">Save role</button>
+              <button type="button" onClick={() => roleReturnStep ? setStep(roleReturnStep) : onClose()} className="button button-secondary">Back</button>
+              <button type="submit" className="button button-primary">Continue</button>
             </div>
           </form>
         )}
 
         {step === 'patient-identity' && (
-          <form onSubmit={submitPatientIdentity} className="fade-in request-patient-form">
-            {patientContext('patient-identity')}
+          <form onSubmit={submitPatientIdentity} className="fade-in request-flow-form request-patient-form">
+            {requestFlowContext('patient-identity')}
+            {requestFlowHeader(2, role === 'PATIENT' ? 'Your details' : 'Patient details', role === 'PATIENT' ? 'Tell donors who needs blood.' : 'Enter the patient’s information, not your own.')}
 
-            <div className="request-form-heading">
-              <small>Patient details · Step 1 of 2</small>
-              <h2 id="request-gate-title">{role === 'PATIENT' ? 'Your patient details' : 'Patient details'}</h2>
-              {role !== 'PATIENT' && <p>Enter the patient’s information, not your own.</p>}
-            </div>
-
-            <div className="grid gap-x-4 sm:grid-cols-2">
+            <div className="request-identity-grid">
               <label className="dialog-field">
                 <span>Patient gender</span>
                 <select required value={draft.patient_sex} onChange={event => set({ patient_sex: event.target.value as PatientSex })} className="input">
@@ -367,7 +381,7 @@ export default function RequestGate({
                 <span>Patient age</span>
                 <input required type="number" inputMode="numeric" min={1} max={120} value={draft.patient_age} onChange={event => set({ patient_age: event.target.value })} className="input" />
               </label>
-              <label className="dialog-field sm:col-span-2">
+              <label className="dialog-field request-field-wide">
                 <span>Patient full name</span>
                 <input required value={draft.patient_name} onChange={event => set({ patient_name: event.target.value })} className="input" />
               </label>
@@ -382,14 +396,9 @@ export default function RequestGate({
         )}
 
         {step === 'patient-need' && (
-          <form onSubmit={submitPatientNeed} className="fade-in request-patient-form">
-            {patientContext('patient-need')}
-
-            <div className="request-form-heading">
-              <small>Blood requirement · Step 2 of 2</small>
-              <h2 id="request-gate-title">What does the patient need?</h2>
-              <p>We can suggest a component, but follow the hospital’s request.</p>
-            </div>
+          <form onSubmit={submitPatientNeed} className="fade-in request-flow-form request-patient-form">
+            {requestFlowContext('patient-need')}
+            {requestFlowHeader(3, 'What does the patient need?', 'Choose the reason first. We’ll suggest the likely component.')}
 
             <div className="grid gap-x-4 sm:grid-cols-2">
               <label className="dialog-field sm:col-span-2">
@@ -450,34 +459,21 @@ export default function RequestGate({
         )}
 
         {step === 'requester' && (
-          <form onSubmit={submitRequester} className="fade-in">
-            <h2 id="request-gate-title">People and contacts</h2>
-            <p>Keep the person managing the request separate from the patient or relative whom donors should call.</p>
-
-            <div className="requester-role-summary">
-              <span>
-                <small>Who you are</small>
-                <strong>{roleLabel}</strong>
-              </span>
-              <button type="button" onClick={() => editRole('requester')}>Change</button>
-            </div>
+          <form onSubmit={submitRequester} className="fade-in request-flow-form">
+            {requestFlowContext('requester')}
+            {requestFlowHeader(4, role === 'THIRD_PARTY' ? 'Add contact details' : 'Where should donors call?', role === 'THIRD_PARTY' ? 'Keep the request owner separate from the patient-side contact.' : 'Use the mobile number that donors can call about this request.')}
 
             <div className="grid gap-x-4 sm:grid-cols-2">
-              <div className="request-data-section sm:col-span-2">
-                <strong>Your account details</strong>
-                <span>{role === 'PATIENT' ? 'Your patient name is already saved. Confirm the mobile number you use to own and manage this request.' : 'Enter your own information. Drop uses it to verify you and let you manage this request.'}</span>
-              </div>
-
               {role !== 'PATIENT' && (
                 <label className="dialog-field sm:col-span-2">
-                  <span>Your full name (request owner)</span>
+                  <span>Your full name</span>
                   <input required value={draft.requester_name} onChange={event => set({ requester_name: event.target.value })} className="input" />
                 </label>
               )}
 
               {role !== 'PATIENT' && !user && (
                 <label className="dialog-field sm:col-span-2">
-                  <span>Your mobile number (request owner)</span>
+                  <span>{role === 'RELATIVE' ? 'Your mobile number' : 'Your mobile number (request owner)'}</span>
                   <input
                     required
                     type="tel"
@@ -492,7 +488,7 @@ export default function RequestGate({
 
               {role === 'PATIENT' && !user && (
                 <label className="dialog-field sm:col-span-2">
-                  <span>Your mobile number (patient and request owner)</span>
+                  <span>Your mobile number</span>
                   <input
                     required
                     type="tel"
@@ -506,32 +502,26 @@ export default function RequestGate({
               )}
 
               {user?.phone && (
-                <div className="request-context-summary sm:col-span-2">
+                <div className="request-verified-contact sm:col-span-2">
                   <span>
-                    <small>Your verified account contact</small>
+                    <small>Verified mobile number</small>
                     <strong>{user.phone}</strong>
-                    <span>You are already signed in, so we will not ask for this again.</span>
                   </span>
+                  <ShieldCheck className="h-5 w-5" aria-hidden="true" />
                 </div>
               )}
 
               {role === 'RELATIVE' && (
-                <>
-                  <label className="dialog-field sm:col-span-2">
-                    <span>Your relationship to the patient</span>
-                    <input required placeholder="Brother, daughter, uncle..." value={draft.requester_relation} onChange={event => set({ requester_relation: event.target.value })} className="input" />
-                  </label>
-                  <div className="request-data-section is-contact sm:col-span-2" role="note">
-                    <strong>Donor contact</strong>
-                    <span>Your verified mobile number will appear on the active request so donors can call immediately.</span>
-                  </div>
-                </>
+                <div className="request-data-section is-contact sm:col-span-2" role="note">
+                  <strong>Donors will call this number</strong>
+                  <span>We’ll verify it before publishing the request.</span>
+                </div>
               )}
 
               {role === 'PATIENT' && (
                 <div className="request-data-section is-contact sm:col-span-2" role="note">
-                  <strong>Donor contact</strong>
-                  <span>You selected “I’m the patient,” so this verified number will appear on the active request for donor calls.</span>
+                  <strong>Donors will call this number</strong>
+                  <span>We’ll verify it before publishing the request.</span>
                 </div>
               )}
 
@@ -554,16 +544,10 @@ export default function RequestGate({
                     <input required type="tel" inputMode="tel" placeholder="01XXXXXXXXX" value={draft.contact_phone} onChange={event => set({ contact_phone: event.target.value })} className="input" />
                   </label>
                   {draft.contact_owner === 'RELATIVE' && (
-                    <>
-                      <label className="dialog-field">
-                        <span>Relative's name</span>
-                        <input required value={draft.contact_name} onChange={event => set({ contact_name: event.target.value })} className="input" />
-                      </label>
-                      <label className="dialog-field sm:col-span-2">
-                        <span>Their relationship to the patient</span>
-                        <input required placeholder="Brother, daughter, uncle..." value={draft.requester_relation} onChange={event => set({ requester_relation: event.target.value })} className="input" />
-                      </label>
-                    </>
+                    <label className="dialog-field">
+                      <span>Relative's name</span>
+                      <input required value={draft.contact_name} onChange={event => set({ contact_name: event.target.value })} className="input" />
+                    </label>
                   )}
                 </>
               )}
@@ -578,18 +562,9 @@ export default function RequestGate({
         )}
 
         {step === 'review' && (
-          <form onSubmit={submitReview} className="fade-in">
-            <h2 id="request-gate-title">Review the request</h2>
-            <p>We kept everything you already provided. Check it, change anything that is wrong, then publish.</p>
-
-            <div className="request-context-summary">
-              <span>
-                <small>Search details</small>
-                <strong>{draft.blood_group} · {draft.upazila}, {draft.district}</strong>
-                <span>{draft.collection_facility}</span>
-              </span>
-              <button type="button" onClick={onEditSearch}>Change</button>
-            </div>
+          <form onSubmit={submitReview} className="fade-in request-flow-form request-review-form">
+            {requestFlowContext('review')}
+            {requestFlowHeader(5, 'Review and publish', 'Check the details donors will use before you continue.')}
 
             <div className="request-review-grid">
               <div className="request-review-card">
@@ -602,17 +577,9 @@ export default function RequestGate({
               </div>
               <div className="request-review-card">
                 <span>
-                  <small>Request owner</small>
-                  <strong>{requestOwnerName}</strong>
-                  <span>{role === 'PATIENT' ? 'Same as patient' : roleLabel} · {accountPhone || 'Mobile number added during verification'}</span>
-                </span>
-                <button type="button" onClick={() => editRole('review')}>Change role</button>
-              </div>
-              <div className="request-review-card">
-                <span>
-                  <small>Donor contact</small>
-                  <strong>{contactLabel}</strong>
-                  <span>{donorContactPhone || 'Mobile number added during verification'} · Public while this request is active</span>
+                  <small>Call contact</small>
+                  <strong>{contactLabel} · {donorContactPhone || 'Verify next'}</strong>
+                  <span>Managed by {requestOwnerName || 'request owner'}{role === 'PATIENT' ? '' : ` · ${roleLabel}`}</span>
                 </span>
                 <button type="button" onClick={() => setStep('requester')}>Change</button>
               </div>
@@ -625,13 +592,10 @@ export default function RequestGate({
                 {NEEDED_WINDOWS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
-            <p className="request-needed-summary">Current timing: <strong>{neededWindowLabel}</strong></p>
-
-            <label className="mt-4 flex items-start gap-3 text-sm font-semibold leading-6 text-slate-700">
+            <label className="request-consent">
               <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0" />
               <span>
-                I may publish these details, including the donor contact number while this request is active.
-                I understand donor numbers opened through search are for this request only and must not be reshared.
+                I may publish these details and contact number while the request is active. I won’t reshare donor numbers.
               </span>
             </label>
 
@@ -639,7 +603,7 @@ export default function RequestGate({
             <div className="dialog-actions">
               <button type="button" onClick={() => setStep('requester')} className="button button-secondary">Back</button>
               <button type="submit" disabled={busy} className="button button-primary">
-                {busy ? 'Saving...' : user ? 'Publish and get the number' : 'Continue to verification'}
+                {busy ? 'Saving...' : user ? 'Publish & call donor' : 'Verify & call donor'}
               </button>
             </div>
           </form>

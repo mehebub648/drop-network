@@ -3429,7 +3429,343 @@ input[type='radio'] {
   line-height: 1.55;
 }
 
+/* One continuous, task-first journey from donor match to a verified call. */
+.request-flow-dialog {
+  width: min(100%, 42rem);
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.request-flow-dialog > .dialog-icon {
+  display: none;
+}
+
+.request-flow-dialog > .dialog-close {
+  top: 0.75rem;
+  right: 0.85rem;
+  z-index: 1;
+}
+
+.request-flow-form {
+  padding-top: 2.75rem;
+}
+
+.request-flow-context {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #f8fafc;
+}
+
+.request-flow-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  min-height: 4.25rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.request-flow-blood {
+  display: grid;
+  width: 2.8rem;
+  height: 2.8rem;
+  place-items: center;
+  border: 1px solid #fecdd3;
+  border-radius: 0.85rem;
+  background: #fff;
+  color: #be123c;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.request-flow-search > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.request-flow-search small {
+  color: #64748b;
+  font-size: 0.6rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.request-flow-search > span > strong {
+  overflow: hidden;
+  margin-top: 0.05rem;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-flow-search > span > span {
+  overflow: hidden;
+  margin-top: 0.05rem;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-flow-search button,
+.request-flow-role button {
+  border-radius: 0.55rem;
+  color: #be123c;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.request-flow-search button {
+  padding: 0.4rem 0.5rem;
+}
+
+.request-flow-search button:hover,
+.request-flow-role button:hover {
+  background: #ffe4e6;
+}
+
+.request-flow-role {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid #e2e8f0;
+  background: #fff7f8;
+  padding: 0.42rem 0.75rem;
+}
+
+.request-flow-role span {
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.request-flow-role button {
+  padding: 0.25rem 0.4rem;
+}
+
+.request-flow-heading {
+  margin-top: 0.85rem;
+}
+
+.request-flow-heading-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #be123c;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.request-flow-progress {
+  height: 0.25rem;
+  overflow: hidden;
+  margin-top: 0.4rem;
+  border-radius: 999px;
+  background: #ffe4e6;
+}
+
+.request-flow-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #c8102e;
+  transition: width 180ms ease;
+}
+
+.request-flow-heading > h2 {
+  margin: 0.55rem 2.75rem 0 0;
+  font-size: 1.3rem;
+}
+
+.request-flow-heading > p {
+  margin: 0.25rem 0 0;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1.4;
+}
+
+.request-flow-role-picker {
+  margin-top: 0.75rem;
+}
+
+.request-flow-role-picker > div {
+  gap: 0.45rem;
+}
+
+.request-flow-role-picker > div > button {
+  min-height: 3.25rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.request-flow-role-picker > div > button > span:first-child {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.7rem;
+}
+
+.request-flow-role-picker > div > button span span:last-child {
+  margin-top: 0;
+  line-height: 1.25rem;
+}
+
+.request-identity-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 0.75rem;
+}
+
+.request-field-wide {
+  grid-column: 1 / -1;
+}
+
+.request-flow-form .dialog-field {
+  margin-top: 0.75rem;
+}
+
+.request-flow-form .dialog-field > span {
+  margin-bottom: 0.3rem;
+  font-size: 0.72rem;
+}
+
+.request-flow-form .input {
+  min-height: 2.85rem;
+  border-radius: 0.8rem;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.request-flow-form .request-reason-combobox .input {
+  padding-right: 2.75rem;
+  padding-left: 2.75rem;
+}
+
+.request-flow-form .component-guidance {
+  margin-top: 0.25rem;
+  font-size: 0.63rem;
+  line-height: 1.3;
+}
+
+.request-flow-form .request-data-section {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.request-verified-contact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  border: 1px solid #a7f3d0;
+  border-radius: 0.85rem;
+  background: #ecfdf5;
+  padding: 0.65rem 0.75rem;
+  color: #047857;
+}
+
+.request-verified-contact > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.request-verified-contact small {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.request-verified-contact strong {
+  margin-top: 0.08rem;
+  color: #065f46;
+  font-size: 0.82rem;
+}
+
+.request-review-grid {
+  gap: 0;
+  overflow: hidden;
+  margin-top: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.9rem;
+  background: #fff;
+}
+
+.request-review-card {
+  margin-top: 0;
+  border: 0;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 0;
+  background: #fff;
+  padding: 0.55rem 0.7rem;
+}
+
+.request-review-card:last-child {
+  border-bottom: 0;
+}
+
+.request-review-form .dialog-field {
+  margin-top: 0.7rem;
+}
+
+.request-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-top: 0.7rem;
+  border-radius: 0.8rem;
+  background: #f8fafc;
+  padding: 0.6rem 0.7rem;
+  color: #475569;
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.request-flow-form .dialog-actions {
+  flex-direction: row;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.request-flow-form .dialog-actions .button {
+  width: 50%;
+  min-height: 2.85rem;
+}
+
 @media (max-width: 639px) {
+  .request-flow-dialog {
+    max-height: calc(100dvh - 0.25rem);
+    padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .request-flow-dialog > .dialog-close {
+    top: 0.55rem;
+    right: 0.7rem;
+  }
+
+  .request-flow-form {
+    padding-top: 2.45rem;
+  }
+
+  .request-flow-heading > h2 {
+    margin-right: 0;
+    font-size: 1.15rem;
+  }
+
+  .request-flow-heading > p {
+    font-size: 0.7rem;
+  }
+
   .request-patient-dialog {
     max-height: calc(100dvh - 0.25rem);
     padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
