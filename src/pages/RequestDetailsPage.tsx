@@ -352,23 +352,23 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         <div className="relative z-0 mt-6 grid grid-cols-2 gap-2.5 border-t border-rose-100 pt-5 lg:grid-cols-5">
           <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
             <MapPin className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Location</p>
+            <p className="request-metadata-label">Location</p>
             <p className="mt-1 text-sm font-bold text-slate-800">{request.hospital_address || request.location.area_name}</p>
             {request.hospital_address && <p className="mt-0.5 text-xs font-semibold text-slate-500">{request.location.area_name}</p>}
           </div>
           <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
             <Calendar className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Needed by</p>
+            <p className="request-metadata-label">Needed by</p>
             <p className="mt-1 text-sm font-bold text-slate-800">{neededLabel}</p>
           </div>
           <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
             <Droplet className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Amount</p>
+            <p className="request-metadata-label">Amount</p>
             <p className="mt-1 text-sm font-bold text-slate-800">{unitsRequired} unit{unitsRequired === 1 ? '' : 's'} · {componentLabel}</p>
           </div>
           <div className="rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100">
             <Users className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
-            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Compatible</p>
+            <p className="request-metadata-label">Compatible</p>
             <p className="mt-1 flex flex-wrap gap-1">
               {compatibleDonorsFor(request.blood_group).map(g => (
                 <span key={g} className="rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] font-extrabold text-red-700">{g}</span>
@@ -378,7 +378,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           {reasonLabel && (
             <div className="col-span-2 rounded-2xl bg-white/80 p-3 ring-1 ring-slate-100 lg:col-span-1">
               <HeartPulse className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Reason</p>
+              <p className="request-metadata-label">Reason</p>
               <p className="mt-1 text-sm font-bold text-slate-800">{reasonLabel}</p>
               {request.request_reason === 'OTHER' && request.request_reason_details && <p className="mt-0.5 text-xs font-semibold text-slate-500">{request.request_reason_details}</p>}
             </div>
@@ -575,15 +575,15 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           <div className="grid gap-3 fade-in lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
             <dl className="overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-100 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
               <div className="p-4 sm:min-h-28">
-                <dt className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Patient</dt>
+                <dt className="request-metadata-label mb-1">Patient</dt>
                 <dd className="font-bold text-slate-900">{request.patient_name || 'Name not provided'}</dd>
               </div>
               <div className="border-t border-slate-200 p-4 sm:min-h-28 sm:border-t-0">
-                <dt className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Requested by</dt>
+                <dt className="request-metadata-label mb-1">Requested by</dt>
                 <dd className="font-bold text-slate-900">{request.requester_name || 'Anonymous'}</dd>
               </div>
               <div className="border-t border-slate-200 p-4 sm:min-h-28 sm:border-t-0">
-                <dt className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Needed by</dt>
+                <dt className="request-metadata-label mb-1">Needed by</dt>
                 <dd className="flex items-center gap-2 font-bold text-slate-900">
                   <Calendar className="h-4 w-4 text-primary" />
                   {neededLabel}
@@ -597,7 +597,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                 return (
                   <div key={contactKey} className="flex min-h-28 items-stretch justify-between gap-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
                     <div className="min-w-0 self-center">
-                      <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">{contact.type || 'Contact'}</p>
+                      <p className="request-metadata-label mb-1">{contact.type || 'Contact'}</p>
                       <p className="truncate font-bold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</p>
                       <p className="mt-1 break-all text-sm font-semibold text-slate-600">{contact.phone}</p>
                     </div>

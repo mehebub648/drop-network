@@ -7,6 +7,7 @@
   --color-surface: #ffffff;
   --color-text: #17171b;
   --color-text-muted: #667085;
+  --color-metadata: #475467;
   --color-border: #e4e7ec;
   --color-teal-300: #fda4af;
   --font-sans: 'Trebuchet MS', 'Segoe UI', Arial, sans-serif;
@@ -56,6 +57,15 @@ body {
 
 .fade-in {
   animation: fadeIn 0.32s ease-out forwards;
+}
+
+.request-metadata-label {
+  color: var(--color-metadata);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1rem;
+  text-transform: uppercase;
 }
 
 .theme-card {
