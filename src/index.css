@@ -1691,6 +1691,26 @@ body {
   width: min(100%, 46rem);
 }
 
+.admin-nav-count {
+  display: inline-flex;
+  min-width: 1.55rem;
+  min-height: 1.55rem;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding-inline: 0.35rem;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.admin-sidebar nav button.is-active .admin-nav-count {
+  background: rgba(255, 255, 255, 0.92);
+  color: #9f1239;
+}
+
 .donor-summary-dialog {
   width: min(100%, 42rem);
 }
@@ -2317,17 +2337,14 @@ body {
   }
 
   .admin-sidebar nav {
-    overflow-x: auto;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
     gap: 0.4rem;
-    padding-bottom: 0.2rem;
-    scrollbar-width: thin;
   }
 
   .admin-sidebar nav button {
-    width: auto;
-    min-width: max-content;
-    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
     padding-inline: 0.9rem;
   }
 
@@ -2630,6 +2647,12 @@ h3,
 .cartoon-icon,
 .cartoon-mini-icon {
   color: var(--cartoon-red-dark);
+}
+
+@media (max-width: 479px) {
+  .admin-sidebar nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-sidebar nav button { padding-inline: 0.65rem; }
+  .admin-sidebar nav button > span:not(.admin-nav-count) { min-width: 0; overflow-wrap: anywhere; }
 }
 
 .cartoon-icon,

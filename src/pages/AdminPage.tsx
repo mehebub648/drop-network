@@ -86,15 +86,15 @@ const roleCapabilities: Record<StaffRole, Capability[]> = {
   SUPERADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_STAFF', 'MANAGE_SYSTEM']
 };
 
-const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capability?: Capability }> = [
+const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capability?: Capability; countKey?: string }> = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'members', label: 'Members', icon: Users, capability: 'VIEW_USERS' },
-  { id: 'requests', label: 'Requests', icon: HeartPulse, capability: 'MODERATE_CONTENT' },
+  { id: 'requests', label: 'Requests', icon: HeartPulse, capability: 'MODERATE_CONTENT', countKey: 'active_requests' },
   { id: 'community', label: 'Community', icon: BookOpenText, capability: 'MODERATE_CONTENT' },
-  { id: 'reports', label: 'Reports', icon: ShieldAlert, capability: 'MODERATE_CONTENT' },
-  { id: 'support', label: 'Support', icon: ClipboardList, capability: 'MANAGE_SUPPORT' },
-  { id: 'organizations', label: 'Partners', icon: Building2, capability: 'MANAGE_ORGANIZATIONS' },
-  { id: 'claims', label: 'Claims', icon: UserCheck, capability: 'MANAGE_ORGANIZATIONS' },
+  { id: 'reports', label: 'Reports', icon: ShieldAlert, capability: 'MODERATE_CONTENT', countKey: 'open_reports' },
+  { id: 'support', label: 'Support', icon: ClipboardList, capability: 'MANAGE_SUPPORT', countKey: 'open_tickets' },
+  { id: 'organizations', label: 'Partners', icon: Building2, capability: 'MANAGE_ORGANIZATIONS', countKey: 'pending_organizations' },
+  { id: 'claims', label: 'Claims', icon: UserCheck, capability: 'MANAGE_ORGANIZATIONS', countKey: 'pending_directory_claims' },
   { id: 'audit', label: 'Audit log', icon: LockKeyhole, capability: 'VIEW_AUDIT' },
   { id: 'system', label: 'System', icon: Server }
 ];
@@ -297,15 +297,18 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
           <nav>
             {visibleTabs.map(tab => {
               const Icon = tab.icon;
+              const count = tab.countKey ? Number(overview?.counts?.[tab.countKey] || 0) : undefined;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={activeTab === tab.id ? 'is-active' : ''}
                   aria-current={activeTab === tab.id ? 'page' : undefined}
+                  aria-label={`${tab.label}${count === undefined ? '' : `, ${count} item${count === 1 ? '' : 's'}`}${activeTab === tab.id ? ', current section' : ''}`}
                 >
                   <Icon className="h-4 w-4" />
                   <span>{tab.label}</span>
+                  {count !== undefined && <span className="admin-nav-count" aria-hidden="true">{count}</span>}
                 </button>
               );
             })}
