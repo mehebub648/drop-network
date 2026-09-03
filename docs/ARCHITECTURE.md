@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.145`
+Current application version: `0.0.146`
 
 ## Overview
 
@@ -386,7 +386,9 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   path is unchanged and still offered.
 - `POST /api/auth/register` consumes a registration or `SIGN_IN` token. Standard
   donor registration creates a verified user with a donor profile and requires
-  blood group, location, and an explicit available/not-available choice. The
+  blood group, an explicit available/not-available choice, and either the
+  browser's legacy location object or a canonical `district` name that the
+  backend resolves to its trusted district-centre coordinates. The
   request workflow sends `registration_context: REQUEST` after OTP verification
   to create a minimal passwordless member account without a donor profile; the
   new member may add a donor profile later.

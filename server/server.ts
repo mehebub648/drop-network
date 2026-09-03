@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports } from './db';
 import { claimSlugForPublicId, evaluateClaim, maskPhone, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
 import { getLocationByName } from './locations';
+import { resolveRegistrationLocation } from './registrationLocation';
 import { getFollowUpSmsProvider, getSmsProvider, isFollowUpSmsConfigured, isSmsConfigured, type SmsDeliveryStatus } from './sms';
 import { getUpazilaByName, getUpazilaVariants } from './upazilas';
 import { BLOOD_GROUPS, COMPATIBLE_DONORS, type BloodGroup } from './blood';
@@ -2810,7 +2811,11 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   const bodyFingerprint = normalizeFingerprint(req.body?.fingerprint);
   const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
   const blood_group = req.body?.blood_group;
-  const location = req.body?.location === undefined ? undefined : parseLocation(req.body.location);
+  const location = resolveRegistrationLocation(
+    req.body?.location,
+    req.body?.district,
+    parseLocation
+  );
   const registrationAvailability = parseRegistrationAvailability(
     req.body?.availability_status,
     req.body?.availability_reason

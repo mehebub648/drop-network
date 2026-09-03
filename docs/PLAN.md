@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.145`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.146`. Items are grouped by how they can be
 delivered.
 
 ---
