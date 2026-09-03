@@ -12,10 +12,10 @@ import { readFile } from 'node:fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports } from './db';
 import { claimSlugForPublicId, evaluateClaim, maskPhone, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
-import { getLocationByName } from './locations';
+import { BD_LOCATION_NAMES, getLocationByName } from './locations';
 import { resolveRegistrationLocation } from './registrationLocation';
 import { getFollowUpSmsProvider, getSmsProvider, isFollowUpSmsConfigured, isSmsConfigured, type SmsDeliveryStatus } from './sms';
-import { getUpazilaByName, getUpazilaVariants } from './upazilas';
+import { getUpazilaByName, getUpazilaVariants, getUpazilasForDistrict } from './upazilas';
 import { BLOOD_GROUPS, COMPATIBLE_DONORS, type BloodGroup } from './blood';
 import {
   CONTACT_ISSUE_CATEGORIES,
@@ -43,6 +43,7 @@ import {
 } from './donorSearch';
 import { shouldExposeRequestContacts, shouldExposeRequesterIdentity } from './requestVisibility';
 import {
+  listRegisteredFacilities,
   parseDonorPreferences,
   type DonorPreferences
 } from './donorPreferences';
@@ -5423,6 +5424,27 @@ app.get('/api/requests', async (req, res) => {
       pages: feed.pages
     }
   });
+});
+
+app.get('/api/meta/districts', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.json({ items: BD_LOCATION_NAMES });
+});
+
+app.get('/api/meta/upazilas', (req, res) => {
+  const district = typeof req.query.district === 'string' ? req.query.district : '';
+  const canonical = district ? getLocationByName(district)?.area_name : undefined;
+  if (!canonical) return validationError(res, 'Valid Bangladesh district is required');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.json({ district: canonical, items: getUpazilasForDistrict(canonical) });
+});
+
+app.get('/api/meta/facilities', async (req, res) => {
+  const district = typeof req.query.district === 'string' ? req.query.district : '';
+  const canonical = district ? getLocationByName(district)?.area_name : undefined;
+  if (!canonical) return validationError(res, 'Valid Bangladesh district is required');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.json({ district: canonical, items: await listRegisteredFacilities(canonical) });
 });
 
 app.get('/api/requests/:id', async (req, res) => {

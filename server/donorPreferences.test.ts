@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseDonorPreferences } from './donorPreferences';
+import { listRegisteredFacilities, parseDonorPreferences } from './donorPreferences';
 
 test('donor preferences validate bounds and canonical registered facilities', async () => {
   const result = await parseDonorPreferences({
@@ -24,4 +24,12 @@ test('donor preferences reject forged facilities and invalid windows', async () 
   assert.ok('error' in await parseDonorPreferences({
     contact_windows: [{ days: [], start_time: '09:00', end_time: '09:00' }]
   }, undefined));
+});
+
+test('lists canonical registered facilities for native and browser discovery', async () => {
+  const facilities = await listRegisteredFacilities('Meherpur');
+  assert.ok(facilities.length > 0);
+  assert.equal(facilities[0]?.district, 'Meherpur');
+  assert.ok(facilities.every(item => item.registry_code && item.name && item.registry_codes.length > 0));
+  assert.deepEqual(await listRegisteredFacilities('Not a district'), []);
 });

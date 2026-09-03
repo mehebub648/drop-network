@@ -36,6 +36,14 @@ export type DonorPreferences = {
 
 type FacilityRow = [registryCode: string, name: string, locality: string, registryCodes?: string[]];
 
+export type RegisteredCollectionFacility = {
+  registry_code: string;
+  registry_codes: string[];
+  name: string;
+  district: string;
+  locality: string;
+};
+
 const facilityCache = new Map<string, Promise<FacilityRow[]>>();
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -87,6 +95,19 @@ async function registeredFacilities(district: string): Promise<FacilityRow[]> {
   })();
   facilityCache.set(canonical, loading);
   return loading;
+}
+
+/** Language-neutral facility discovery for browser and native clients. */
+export async function listRegisteredFacilities(district: string): Promise<RegisteredCollectionFacility[]> {
+  const canonical = getLocationByName(district)?.area_name;
+  if (!canonical) return [];
+  return (await registeredFacilities(canonical)).map(([registryCode, name, locality, aliases]) => ({
+    registry_code: registryCode,
+    registry_codes: [registryCode, ...(aliases || []).filter(alias => alias !== registryCode)],
+    name,
+    district: canonical,
+    locality
+  }));
 }
 
 function parseAreas(value: unknown): PreferredDonationArea[] | null {

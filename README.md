@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.146`
+Current version: `0.0.147`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -25,6 +25,11 @@ clients use the equivalent versioned `/api/v1/*` contract. Both prefixes reach
 the same server-side validation, permissions, privacy gates, and datastore.
 The current embedded Android workflows remain available until each one has a
 verified Flutter-native replacement.
+
+Shared location discovery is available at `/api/v1/meta/districts`,
+`/api/v1/meta/upazilas?district=...`, and
+`/api/v1/meta/facilities?district=...`. Browser and native clients should use
+these endpoints instead of reading frontend asset files directly.
 - Changelogs: [changelog/](./changelog/)
 
 ## Run With Docker
