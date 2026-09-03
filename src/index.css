@@ -3505,6 +3505,11 @@ input[type='radio'] {
     font-size: 0.82rem;
   }
 
+  .request-patient-form .request-reason-combobox .input {
+    padding-right: 2.75rem;
+    padding-left: 2.75rem;
+  }
+
   .request-patient-form .component-guidance {
     margin-top: 0.25rem;
     font-size: 0.63rem;
