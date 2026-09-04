@@ -27,10 +27,13 @@ delivered.
   controls passed automated label, touch-target and contrast checks at 200% text.
   Real emulator TalkBack announced picker labels, field roles and missing-phone
   validation; focus/activation and picker Back actions passed. The signed APK was
-  rebuilt, signature-verified, installed and launched; the initial scoped release
-  is healthy with unchanged donor totals and private files. Remaining: deploy the
-  final migration/inline-validation corrections and finish browser release checks. The registry audit service
-  is currently unavailable; the identified query-parser advisories were patched.
+  rebuilt, signature-verified, installed and launched. The corrected scoped release
+  is live and healthy with unchanged donor totals/private files; canonical browser
+  validation, selector focus and asset checks passed. All six delivery chunks are
+  implemented and released. See `docs/RELEASE-0.0.152.md` for exact coverage.
+  Remaining verification: obtain a successful dependency audit when its registry
+  service recovers, and extend spoken/authenticated UI coverage beyond the focused
+  fixtures before making a blanket production-readiness claim.
 
 - [ ] **Extract the browser frontend from the backend runtime.** Preserve public
   SEO and social metadata, proxy browser `/api` calls through the web origin,
