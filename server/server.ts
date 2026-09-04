@@ -3819,6 +3819,9 @@ app.get('/api/me/reveals/pending', async (req, res) => {
           request_id: pending.request_id,
           donor_ref: pending.donor_ref,
           donor_kind: pending.donor_kind,
+          name: pending.donor_kind === 'REGISTERED'
+            ? users.find(user => `reg:${user.id}` === pending.donor_ref)?.name || 'Donor'
+            : (await getImportedDonor(pending.donor_ref.slice(4)))?.name || 'Donor',
           created_at: pending.created_at
         }
       : null
@@ -3832,7 +3835,7 @@ app.get('/api/me/reveals/pending', async (req, res) => {
  * verified requesters, and only three recent independent connection failures
  * temporarily suppress search.
  */
-app.post('/api/requests/:id/call-reports', async (req, res) => {
+app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   const request = requests.find(item => item.id === req.params.id);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
@@ -3852,7 +3855,13 @@ app.post('/api/requests/:id/call-reports', async (req, res) => {
   const reports = await requestCallReports(request.id, auth.user.id);
   const reveal = reports.find(report => report.kind === 'REVEAL' && report.id === revealId);
   if (!reveal) return res.status(404).json({ error: 'That call was not started from this request' });
-  if (reports.some(report => report.kind === 'CALL_OUTCOME' && report.reveal_id === revealId)) {
+  const previous = reports.filter(report => report.kind === 'CALL_OUTCOME' && report.reveal_id === revealId)
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+  const supersedesId = cleanString(req.body?.supersedes_report_id, 80);
+  if (supersedesId && (!previous || previous.id !== supersedesId)) {
+    return res.status(409).json({ error: 'This feedback changed. Refresh and try again.' });
+  }
+  if (previous && !supersedesId) {
     return res.status(409).json({ error: 'This call has already been reported' });
   }
 
@@ -3865,6 +3874,7 @@ app.post('/api/requests/:id/call-reports', async (req, res) => {
     donor_kind: reveal.donor_kind,
     actor_verified: true,
     reveal_id: revealId,
+    ...(supersedesId ? { supersedes_report_id: supersedesId } : {}),
     outcome: parsed.value.outcome,
     reason: 'reason' in parsed.value ? parsed.value.reason : undefined,
     detail: 'detail' in parsed.value ? parsed.value.detail : undefined,
@@ -3898,7 +3908,7 @@ app.post('/api/requests/:id/call-reports', async (req, res) => {
     ? await createDonationFollowUp(request, reveal, req.body.sms_consent === true)
     : undefined;
   res.status(201).json({ report_id: report.id, follow_up: followUp });
-});
+}));
 
 function donationFollowUpPayload(followUp: DonationFollowUp, role: 'DONOR' | 'REQUESTER') {
   const request = requests.find(item => item.id === followUp.request_id);
@@ -3929,13 +3939,14 @@ app.get('/api/requests/:id/contacted-donors', asyncRoute(async (req, res) => {
   if (!request) return res.status(404).json({ error: 'Request not found' });
   if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can view contacted donors' });
   const reports = await requestCallReports(request.id, auth.user.id);
-  const reveals = reports.filter(item => item.kind === 'REVEAL');
+  const reveals = reports.filter(item => item.kind === 'REVEAL')
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const items: ContactedDonorSummary[] = [];
   for (const reveal of reveals) {
     if (items.some(item => item.donor_ref === reveal.donor_ref)) continue;
     const followUp = donationFollowUps.find(item => item.request_id === request.id && item.donor_ref === reveal.donor_ref);
     const latestOutcome = reports
-      .filter(item => item.kind === 'CALL_OUTCOME' && item.donor_ref === reveal.donor_ref)
+      .filter(item => item.kind === 'CALL_OUTCOME' && item.reveal_id === reveal.id)
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
     const target = await followUpTarget({ donor_ref: reveal.donor_ref } as DonationFollowUp);
     const reference = parseDonorRef(reveal.donor_ref);
@@ -3946,6 +3957,13 @@ app.get('/api/requests/:id/contacted-donors', asyncRoute(async (req, res) => {
       donor_kind: reveal.donor_kind,
       name: registered?.name || listing?.name || 'Donor',
       phone_masked: maskPhone(target?.phone || ''),
+      reveal_id: reveal.id,
+      latest_report_id: latestOutcome?.reveal_id === reveal.id ? latestOutcome.id : undefined,
+      blood_group: registered?.donor_profile?.blood_group || listing?.blood_group,
+      district: registered?.donor_profile?.location?.area_name || listing?.district,
+      upazila: registered?.donor_profile?.upazila || listing?.upazila,
+      is_verified: registered?.is_verified === true,
+      availability_status: registered?.donor_profile?.availability_status,
       latest_call_outcome: latestOutcome?.outcome,
       agreed: Boolean(followUp),
       reminder_state: followUp ? (followUp.sms_consent ? followUp.delivery.status : 'IN_APP_ONLY') : 'NOT_SCHEDULED',

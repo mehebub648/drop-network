@@ -91,10 +91,17 @@ export type CallReport = {
   /** Owner/staff remediation or dispute categories. */
   categories?: ContactIssueCategory[];
   resolution_kind?: string;
+  supersedes_report_id?: string;
   created_at: string;
 };
 
 export type ContactIssueSummary = Partial<Record<ContactIssueCategory, number>>;
+
+/** Keep correction history while counting only the current feedback. */
+export function currentCallReports(reports: CallReport[]) {
+  const superseded = new Set(reports.filter(report => report.kind === 'CALL_OUTCOME').map(report => report.supersedes_report_id).filter(Boolean));
+  return reports.filter(report => !superseded.has(report.id));
+}
 
 export function contactIssueCategories(report: Pick<CallReport, 'kind' | 'outcome' | 'reason'>) {
   if (report.kind !== 'CALL_OUTCOME') return [] as ContactIssueCategory[];
@@ -115,6 +122,7 @@ export function contactIssueCategories(report: Pick<CallReport, 'kind' | 'outcom
  * category, and a later owner/staff resolution makes earlier evidence stale.
  */
 export function aggregateContactIssues(reports: CallReport[]): ContactIssueSummary {
+  reports = currentCallReports(reports);
   const resolvedAfter = new Map<ContactIssueCategory, number>();
   for (const report of reports) {
     if (!['OWNER_RESOLUTION', 'STAFF_RESOLUTION'].includes(report.kind)) continue;
@@ -146,6 +154,7 @@ export function recentConnectionFailureReporterCount(
   now = Date.now(),
   days = 90
 ) {
+  reports = currentCallReports(reports);
   const cutoff = now - days * 86_400_000;
   let resolvedAfter = 0;
   for (const report of reports) {

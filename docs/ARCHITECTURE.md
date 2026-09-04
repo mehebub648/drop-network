@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.154`
+Current application version: `0.0.155`
 
 ## Overview
 
@@ -473,6 +473,10 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   restore the blocking dialog after navigation, reload, focus, and cross-tab
   changes without putting the revealed phone number into the URL.
 - `POST /api/requests/:id/call-reports` records what happened on the call.
+  Corrections pass `supersedes_report_id` for the latest report on that reveal.
+  Stale corrections are rejected; history is retained and superseded feedback
+  is excluded from contact-warning counts. Contacted summaries provide masked
+  profile details and the latest reveal/report references for native actions.
   A single report never changes a donor's own record. Public summaries count a
   verified requester once per donor/category and begin at one; owner/staff
   resolutions make older evidence stale without deleting it. Three distinct

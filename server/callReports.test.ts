@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   aggregateContactIssues,
   findPendingReveal,
+  currentCallReports,
   parseCallOutcome,
   parseDonorReport,
   parseDonorRef,
@@ -93,6 +94,16 @@ test('contact issue summaries count each requester once and keep notes private',
   ];
   assert.deepEqual(aggregateContactIssues(reports), { WRONG_NUMBER: 1, DECLINED: 1, HEALTH: 1 });
   assert.equal(JSON.stringify(aggregateContactIssues(reports)).includes('private'), false);
+});
+
+test('corrected feedback preserves history but replaces warning evidence', () => {
+  const first: CallReport = { id: 'first', kind: 'CALL_OUTCOME', request_id: 'r', actor_id: 'u', donor_ref: 'reg:d', donor_kind: 'REGISTERED', reveal_id: 'reveal', outcome: 'WRONG_NUMBER', created_at: '2026-09-04T12:00:00Z' };
+  const correction: CallReport = { ...first, id: 'correction', supersedes_report_id: first.id, outcome: 'CALL_BACK_LATER', created_at: '2026-09-04T12:01:00Z' };
+  const reports = [first, correction];
+  assert.deepEqual(currentCallReports(reports), [correction]);
+  assert.deepEqual(aggregateContactIssues(reports), {});
+  assert.equal(recentConnectionFailureReporterCount(reports, Date.parse('2026-09-05T12:00:00Z')), 0);
+  assert.equal(reports.length, 2);
 });
 
 test('owner resolution makes earlier evidence stale without deleting it', () => {

@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.154`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.155`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,7 +13,7 @@ delivered.
 
 ### Code quality / polish
 
-- [ ] Verify v0.0.154 donor contact in an authenticated client after an older
+- [ ] Verify v0.0.155 donor contact in an authenticated client after an older
   request closes; focused pending-call regression tests pass.
 
 - [ ] **Approved experience restoration:** shared accessible controls and all-form

@@ -44,6 +44,13 @@ export type DonationFollowUp = {
 };
 
 export type ContactedDonorSummary = {
+  reveal_id: string;
+  latest_report_id?: string;
+  blood_group?: string;
+  district?: string;
+  upazila?: string;
+  is_verified?: boolean;
+  availability_status?: string;
   donor_ref: string;
   donor_kind: 'REGISTERED' | 'IMPORTED';
   name: string;
