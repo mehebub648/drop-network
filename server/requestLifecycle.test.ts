@@ -28,7 +28,12 @@ test('migration is idempotent and does not resurrect history or fingerprint owne
   const migrated = migrateRequestLifecycle(source, true, now);
   assert.equal(migrated.expires_at, '2026-10-05T18:00:00.000Z');
   assert.deepEqual(migrateRequestLifecycle(migrated, true, now), migrated);
-  assert.equal(migrateRequestLifecycle(source, false, now).status, 'EXPIRED');
+  const guest = migrateRequestLifecycle({ ...source, guest_token_hash: 'legacy-fingerprint' }, false, now);
+  assert.equal(guest.status, 'ACTIVE');
+  assert.equal(guest.expires_at, '2026-09-05T18:00:00.000Z');
+  assert.equal(guest.user_id, '');
+  assert.equal(guest.guest_token_hash, undefined);
+  assert.deepEqual(migrateRequestLifecycle(guest, false, now), guest);
   assert.equal(migrateRequestLifecycle({ ...source, status: 'CANCELLED' }, true, now).status, 'CANCELLED');
   assert.equal(migrateRequestLifecycle({ ...source, expires_at: '2026-09-01T00:00:00Z' }, true, now).expires_at, '2026-09-01T00:00:00Z');
 });

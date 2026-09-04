@@ -47,9 +47,8 @@ export function requestIsOverdue(request: Pick<LifecycleRequest, 'needed_by'>, n
 export function migrateRequestLifecycle<T extends LifecycleRequest>(request: T, accountExists: boolean, now = Date.now()): T {
   if (request.lifecycle_version === 2) return request;
   const ownership: RequestOwnership = accountExists ? 'USER' : 'GUEST';
-  const next = { ...request, ownership, lifecycle_version: 2 };
+  const next = { ...request, ownership, lifecycle_version: 2, ...(!accountExists ? { user_id: '', guest_token_hash: undefined } : {}) };
   if (!requestIsLive(request, now)) return next;
-  if (!accountExists) return { ...next, status: 'EXPIRED', expires_at: new Date(now).toISOString() };
   const needed_date = request.needed_date || dhakaDate(Date.parse(request.needed_by || request.expires_at) - 1);
   const needed_by = new Date(Date.parse(needed_date) + DAY_MS - DHAKA_OFFSET_MS).toISOString();
   return { ...next, needed_date, needed_by, expires_at: requestExpiry(needed_by, ownership) };

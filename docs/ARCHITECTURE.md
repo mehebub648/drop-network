@@ -50,7 +50,9 @@ extraction is an optional later scaling step rather than a client-parity gate.
    row is a constant, like `listing_state`, is filled by the column default and
    needs no pass at all.
 4. Request lifecycle v2 migration runs once per stored request without reviving
-   closed or already expired rows. Expired guest posts are removed from active
+   closed or already expired rows. Open legacy guest rows retain their date-based
+   public lifetime, but old fingerprints never become management credentials.
+   Expired guest posts are removed from active
    storage; owned posts become `EXPIRED` private history. Reads and mutations
    independently enforce expiry; a minute-level maintenance pass removes stale rows.
 5. No data is seeded; the datastore starts empty and is populated only by real

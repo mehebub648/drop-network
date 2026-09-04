@@ -11,7 +11,7 @@
 .drop-select-options button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; text-align: left; padding: 10px; border-radius: 8px; }
 .drop-select-options button.is-active, .drop-select-options button[aria-selected=true] { background: #fff1f2; color: #9f1239; }
 .drop-select-options button:disabled { opacity: .45; }
-.step-flow { width: 100%; max-width: 40rem; margin-inline: auto; }
+.step-flow { width: 100%; min-width: 0; max-width: 40rem; margin-inline: auto; overflow-wrap: anywhere; }
 .step-flow-heading { margin-bottom: 2rem; }
 .step-flow-heading > span { color: #475467; font-size: .8rem; font-weight: 700; }
 .step-flow-heading h2 { margin-block: .65rem 1.2rem; font-size: clamp(1.4rem, 3vw, 2rem); font-weight: 800; letter-spacing: -.035em; }
@@ -22,7 +22,7 @@
 .step-flow-heading progress::-moz-progress-bar { background: #be123c; }
 .step-flow-fields { display: grid; gap: 1.25rem; min-width: 0; }
 .step-flow-fields > label { display: grid; gap: .5rem; font-weight: 600; }
-.step-flow-actions { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid #e4e7ec; }
+.step-flow-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid #e4e7ec; }
 .step-flow-actions > :last-child { margin-left: auto; }
 .drop-date { position: relative; }
 .drop-date-input { display: flex; align-items: center; gap: .5rem; }
@@ -2933,6 +2933,8 @@ input[type='radio'] {
 }
 
 .auth-form-panel {
+  min-width: 0;
+  overflow-wrap: anywhere;
   background: var(--cartoon-paper-strong);
 }
 
