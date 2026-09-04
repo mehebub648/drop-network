@@ -5,6 +5,7 @@ import Footer from './Footer';
 
 const navigation: Array<{ label: string; to: string; end?: boolean }> = [
   { label: 'Live requests', to: '/requests' },
+  { label: 'Device requests', to: '/device-requests' },
   { label: 'Community', to: '/community' },
   { label: 'About', to: '/about' }
 ];

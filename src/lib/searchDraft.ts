@@ -53,6 +53,7 @@ export type SearchDraft = {
   /** Public patient-side call number. Published by consent, not OTP-verified. */
   contact_phone: string;
   needed_window: NeededWindow | '';
+  needed_date?: string;
   /** Set once the request is published, so a reload does not publish twice. */
   request_id?: string;
 };
@@ -157,8 +158,7 @@ export function hasPatientDetails(draft: SearchDraft) {
 }
 
 export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone = '') {
-  const requesterPhone = draft.requester_phone.trim() || verifiedRequesterPhone.trim();
-  if (draft.requester_role === 'PATIENT') return Boolean(requesterPhone);
+  if (draft.requester_role === 'PATIENT') return Boolean(draft.contact_phone.trim());
   if (draft.requester_role !== 'RELATIVE' && draft.requester_role !== 'THIRD_PARTY') return false;
   if (!draft.contact_owner || !draft.contact_phone.trim()) return false;
   if (draft.contact_owner === 'RELATIVE') {
@@ -170,7 +170,7 @@ export function hasRequesterDetails(draft: SearchDraft, verifiedRequesterPhone =
 /** The body `POST /api/search/requests` expects. */
 export function searchRequestPayload(draft: SearchDraft) {
   const contactFields = draft.requester_role === 'PATIENT'
-    ? {}
+    ? { contact_phone: draft.contact_phone, contact_owner: 'PATIENT' }
     : {
         contact_owner: draft.contact_owner || undefined,
         contact_phone: draft.contact_phone || undefined,
@@ -196,6 +196,7 @@ export function searchRequestPayload(draft: SearchDraft) {
     request_reason: draft.request_reason,
     request_reason_details: draft.request_reason === 'OTHER' ? draft.request_reason_details.trim() || undefined : undefined,
     ...contactFields,
-    needed_window: draft.needed_window || undefined
+    needed_window: draft.needed_window || undefined,
+    needed_date: draft.needed_date
   };
 }

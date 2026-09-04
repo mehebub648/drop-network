@@ -1,3 +1,4 @@
+import GuidedForm from '../../components/GuidedForm';
 import { useEffect, useState, type FormEvent } from 'react';
 import { CalendarDays, Phone, Save, UserRound } from 'lucide-react';
 import VerifiedBadge from '../../components/VerifiedBadge';
@@ -51,7 +52,7 @@ export default function AccountPage({ user, onUpdate }: ProfilePageProps) {
         </div>
       </div>
 
-      <form onSubmit={submit} className="mt-7 space-y-5">
+      <GuidedForm onSubmit={submit} className="mt-7 space-y-5">
         <div>
           <label htmlFor="account-name" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Full name</label>
           <div className="relative">
@@ -70,7 +71,7 @@ export default function AccountPage({ user, onUpdate }: ProfilePageProps) {
         <button disabled={saving} className="inline-flex items-center gap-2 px-5 py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark disabled:opacity-50">
           <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save account'}
         </button>
-      </form>
+      </GuidedForm>
     </div>
   );
 }

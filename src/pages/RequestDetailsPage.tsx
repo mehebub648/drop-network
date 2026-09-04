@@ -1,8 +1,13 @@
+import Select from '../components/Select';
+import DateInput from '../components/DateInput';
+import GuidedForm from '../components/GuidedForm';
+import { dhakaDate, DAY_MS } from '../../server/requestLifecycle';
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, HeartPulse, MapPin, MessageCircle, Phone, Plus, Share2, Trash2, User as UserIcon, Users } from 'lucide-react';
-import { api, BROWSER_FINGERPRINT, type ContactedDonorSummary, type SearchDonorCard } from '../lib/api';
+import { api, experienceApi, type ContactedDonorSummary, type SearchDonorCard } from '../lib/api';
+import RequestVerification from '../components/RequestVerification';
 import { compatibleDonorsFor } from '../lib/blood';
 import {
   loadRegisteredCollectionFacilities,
@@ -38,7 +43,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     if (!data) return;
     const url = window.location.href;
     const neededText = data.request.needed_by
-      ? `by ${new Date(data.request.needed_by).toLocaleDateString('en-GB')}`
+      ? `by ${data.request.needed_date || new Date(new Date(data.request.needed_by).getTime() - 1).toLocaleDateString('en-GB', { timeZone: 'Asia/Dhaka' })}`
       : 'ASAP';
     const component = (data.request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
     const reason = requestReasonLabel(data.request.request_reason);
@@ -108,7 +113,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         setEditData({
           patient_name: payload.request.patient_name || '',
           requester_name: payload.request.requester_name || '',
-          needed_by: payload.request.needed_by ? new Date(payload.request.needed_by).toISOString().slice(0, 16) : '',
+          needed_by: payload.request.needed_date || '',
           hospital_name: payload.request.hospital_name || '',
           hospital_address: payload.request.hospital_address || '',
           ward: payload.request.ward || '',
@@ -129,8 +134,8 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     if (data?.request) {
       setActionMessage(null);
       try {
-        const updated = await api.updateRequestStatus(data.request.id, status);
-        setData({ ...data, request: { ...data.request, status: updated.status } });
+        const updated = status === 'ACTIVE' ? await api.updateRequestStatus(data.request.id, status) : await experienceApi.closeRequest(data.request.id, status === 'FULFILLED' ? 'RECEIVED' : status);
+        setData({ ...data, request: { ...data.request, ...updated } });
         setActionMessage({ type: 'success', text: 'Request status updated.' });
       } catch (err: any) {
         setActionMessage({ type: 'error', text: err.message || 'Failed to update request status.' });
@@ -148,7 +153,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       const formattedData = {
         ...editData,
         location,
-        needed_by: editData.needed_by ? new Date(editData.needed_by).toISOString() : undefined
+        needed_date: editData.needed_by || undefined
       };
       setActionMessage(null);
       try {
@@ -241,9 +246,9 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   if (!data) return null;
 
   const { request, matches } = data;
-  const isOwner = (user && user.id === request.user_id) || request.user_id === BROWSER_FINGERPRINT;
+  const isOwner = request.permitted_actions?.manage === true;
   const neededLabel = request.needed_by
-    ? new Date(request.needed_by).toLocaleDateString('en-GB')
+    ? request.needed_date || new Date(new Date(request.needed_by).getTime() - 1).toLocaleDateString('en-GB', { timeZone: 'Asia/Dhaka' })
     : 'As soon as possible';
   const componentLabel = (request.blood_component || 'WHOLE_BLOOD').replaceAll('_', ' ').toLowerCase();
   const unitsRequired = request.units_required || 1;
@@ -288,14 +293,14 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               <p>Reports are visible only to authorized operators.</p>
               <label className="dialog-field">
                 <span>Reason</span>
-                <select value={reportReason} onChange={e => setReportReason(e.target.value)} className="input">
+                <Select value={reportReason} onChange={e => setReportReason(e.target.value)} className="input">
                   <option value="OTHER">Inaccurate or other concern</option>
                   <option value="SPAM">Spam or duplicate</option>
                   <option value="PAYMENT_REQUEST">Payment requested</option>
                   <option value="HARASSMENT">Harassment</option>
                   <option value="PRIVACY">Privacy concern</option>
                   <option value="FRAUD">Suspected fraud</option>
-                </select>
+                </Select>
               </label>
               <label className="dialog-field">
                 <span>Optional details</span>
@@ -336,8 +341,8 @@ export default function RequestDetailsPage({ user }: { user: any }) {
             <div className="w-16 h-16 bg-slate-100 text-slate-600 rounded-full flex items-center justify-center mb-4">
               <AlertCircle className="w-8 h-8" />
             </div>
-            <h3 className="text-2xl font-bold text-slate-900">Cancelled</h3>
-            <p className="text-slate-500 font-medium mt-1">This request was cancelled by the owner.</p>
+            <h3 className="text-2xl font-bold text-slate-900">{request.closure_reason === 'RECEIVED' ? 'Blood received' : request.closure_reason === 'NOT_NEEDED' ? 'No longer needed' : 'Request closed'}</h3>
+            <p className="text-slate-500 font-medium mt-1">The owner closed this request. It is no longer in the live feed.</p>
           </div>
         )}
 
@@ -351,7 +356,8 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                   <span className="flex items-center gap-1.5 rounded-full border border-green-200 bg-green-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-green-800">
                     <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span> {request.status === 'ACTIVE' ? 'Active' : request.status}
                   </span>
-                  <UrgencyBadge neededBy={request.needed_by} />
+                  {['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status) && <UrgencyBadge neededBy={request.needed_by} />}
+                  <RequestVerification state={request.verification_state} />
                   <span className="text-[11px] font-bold text-slate-400">#{request.id.split('-')[1]}</span>
                 </div>
                 <h1 className="text-xl font-extrabold leading-tight text-slate-950 md:text-3xl">
@@ -362,9 +368,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           </div>
           {isOwner && (
             <div className="flex flex-col gap-3 min-w-[160px]">
-               <button onClick={() => handleUpdateStatus('CANCELLED')} className="w-full px-5 py-3 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-600 text-sm font-bold rounded-xl transition-all">
-                 Cancel Request
-               </button>
+               <label className="text-sm font-bold">Close request<Select value="" onChange={event => void handleUpdateStatus(event.target.value)}><option value="">Choose outcome</option><option value="FULFILLED">Blood received</option><option value="NOT_NEEDED">No longer needed</option><option value="CANCELLED">Cancel request</option><option value="OTHER">Another reason</option></Select></label>
             </div>
           )}
         </div>
@@ -455,17 +459,17 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         </div>
 
         {isEditing ? (
-          <div className="space-y-4 fade-in">
+          <GuidedForm className="space-y-4 fade-in" onSubmit={event => { event.preventDefault(); void handleSaveDetails(); }}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Collection district</label>
-                <select
+                <Select
                   value={editData.district}
                   onChange={e => setEditData({ ...editData, district: e.target.value, hospital_name: '' })}
                   className="input"
                 >
                   {BD_LOCATION_NAMES.map(district => <option key={district}>{district}</option>)}
-                </select>
+                </Select>
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Collection facility</label>
@@ -521,8 +525,8 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               <div className="md:col-span-2 relative">
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-600 mb-2">Needed By (Date)</label>
                 <div className="relative">
-                  <input 
-                    type="date" value={editData.needed_by ? new Date(editData.needed_by).toISOString().slice(0, 10) : ''} 
+                  <DateInput
+                    min={request.needed_date && request.needed_date < dhakaDate() ? request.needed_date : dhakaDate()} max={dhakaDate(Date.now() + 15 * DAY_MS)} value={editData.needed_by}
                     onChange={e => setEditData({...editData, needed_by: e.target.value})}
                     className="w-full pl-11 pr-4 py-3 bg-slate-50 rounded-xl border-none focus:ring-2 focus:ring-primary text-sm font-medium outline-none cursor-pointer"
                   />
@@ -536,7 +540,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
               <div className="space-y-3">
                 {editData.contacts.map((c: any, i: number) => (
                   <div key={i} className="flex gap-2">
-                    <select 
+                    <Select
                       value={c.type} 
                       onChange={e => {
                         const newContacts = [...editData.contacts];
@@ -549,7 +553,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                       <option value="RELATIVE">Relative</option>
                       <option value="HOSPITAL">Hospital</option>
                       <option value="OTHER">Other</option>
-                    </select>
+                    </Select>
                     <input 
                       type="text" 
                       value={c.name} 
@@ -572,12 +576,12 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                       className="w-1/3 px-3 py-3 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl focus:ring-2 focus:ring-primary text-xs font-medium outline-none transition-all" 
                       placeholder="Phone" 
                     />
-                    <button onClick={() => setEditData({...editData, contacts: editData.contacts.filter((_:any, idx:number) => idx !== i)})} className="px-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors">
+                    <button type="button" onClick={() => setEditData({...editData, contacts: editData.contacts.filter((_:any, idx:number) => idx !== i)})} className="px-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
-                <button 
+                <button type="button"
                   onClick={() => setEditData({...editData, contacts: [...editData.contacts, { type: 'RELATIVE', name: 'New Contact', phone: '' }]})}
                   className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"
                 >
@@ -587,10 +591,10 @@ export default function RequestDetailsPage({ user }: { user: any }) {
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-6">
-               <button onClick={() => setIsEditing(false)} className="px-5 py-2.5 text-slate-500 font-bold text-sm">Cancel</button>
-               <button onClick={handleSaveDetails} className="px-6 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-sm hover:bg-primary-dark">Save Changes</button>
+               <button type="button" onClick={() => setIsEditing(false)} className="px-5 py-2.5 text-slate-500 font-bold text-sm">Cancel</button>
+               <button type="submit" className="px-6 py-2.5 bg-primary text-white rounded-xl font-bold text-sm shadow-sm hover:bg-primary-dark">Save Changes</button>
             </div>
-          </div>
+          </GuidedForm>
         ) : (
           <div className="grid gap-3 fade-in lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
             <dl className="border-y border-slate-200 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-slate-200">
@@ -620,6 +624,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                       <p className="request-metadata-label mb-1">{contact.type || 'Contact'}</p>
                       <p className="truncate font-bold text-slate-900">{contact.name || request.requester_name || 'Request contact'}</p>
                       <p className="mt-1 break-all text-sm font-semibold text-slate-600">{contact.phone}</p>
+                      <p className="mt-1 text-xs text-slate-600">Patient-side contact · not independently verified</p>
                     </div>
                     <div className="flex w-28 shrink-0 flex-col justify-center gap-2">
                       <a

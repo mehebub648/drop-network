@@ -1,8 +1,9 @@
+import Select from '../../components/Select';
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, Heart, MapPin } from 'lucide-react';
 import { Link } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
-import { api } from '../../lib/api';
+import { api, experienceApi } from '../../lib/api';
 import { cn } from '../../lib/utils';
 
 type RequestStatus = 'DRAFT' | 'PENDING_VERIFICATION' | 'ACTIVE' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED';
@@ -23,11 +24,11 @@ export default function ProfileRequestsPage() {
 
   const visible = useMemo(() => filter === 'ALL' ? requests : requests.filter(request => request.status === filter), [filter, requests]);
 
-  const updateStatus = async (id: string, status: RequestStatus) => {
+  const updateStatus = async (id: string, status: string) => {
     setUpdating(id);
     setError('');
     try {
-      const updated = await api.updateRequestStatus(id, status);
+      const updated = await experienceApi.closeRequest(id, status);
       setRequests(current => current.map(request => request.id === id ? updated : request));
     } catch (reason: any) {
       setError(reason.message || 'Could not update request.');
@@ -45,7 +46,7 @@ export default function ProfileRequestsPage() {
         </div>
         <label className="text-sm font-bold text-slate-600">
           <span className="sr-only">Filter requests</span>
-          <select value={filter} onChange={event => setFilter(event.target.value as typeof filter)} className="px-4 py-3 bg-slate-50 rounded-xl outline-none">
+          <Select value={filter} onChange={event => setFilter(event.target.value as typeof filter)} className="px-4 py-3 bg-slate-50 rounded-xl outline-none">
             <option value="ALL">All statuses</option>
             <option value="ACTIVE">Active</option>
             <option value="PARTIALLY_FULFILLED">Partially fulfilled</option>
@@ -53,7 +54,7 @@ export default function ProfileRequestsPage() {
             <option value="EXPIRED">Expired</option>
             <option value="FULFILLED">Fulfilled</option>
             <option value="CANCELLED">Cancelled</option>
-          </select>
+          </Select>
         </label>
       </div>
 
@@ -69,7 +70,7 @@ export default function ProfileRequestsPage() {
       ) : (
         <div className="mt-7 space-y-4">
           {visible.map(request => (
-            <article key={request.id} className="rounded-2xl border border-slate-200 p-5">
+            <article key={request.id} className="border-b border-slate-200 py-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 <div className="w-12 h-12 rounded-xl bg-red-50 text-red-700 font-extrabold flex items-center justify-center">{request.blood_group}</div>
                 <div className="flex-1">
@@ -85,11 +86,13 @@ export default function ProfileRequestsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <select aria-label={`Status for ${request.blood_group} request`} value={request.status} disabled={updating === request.id} onChange={event => updateStatus(request.id, event.target.value as RequestStatus)} className="px-3 py-2.5 bg-slate-50 rounded-xl text-sm font-bold outline-none">
-                    {!['ACTIVE', 'CANCELLED', 'FULFILLED'].includes(request.status) && <option value={request.status}>{request.status.replaceAll('_', ' ')}</option>}
-                    <option value="ACTIVE">Active</option>
+                  <Select aria-label={`Close ${request.blood_group} request`} value="" disabled={updating === request.id || !['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)} onChange={event => updateStatus(request.id, event.target.value)} className="px-3 py-2.5 bg-slate-50 rounded-xl text-sm font-bold outline-none">
+                    <option value="">{request.closure_reason || 'Close request…'}</option>
+                    <option value="RECEIVED">Blood received</option>
+                    <option value="NOT_NEEDED">No longer needed</option>
                     <option value="CANCELLED">Cancelled</option>
-                  </select>
+                    <option value="OTHER">Other reason</option>
+                  </Select>
                   <Link to={`/request/${request.id}`} className="px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold inline-flex items-center gap-1 hover:bg-primary-dark"><Activity className="w-4 h-4" /> View</Link>
                 </div>
               </div>

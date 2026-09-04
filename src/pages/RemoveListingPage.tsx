@@ -1,3 +1,4 @@
+import GuidedForm from '../components/GuidedForm';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { CheckCircle2, KeyRound, Phone, ShieldOff } from 'lucide-react';
@@ -89,7 +90,7 @@ export default function RemoveListingPage() {
       />
 
       {step === 'phone' && (
-        <form onSubmit={sendCode} className="surface mx-auto w-full max-w-2xl p-6 sm:p-8">
+        <GuidedForm onSubmit={sendCode} className="surface mx-auto w-full max-w-2xl p-6 sm:p-8">
           <StatusBadge tone="brand" icon={Phone}>Step 1 of 2</StatusBadge>
           <h2 className="mt-4 text-xl font-extrabold text-slate-950">Confirm it is your number</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -112,11 +113,11 @@ export default function RemoveListingPage() {
           <button type="submit" disabled={busy} className="primary-button mt-6 disabled:opacity-60">
             {busy ? 'Sending...' : 'Send code'}
           </button>
-        </form>
+        </GuidedForm>
       )}
 
       {step === 'code' && (
-        <form onSubmit={confirm} className="surface mx-auto w-full max-w-2xl p-6 sm:p-8">
+        <GuidedForm onSubmit={confirm} className="surface mx-auto w-full max-w-2xl p-6 sm:p-8">
           <StatusBadge tone="brand" icon={KeyRound}>Step 2 of 2</StatusBadge>
           <h2 className="mt-4 text-xl font-extrabold text-slate-950">Enter the code</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -155,7 +156,7 @@ export default function RemoveListingPage() {
               Use a different number
             </button>
           </div>
-        </form>
+        </GuidedForm>
       )}
 
       {step === 'done' && (

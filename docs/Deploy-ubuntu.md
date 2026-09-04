@@ -163,6 +163,28 @@ docker compose --profile development up --build app-dev
 
 ## 7. Troubleshooting
 
+### Guest-first experience release validation
+
+Before deploying lifecycle v2, take a private backup of `.env`, `data/lancedb`,
+community media and donor source files while the exact site container is paused.
+Keep verified source ZIPs and Git bundles outside both source trees. Never put
+these backups under a public web root.
+
+Use `compose.experience-qa.yml` from a separate site-owned directory and a
+separate Compose project for disposable validation. Its `validate` service has
+no network or production data mounts, and runs typecheck, focused unit tests,
+fake-SMS API integration and the web build. Its optional preview is loopback-only;
+forward it through SSH for browser/emulator testing. Never reuse production
+environment variables, donor records, real OTP delivery or real patient requests.
+
+Deploy the compatible backend/web release through the site's clean fast-forward
+checkout and scoped rootless Compose plan, then distribute the tested signed
+native build. Check the actual configured loopback port instead of assuming a
+port from an older deployment. Preserve persistent mounts and verify commit,
+version, health/readiness, assets, directory counts and the changed privacy flow.
+Rolling back code must not restore a stale database over newer requests: retain
+the pre-migration snapshot and coordinate any data restoration separately.
+
 ### Permission denied when running Docker
 
 Your user is probably not in the `docker` group yet. Either use `sudo` temporarily or add your user to the group and start a new shell session.
@@ -182,6 +204,11 @@ For cross-origin browser clients, set `CORS_ORIGIN` to a comma-separated list of
 allowed origins. Same-origin Docker deployments can leave it empty.
 
 ### Development file changes are not detected
+
+Image builds use `npm ci --no-audit` to keep registry audit-service availability
+out of the build path. Run the security gate separately in an isolated container:
+`npm audit --omit=dev --fetch-retries=0 --fetch-timeout=20000`. Record an unavailable
+audit service as an unverified gate, never as a clean security result.
 
 Confirm that both polling variables remain enabled in `compose.yml`:
 

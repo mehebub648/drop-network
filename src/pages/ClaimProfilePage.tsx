@@ -1,3 +1,5 @@
+import GuidedForm from '../components/GuidedForm';
+import Select from '../components/Select';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ArrowLeft, CheckCircle2, ExternalLink, KeyRound, Phone, ShieldCheck, UserRoundPlus } from 'lucide-react';
@@ -177,41 +179,41 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
       {error && <div role="alert" className="alert alert-error">{error}</div>}
 
       {step === 'phone' && (
-        <form onSubmit={requestCode} className="surface p-6 sm:p-8">
+        <GuidedForm onSubmit={requestCode} className="surface p-6 sm:p-8">
           <StatusBadge tone="brand" icon={Phone}>Step 1 of 3</StatusBadge>
           <h2 className="mt-4 text-xl font-extrabold text-slate-950">Which number do you control?</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">Change the number freely here. A different unique number creates your own profile and leaves this listing unclaimed.</p>
           <label className="mt-5 block"><span className="mb-2 block text-sm font-bold text-slate-700">Your Bangladesh mobile</span><input required autoFocus type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={event => { setPhone(event.target.value); setDelivery(null); }} placeholder="01XXXXXXXXX" className="input" /></label>
           <button disabled={busy} className="primary-button mt-6">{busy ? 'Sending…' : 'Send verification code'}</button>
-        </form>
+        </GuidedForm>
       )}
 
       {step === 'code' && (
-        <form onSubmit={verifyCode} className="surface space-y-5 p-6 sm:p-8">
+        <GuidedForm onSubmit={verifyCode} className="surface space-y-5 p-6 sm:p-8">
           <StatusBadge tone="brand" icon={KeyRound}>Step 2 of 3</StatusBadge>
           <h2 className="text-xl font-extrabold text-slate-950">Enter the code</h2>
           <p className="text-sm leading-6 text-slate-600">We sent a purpose-bound code to {phone}.</p>
           <OtpDeliveryStatus delivery={delivery} onDeliveryChange={setDelivery} busy={busy} onResend={() => requestCode()} />
           <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Six-digit code</span><input required autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} className="input min-h-14 text-center text-2xl font-extrabold tracking-[0.4em]" /></label>
           <div className="flex flex-col gap-3 sm:flex-row"><button disabled={busy || code.length !== 6} className="primary-button">{busy ? 'Checking…' : 'Verify phone'}</button><button type="button" onClick={() => { setDelivery(null); setCode(''); setStep('phone'); }} className="theme-button"><ArrowLeft className="h-4 w-4" />Change number</button></div>
-        </form>
+        </GuidedForm>
       )}
 
       {step === 'details' && (
-        <form onSubmit={complete} className="surface space-y-5 p-6 sm:p-8">
+        <GuidedForm onSubmit={complete} className="surface space-y-5 p-6 sm:p-8">
           <StatusBadge tone="success" icon={CheckCircle2}>Phone verified · Step 3 of 3</StatusBadge>
           <h2 className="text-xl font-extrabold text-slate-950">Confirm your details and consent</h2>
           <p className="text-sm leading-6 text-slate-600">Nothing is guessed. Check every field and explicitly choose whether you are available.</p>
           <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Full name</span><input required maxLength={100} value={name} onChange={event => setName(event.target.value)} className="input" /></label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label><span className="mb-2 block text-sm font-bold text-slate-700">Blood group</span><select required value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input"><option value="">Choose blood group</option>{BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}</select></label>
-            <label><span className="mb-2 block text-sm font-bold text-slate-700">District</span><select required value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input"><option value="">Choose district</option>{BD_LOCATION_NAMES.map(item => <option key={item}>{item}</option>)}</select></label>
-            <label className="sm:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Upazila</span><select required value={upazila} onChange={event => setUpazila(event.target.value)} className="input"><option value="">Choose upazila</option>{upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+            <label><span className="mb-2 block text-sm font-bold text-slate-700">Blood group</span><Select required value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input"><option value="">Choose blood group</option>{BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}</Select></label>
+            <label><span className="mb-2 block text-sm font-bold text-slate-700">District</span><Select required value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input"><option value="">Choose district</option>{BD_LOCATION_NAMES.map(item => <option key={item}>{item}</option>)}</Select></label>
+            <label className="sm:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Upazila</span><Select required value={upazila} onChange={event => setUpazila(event.target.value)} className="input"><option value="">Choose upazila</option>{upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</Select></label>
           </div>
           <DonorAvailabilityFields idPrefix="claim" value={availability} onChange={setAvailability} reason={availabilityReason} onReasonChange={setAvailabilityReason} />
           <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-700"><input required type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0" /><span>I control the verified number, these details describe me, and I consent to this availability choice on Drop.</span></label>
           <button disabled={busy || !availability || !consent} className="primary-button">{busy ? 'Saving…' : 'Save my verified profile'}</button>
-        </form>
+        </GuidedForm>
       )}
 
       <p className="text-center text-sm text-slate-500">Adding someone else? <Link to="/contribute" className="font-bold text-primary underline">Create a private suggestion instead</Link>.</p>

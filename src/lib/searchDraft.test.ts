@@ -60,19 +60,19 @@ test('completed patient and requester sections can be skipped when a draft is re
   assert.equal(hasRequesterDetails(completeDraft({ contact_owner: '' })), false);
   assert.equal(hasRequesterDetails(completeDraft({ contact_name: '' })), false);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT' })), true);
-  assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', requester_phone: '' })), false);
-  assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', requester_phone: '' }), '01800000000'), true);
+  assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', requester_phone: '' })), true);
+  assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'PATIENT', contact_phone: '' }), '01800000000'), false);
   assert.equal(hasRequesterDetails(completeDraft({ requester_role: 'RELATIVE', requester_relation: '' })), true);
 });
 
-test('request payload omits stale contact fields after changing to patient', () => {
+test('self-patient payload uses the explicitly entered public contact, never the account phone', () => {
   const payload = searchRequestPayload(completeDraft({ requester_role: 'PATIENT' }));
 
   assert.equal('requester_name' in payload, false);
   assert.equal('requester_relation' in payload, false);
-  assert.equal('contact_owner' in payload, false);
+  assert.equal(payload.contact_owner, 'PATIENT');
   assert.equal('contact_name' in payload, false);
-  assert.equal('contact_phone' in payload, false);
+  assert.equal(payload.contact_phone, '01700000000');
   assert.equal('requester_phone' in payload, false);
   assert.equal(payload.blood_component, 'WHOLE_BLOOD');
   assert.equal(payload.units_required, 2);

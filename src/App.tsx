@@ -10,6 +10,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import RegisterPage from './pages/RegisterPage';
 import RequestDetailsPage from './pages/RequestDetailsPage';
 import RequestsPage from './pages/RequestsPage';
+import DeviceRequestsPage from './pages/DeviceRequestsPage';
 import AboutPage from './pages/info/AboutPage';
 import ContactPage from './pages/info/ContactPage';
 import PrivacyPage from './pages/info/PrivacyPage';
@@ -94,6 +95,7 @@ export default function App() {
                 donors is how a request is created. Old links land on search. */}
             <Route path="/request/new" element={<Navigate to="/directory" replace />} />
             <Route path="/requests" element={<RequestsPage user={user} authLoading={loading} />} />
+            <Route path="/device-requests" element={<DeviceRequestsPage />} />
             <Route path="/community" element={<CommunityRoute><CommunityPage user={user} /></CommunityRoute>} />
             <Route path="/community/new" element={loading ? <RouteLoading /> : user ? <CommunityRoute><CommunityEditorPage /></CommunityRoute> : <Navigate to="/login?returnTo=%2Fcommunity%2Fnew" replace />} />
             <Route path="/community/:slug" element={<CommunityRoute><CommunityPostPage user={user} /></CommunityRoute>} />

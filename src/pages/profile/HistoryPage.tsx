@@ -1,3 +1,6 @@
+import DateInput from '../../components/DateInput';
+import GuidedForm from '../../components/GuidedForm';
+import Select from '../../components/Select';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Calendar, Edit2, ImagePlus, LoaderCircle, Plus, Save, Share2, Trash2, X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router';
@@ -165,13 +168,13 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
           <div><h2 className="text-2xl font-extrabold tracking-tight">Donation history</h2><p className="mt-1 text-slate-500">Exact records and notes stay private. Only your total is shown on donor cards.</p></div>
           <div className="rounded-2xl bg-rose-50 px-4 py-3 text-center text-rose-900"><strong className="block text-2xl">{total}</strong><span className="text-xs font-bold">total donation{total === 1 ? '' : 's'}</span></div>
         </div>
-        <form onSubmit={submit} className="mt-7 grid gap-4 sm:grid-cols-2">
+        <GuidedForm onSubmit={submit} className="mt-7 grid gap-4 sm:grid-cols-2">
           <div><label htmlFor="donation-date" className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Date</label><input id="donation-date" type="date" required max={new Date().toISOString().slice(0, 10)} value={date} onChange={event => setDate(event.target.value)} className="input" /></div>
           <div><label htmlFor="donation-organization" className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Hospital or organization</label><input id="donation-organization" required maxLength={120} value={organization} onChange={event => setOrganization(event.target.value)} placeholder="e.g. Dhaka Medical College Hospital" className="input" /></div>
-          <div><label htmlFor="donation-request" className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Linked Drop request (optional)</label><select id="donation-request" value={requestId} onChange={event => setRequestId(event.target.value)} className="input"><option value="">Not linked</option>{confirmedRequests.filter(request => request.id === requestId || !records.some(record => record.id !== editingId && record.request_id === request.id)).map(request => <option key={request.id} value={request.id}>{request.label}</option>)}</select></div>
+          <div><label htmlFor="donation-request" className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Linked Drop request (optional)</label><Select id="donation-request" value={requestId} onChange={event => setRequestId(event.target.value)} className="input"><option value="">Not linked</option>{confirmedRequests.filter(request => request.id === requestId || !records.some(record => record.id !== editingId && record.request_id === request.id)).map(request => <option key={request.id} value={request.id}>{request.label}</option>)}</Select></div>
           <div><label htmlFor="donation-note" className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Private note (optional)</label><input id="donation-note" maxLength={500} value={note} onChange={event => setNote(event.target.value)} placeholder="Visible only to you" className="input" /></div>
           <div className="flex gap-2 sm:col-span-2"><button disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 font-bold text-white hover:bg-primary-dark disabled:opacity-50">{editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}{editingId ? 'Update record' : 'Add record'}</button>{editingId && <button type="button" onClick={resetForm} className="min-h-11 rounded-xl bg-slate-100 px-4 font-bold">Cancel</button>}</div>
-        </form>
+        </GuidedForm>
         {message && <p className={message.type === 'success' ? 'mt-4 text-green-700 font-bold text-sm' : 'mt-4 text-red-700 font-bold text-sm'} role={message.type === 'error' ? 'alert' : 'status'}>{message.text}</p>}
       </div>
 
@@ -187,7 +190,7 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
                   <div className="flex flex-wrap justify-end gap-1"><button type="button" onClick={() => openShare(record)} aria-label={`Share donation at ${record.organization}`} className="p-2 text-primary hover:text-primary-dark"><Share2 className="h-4 w-4" /></button>{record.source !== 'DROP_REQUEST' && <><button type="button" onClick={() => edit(record)} aria-label={`Edit donation at ${record.organization}`} className="p-2 text-slate-500 hover:text-slate-900"><Edit2 className="h-4 w-4" /></button><button type="button" disabled={saving} onClick={() => persist(records.filter(item => item.id !== record.id), 'Donation record deleted.')} aria-label={`Delete donation at ${record.organization}`} className="p-2 text-slate-400 hover:text-red-600 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></>}</div>
                 </div>
                 {sharingId === record.id && (
-                  <form onSubmit={createShareDraft} className="mt-5 rounded-2xl border border-rose-200 bg-rose-50/60 p-4 sm:p-5">
+                  <GuidedForm onSubmit={createShareDraft} className="mt-5 rounded-2xl border border-rose-200 bg-rose-50/60 p-4 sm:p-5">
                     <div className="flex items-center justify-between gap-3"><div><h3 className="font-extrabold text-slate-950">Prepare a public donation story</h3><p className="mt-1 text-xs leading-5 text-slate-600">Nothing publishes yet. Review the private draft on the next screen.</p></div><button type="button" onClick={closeShare} aria-label="Close share form" className="p-2 text-slate-500"><X className="h-4 w-4" /></button></div>
                     <div className="mt-4 grid gap-4">
                       <div><label htmlFor={`share-title-${record.id}`} className="text-xs font-bold uppercase tracking-widest text-slate-500">Public title</label><input id={`share-title-${record.id}`} required minLength={8} maxLength={120} value={shareTitle} onChange={event => setShareTitle(event.target.value)} className="input mt-2" /></div>
@@ -202,7 +205,7 @@ export default function HistoryPage({ user, onUpdate }: ProfilePageProps) {
                       <p className="rounded-xl bg-white px-4 py-3 text-xs leading-5 text-slate-600">Private notes, linked request details, patient information, contact numbers, and medical information are never copied into the draft.</p>
                       <button disabled={sharing} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-extrabold text-white disabled:opacity-60 sm:justify-self-start">{sharing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}{sharing ? 'Preparing draft…' : 'Review share draft'}</button>
                     </div>
-                  </form>
+                  </GuidedForm>
                 )}
               </li>
             ))}

@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.151`
+Current application version: `0.0.152`
 
 ## Overview
 
@@ -49,7 +49,10 @@ extraction is an optional later scaling step rather than a client-parity gate.
    than a hundred and thirty. A column whose correct value for every existing
    row is a constant, like `listing_state`, is filled by the column default and
    needs no pass at all.
-4. Active requests with past `expires_at` timestamps are marked `CANCELLED`.
+4. Request lifecycle v2 migration runs once per stored request without reviving
+   closed or already expired rows. Expired guest posts are removed from active
+   storage; owned posts become `EXPIRED` private history. Reads and mutations
+   independently enforce expiry; a minute-level maintenance pass removes stale rows.
 5. No data is seeded; the datastore starts empty and is populated only by real
    user activity.
 6. In development, Express mounts Vite middleware for the React app.
@@ -59,6 +62,39 @@ extraction is an optional later scaling step rather than a client-parity gate.
 9. The frontend talks to the backend through relative `/api` routes.
 
 ## Frontend
+
+### Guest-first ownership and deadlines
+
+`POST /guest/session` issues a server-generated random device secret. Only its
+SHA-256 hash is stored in `common_guest_devices` and the guest request grant.
+The website uses an HttpOnly/Secure/SameSite cookie; Flutter stores the secret
+securely and sends `X-Drop-Guest`. Fingerprints do not authorize requests.
+Each guest grant expires at its request deadline independently of the credential.
+`GET /guest/requests` and the request detail permitted-actions projection support
+same-device management. All successful session-issuing login paths adopt all
+unexpired matching guest requests, persisting ownership before revoking grants.
+Serialized request writes prevent adoption/expiry mutation races.
+
+`needed_date` is a Bangladesh calendar date from today through day 15 inclusive.
+`needed_by` is the next midnight; `expires_at` is that deadline for guests or
+30 days later for account ownership. Legacy timing inputs are converted on the
+server. Public responses are allowlisted and never contain account phone, DOB,
+credential hashes or private ownership IDs. Explicit closure reasons remove
+posts from the public feed without manufacturing donation confirmation.
+
+`POST /auth/start` intentionally returns password-versus-OTP account branching.
+It exposes limited account existence, with phone/device/IP throttles and no
+profile data. `/api` and `/api/v1` both use the same handlers and privacy checks.
+
+`Select`, `DateInput`, `StepFlow`, `GuidedForm` and `QuestionPages` provide custom
+keyboard-accessible controls and one-to-three-field pages. Browser request and
+short-lived account drafts preserve answers without saving OTPs or passwords.
+Flutter has independent widgets and encrypted drafts, not an embedded website.
+Its operations route is also native: capability-filtered records and explicit
+three-input staff reviews call the existing `/api/v1/admin/*` endpoints. The
+server retains hierarchy checks and audit logging; operations data is not cached
+to device storage. The Android test APK contains a QA-only TalkBack focus probe
+that preserves the real accessibility service and is absent from release builds.
 
 Entry points:
 
@@ -74,12 +110,11 @@ Entry points:
 - `src/components/search/` holds the guided criteria form, combined district
   and upazila step, searchable facility combobox, shared requester-role picker,
   donor result card, and `RequestGate`. The gate reuses completed draft answers,
-  keeps the current search in one compact editable context card, and presents
-  role, patient identity, blood requirement, contact, and review as an explicit
-  five-step journey before requester verification. A patient requester uses one
-  verified number for both account ownership and donor calls. Otherwise the
-  verified requester identity remains private and the separately chosen patient-side
-  call number is published by consent without being presented as phone-verified.
+  keeps the current search in an open editable context row, and presents role,
+  patient identity, reason, blood requirement, public contact, date, and review
+  in short steps before account verification. Even a patient requesting for
+  themselves explicitly enters and approves the public contact; the account
+  phone is never substituted. The patient-side number is not independently verified.
   Role-aware guidance identifies whose information belongs in every field, and
   review keeps the patient, private request owner, and public call contact separate.
   Choosing the relative role is sufficient; the flow does not ask for a more
@@ -196,11 +231,12 @@ Routes:
   patient, and contact answers are summarized rather than requested again and
   remain editable. Separate patient identity, blood requirement, contact, and
   review stages carry explicit publication consent before inline requester verification.
-  Existing members sign in there; a new verified phone becomes a minimal member
-  account automatically without a separate registration or donor-profile form.
+  Existing password accounts use password or OTP recovery; passwordless accounts
+  use OTP. New verified phones continue through private DOB/location, optional
+  donor enrollment and conditional donation/availability details, then password.
   Only the chosen call contact is published, while the request owner remains private.
-  Publishing the request is what
-  unmasks the number. The keyboard-operable
+  Publication alone never unmasks a donor. Verified account ownership is required.
+  The keyboard-operable
   facility combobox preloads and searches only the selected district. The
   generated snapshot includes every DGHS registry function except the two
   `Administration` values, `Administrative`, and `Knowledge Management
@@ -283,8 +319,8 @@ Client state:
 - The session lives in an httpOnly `drop_session` cookie set by the server;
   JavaScript never sees the token, and same-origin fetches send it
   automatically.
-- A legacy `drop_fingerprint` remains for old comment attribution and ownership
-  migration. New blood requests require a verified account.
+- A legacy `drop_fingerprint` remains only for old comment attribution.
+  Guest ownership uses the server-issued device secret, never a fingerprint.
 - Auth state is derived from whether `GET /api/me` succeeds.
 - Donor search masks every phone number, for guests and signed-in members
   alike. A number is unmasked only by an explicit, recorded reveal against a
@@ -417,11 +453,9 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   a self-contact reveal.
 - `POST /api/search/requests` creates and publishes in one step, because the
   flow has a single submit. It requires explicit consent, resolves the district
-  server-side rather than trusting client coordinates, and takes the requester's
-  phone from their verified account. In the third-party coordinator flow, that
-  verified account number is collected separately from the patient or relative
-  number that donors may use for the request; the private account number is
-  never accepted from the request payload. A repeat for the same group and upazila
+  server-side rather than trusting client coordinates. The public patient or
+  relative contact must always be explicitly supplied and consented, even for
+  patient-self requests; private account phone is never substituted. A repeat for the same group and upazila
   within six hours returns the request already in flight rather than a 409:
   re-searching after a dead-end call is not a mistake to error at.
 - `POST /api/requests/:id/reveals` unmasks one donor's number. It requires a
@@ -874,13 +908,10 @@ Operational endpoints and jobs:
   activities and must remain disabled outside controlled testing.
 - Notification choices are currently device-local preferences; there is no
   push or email delivery provider.
-- The following fingerprint limitation now applies only to legacy anonymous
-  comments and ownership migration; new requests require verified accounts.
-- Anonymous ownership relies on a client-generated fingerprint. The server
-  requires ≥16 characters and only honors reassignment when the request body
-  and `x-fingerprint` header agree, but a client that knows a fingerprint can
-  still impersonate that anonymous owner. Residual risk accepted until real
-  accounts are required for request creation.
+- Legacy anonymous comment attribution still accepts a client fingerprint.
+  It does not authorize request access or account adoption. Guest device access
+  is bearer-secret access: clearing local storage loses management rights, and
+  a stolen device secret grants management of its unexpired guest posts only.
 - Rate limits (auth, general API, anonymous comments) are in memory, per
   process, and reset on restart.
 - User and request data are held in a server-memory write-through cache that

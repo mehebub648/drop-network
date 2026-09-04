@@ -1,3 +1,5 @@
+import GuidedForm from '../components/GuidedForm';
+import Select from '../components/Select';
 import { useMemo, useState, type FormEvent } from 'react';
 import { CheckCircle2, Copy, Share2, UserRoundPlus } from 'lucide-react';
 import { api } from '../lib/api';
@@ -75,20 +77,20 @@ export default function ContributeDonorPage() {
         description="Anyone can help add a donor. The entry stays hidden until the phone owner opens the claim link, verifies their number, confirms every detail, and consents."
         icon={UserRoundPlus}
       />
-      <form onSubmit={submit} className="surface p-6 sm:p-8">
+      <GuidedForm onSubmit={submit} className="surface p-6 sm:p-8">
         <StatusBadge tone="success" icon={CheckCircle2}>No unsolicited SMS · not searchable</StatusBadge>
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           <label className="sm:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Donor name</span><input required maxLength={100} value={name} onChange={event => setName(event.target.value)} className="input" /></label>
           <label className="sm:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Donor Bangladesh mobile</span><input required type="tel" inputMode="tel" autoComplete="off" placeholder="01XXXXXXXXX" value={phone} onChange={event => setPhone(event.target.value)} className="input" /></label>
-          <label><span className="mb-2 block text-sm font-bold text-slate-700">Blood group <span className="font-medium text-slate-400">(optional)</span></span><select value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input"><option value="">Owner will confirm</option>{BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}</select></label>
-          <label><span className="mb-2 block text-sm font-bold text-slate-700">District <span className="font-medium text-slate-400">(optional)</span></span><select value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input"><option value="">Owner will confirm</option>{BD_LOCATION_NAMES.map(item => <option key={item}>{item}</option>)}</select></label>
-          <label className="sm:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Upazila <span className="font-medium text-slate-400">(optional)</span></span><select disabled={!district} value={upazila} onChange={event => setUpazila(event.target.value)} className="input"><option value="">Owner will confirm</option>{upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          <label><span className="mb-2 block text-sm font-bold text-slate-700">Blood group <span className="font-medium text-slate-400">(optional)</span></span><Select value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input"><option value="">Owner will confirm</option>{BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}</Select></label>
+          <label><span className="mb-2 block text-sm font-bold text-slate-700">District <span className="font-medium text-slate-400">(optional)</span></span><Select value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input"><option value="">Owner will confirm</option>{BD_LOCATION_NAMES.map(item => <option key={item}>{item}</option>)}</Select></label>
+          <label className="sm:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Upazila <span className="font-medium text-slate-400">(optional)</span></span><Select disabled={!district} value={upazila} onChange={event => setUpazila(event.target.value)} className="input"><option value="">Owner will confirm</option>{upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</Select></label>
           <label className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={website} onChange={event => setWebsite(event.target.value)} /></label>
         </div>
         <p className="mt-5 text-sm leading-6 text-slate-600">You receive a private link to share yourself. Drop does not contact the donor merely because you entered their number.</p>
         {error && <div role="alert" className="alert alert-error mt-5">{error}</div>}
         <button disabled={busy} className="primary-button mt-6">{busy ? 'Creating private link…' : 'Create private claim link'}</button>
-      </form>
+      </GuidedForm>
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import GuidedForm from '../components/GuidedForm';
+import Select from '../components/Select';
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, ArrowLeft, BookOpenText, Check, Copy, ExternalLink, Flag, HeartHandshake, LoaderCircle, MessageCircle, PenLine, Share2, ShieldCheck } from 'lucide-react';
 import { Link, useParams } from 'react-router';
@@ -313,12 +315,12 @@ export default function CommunityPostPage({ user }: { user: any }) {
         </div>
 
         {reportOpen && user && (
-          <form onSubmit={submitReport} className="mt-5 grid gap-4 border-t border-slate-100 pt-5">
+          <GuidedForm onSubmit={submitReport} className="mt-5 grid gap-4 border-t border-slate-100 pt-5">
             <div>
               <label htmlFor="community-report-reason" className="text-xs font-extrabold uppercase tracking-widest text-slate-500">Reason</label>
-              <select id="community-report-reason" value={reportReason} onChange={event => setReportReason(event.target.value as ReportReason)} className="input mt-2" disabled={reportBusy}>
+              <Select id="community-report-reason" value={reportReason} onChange={event => setReportReason(event.target.value as ReportReason)} className="input mt-2" disabled={reportBusy}>
                 {reportReasons.map(reason => <option key={reason.value} value={reason.value}>{reason.label}</option>)}
-              </select>
+              </Select>
             </div>
             <div>
               <label htmlFor="community-report-details" className="text-xs font-extrabold uppercase tracking-widest text-slate-500">Details (optional)</label>
@@ -328,7 +330,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
               {reportBusy && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
               {reportBusy ? 'Sending report…' : 'Send report'}
             </button>
-          </form>
+          </GuidedForm>
         )}
         {reportMessage && (
           <p className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${reportMessage.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`} role={reportMessage.type === 'error' ? 'alert' : 'status'}>

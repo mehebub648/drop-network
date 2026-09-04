@@ -1,3 +1,4 @@
+import Select from '../Select';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   Building2,
@@ -49,6 +50,7 @@ function normalized(value: string) {
 function DistrictPicker({ value, onChange }: { value: string; onChange: (district: string) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
   const openerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
@@ -114,7 +116,18 @@ function DistrictPicker({ value, onChange }: { value: string; onChange: (distric
                   ref={searchRef}
                   type="search"
                   value={query}
-                  onChange={event => setQuery(event.target.value)}
+                  onChange={event => { setQuery(event.target.value); setActive(0); }}
+                  role="combobox" aria-expanded="true" aria-controls={`${resultId}-list`} aria-autocomplete="list"
+                  aria-activedescendant={filteredDistricts[active] ? `${resultId}-${active}` : undefined}
+                  onKeyDown={event => {
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      const next = Math.max(0, Math.min(filteredDistricts.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1)));
+                      setActive(next); document.getElementById(`${resultId}-${next}`)?.scrollIntoView({ block: 'nearest' });
+                    } else if (event.key === 'Enter' && filteredDistricts[active]) {
+                      event.preventDefault(); onChange(filteredDistricts[active]); close();
+                    }
+                  }}
                   aria-describedby={resultId}
                   placeholder="Type a district name"
                   className="input pl-11 pr-20"
@@ -128,10 +141,11 @@ function DistrictPicker({ value, onChange }: { value: string; onChange: (distric
               <p id={resultId} role="status" aria-live="polite" className="mt-3 text-xs font-bold text-slate-600">
                 {filteredDistricts.length} district{filteredDistricts.length === 1 ? '' : 's'}
               </p>
-              <div role="listbox" aria-label="Districts" className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 p-1.5">
-                {filteredDistricts.map(district => (
+              <div id={`${resultId}-list`} role="listbox" aria-label="Districts" className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 p-1.5">
+                {filteredDistricts.map((district, index) => (
                   <button
                     key={district}
+                    id={`${resultId}-${index}`} tabIndex={-1}
                     type="button"
                     role="option"
                     aria-selected={district === value}
@@ -372,7 +386,7 @@ export default function SearchCriteriaForm({
               <span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Upazila or thana</span>
               <span className="relative block">
                 <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
-                <select
+                <Select
                   required
                   disabled={!value.district}
                   value={value.upazila}
@@ -381,7 +395,7 @@ export default function SearchCriteriaForm({
                 >
                   <option value="">{value.district ? 'Choose an upazila or thana' : 'Choose a district first'}</option>
                   {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
+                </Select>
                 <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
               </span>
             </label>

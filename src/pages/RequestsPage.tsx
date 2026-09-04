@@ -1,3 +1,5 @@
+import Select from '../components/Select';
+import RequestVerification from '../components/RequestVerification';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Activity, AlertCircle, ChevronLeft, ChevronRight, Plus, SlidersHorizontal, X } from 'lucide-react';
@@ -10,6 +12,7 @@ import { BD_LOCATION_NAMES } from '../lib/locations';
 
 type RequestItem = {
   id: string;
+  verification_state?: string;
   blood_group: string;
   needed_by?: string | null;
   units_required?: number | null;
@@ -67,8 +70,8 @@ function FilterSheet({ initial, onApply, onClose }: { initial: FilterDraft; onAp
             <button type="button" onClick={onClose} aria-label="Close filters" className="flex h-12 w-12 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"><X className="h-5 w-5" aria-hidden="true" /></button>
           </div>
           <div className="mt-6 space-y-5">
-            <label className="block text-sm font-extrabold text-slate-800">Blood group<select value={draft.bloodGroup} onChange={event => setDraft(current => ({ ...current, bloodGroup: event.target.value }))} className="input mt-2 min-h-12 w-full text-base"><option value="">All blood groups</option>{BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}</select></label>
-            <label className="block text-sm font-extrabold text-slate-800">District<select value={draft.district} onChange={event => setDraft(current => ({ ...current, district: event.target.value }))} className="input mt-2 min-h-12 w-full text-base"><option value="">All districts</option>{BD_LOCATION_NAMES.map(location => <option key={location} value={location}>{location}</option>)}</select></label>
+            <label className="block text-sm font-extrabold text-slate-800">Blood group<Select value={draft.bloodGroup} onChange={event => setDraft(current => ({ ...current, bloodGroup: event.target.value }))} className="input mt-2 min-h-12 w-full text-base"><option value="">All blood groups</option>{BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}</Select></label>
+            <label className="block text-sm font-extrabold text-slate-800">District<Select value={draft.district} onChange={event => setDraft(current => ({ ...current, district: event.target.value }))} className="input mt-2 min-h-12 w-full text-base"><option value="">All districts</option>{BD_LOCATION_NAMES.map(location => <option key={location} value={location}>{location}</option>)}</Select></label>
             <label className="flex min-h-14 cursor-pointer items-center justify-between gap-4 rounded-2xl bg-slate-50 px-4 py-3"><span><span className="block text-sm font-extrabold text-slate-900">Urgent only</span><span className="block text-xs font-semibold text-slate-500">Requests needed within 72 hours</span></span><input type="checkbox" checked={draft.urgent} onChange={event => setDraft(current => ({ ...current, urgent: event.target.checked }))} className="h-5 w-5 accent-red-700" /></label>
           </div>
           <div className="mt-7 grid grid-cols-2 gap-3"><button type="button" onClick={() => setDraft({ bloodGroup: '', district: '', urgent: false })} className="min-h-12 rounded-2xl border border-slate-200 px-5 text-sm font-extrabold text-slate-700 hover:bg-slate-50">Reset</button><button type="button" onClick={() => onApply(draft)} className="min-h-12 rounded-2xl bg-primary px-5 text-sm font-extrabold text-white hover:bg-primary-dark">Apply filters</button></div>
@@ -81,7 +84,7 @@ function FilterSheet({ initial, onApply, onClose }: { initial: FilterDraft; onAp
 function RequestRows({ requests, secondary = false }: { requests: RequestItem[]; secondary?: boolean }) {
   return (
     <Surface className={`divide-y divide-slate-100 overflow-hidden ${secondary ? 'border-slate-200 bg-slate-50/70 shadow-none' : ''}`}>
-      {requests.map(request => <article key={request.id}><Link to={`/request/${request.id}`} className="group flex min-h-28 items-center gap-4 p-4 transition-colors hover:bg-rose-50/45 sm:gap-5 sm:p-5"><div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-black shadow-sm ${secondary ? 'border border-rose-200 bg-white text-primary' : 'bg-primary text-white'}`}>{request.blood_group}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><UrgencyBadge neededBy={request.needed_by} /><span className="text-xs font-bold text-slate-500">{formatNeededDate(request.needed_by)}</span></div><h2 className={`mt-2 truncate text-base font-extrabold sm:text-lg ${secondary ? 'text-slate-800' : 'text-slate-950'}`}>{request.hospital_name || 'Collection facility'}</h2><p className="mt-1 truncate text-sm font-semibold text-slate-500">{requestLocation(request)}</p><p className={`mt-2 text-xs font-extrabold ${secondary ? 'text-slate-600' : 'text-slate-700'}`}>{request.units_required || 1} unit{(request.units_required || 1) === 1 ? '' : 's'} requested</p></div><ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" /></Link></article>)}
+      {requests.map(request => <article key={request.id}><Link to={`/request/${request.id}`} className="group flex min-h-28 items-center gap-4 p-4 transition-colors hover:bg-rose-50/45 sm:gap-5 sm:p-5"><div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-black shadow-sm ${secondary ? 'border border-rose-200 bg-white text-primary' : 'bg-primary text-white'}`}>{request.blood_group}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><UrgencyBadge neededBy={request.needed_by} /><RequestVerification state={request.verification_state} /><span className="text-xs font-bold text-slate-500">{formatNeededDate(request.needed_by)}</span></div><h2 className={`mt-2 truncate text-base font-extrabold sm:text-lg ${secondary ? 'text-slate-800' : 'text-slate-950'}`}>{request.hospital_name || 'Collection facility'}</h2><p className="mt-1 truncate text-sm font-semibold text-slate-500">{requestLocation(request)}</p><p className={`mt-2 text-xs font-extrabold ${secondary ? 'text-slate-600' : 'text-slate-700'}`}>{request.units_required || 1} unit{(request.units_required || 1) === 1 ? '' : 's'} requested</p></div><ChevronRight className="h-5 w-5 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" /></Link></article>)}
     </Surface>
   );
 }

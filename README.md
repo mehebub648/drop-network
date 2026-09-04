@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.151`
+Current version: `0.0.152`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -127,8 +127,8 @@ Refresh the district facility files from the public DGHS registry with:
   while the standard API rate limit still applies.
 - Public and member pages use task-first responsive layouts. Mobile account
   sections open from an accessible bottom sheet instead of a horizontal rail,
-  task routes omit the promotional footer, and Android embedded workflows hide
-  website chrome before first paint while retaining the shared security gates.
+  task routes omit the promotional footer. The Android companion uses native
+  Flutter workflows and the shared backend security gates, without WebViews.
 - Registered donors can self-report an exact last-donation date, an approximate
   number of days, months, or years ago, or that they have never donated, plus a
   lifetime donation count. Search cards show that bounded summary when present;
@@ -143,12 +143,14 @@ Refresh the district facility files from the public DGHS registry with:
   the account record only. These settings extend eligible search locations and
   create concise match reasons; raw preferences, windows, and the private note
   are never included in public result cards or donor partition copies.
-- Every new account creates a donor profile with blood group, location, and an
-  explicit availability choice. Members who choose “I’m not available to
-  donate” stay off live search and may save a private optional reason.
-- Creating a public request requires a verified account, the exact blood
-  collection facility and address, patient-reference details, a future required
-  time, a verified contact, and explicit review/consent before publication.
+- Guided registration verifies the private account phone, then collects private
+  DOB/location and optional donor enrollment (initially selected). Donors make an
+  explicit availability choice; saving a profile never implies medical eligibility.
+- A guest can publish patient/transfusion details and an explicitly consented
+  patient-side contact before signing in. Account phone is never substituted.
+  Dates are today through 15 days ahead in Bangladesh time. Guest posts expire
+  at the end of that date; owned posts remain live for 30 more days unless closed.
+  Verified account ownership is still required for protected donor contact.
   The searchable facility picker loads only the selected district from a
   33,799-entry DGHS registry snapshot. Duplicate registry codes with the same
   canonical facility name and locality are consolidated for display while all

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import {
   matchingRequestReasonOptions,
@@ -14,6 +14,7 @@ export default function RequestReasonCombobox({
   onChange: (value: RequestReason) => void;
 }) {
   const listId = useId();
+  const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(() => requestReasonLabel(value));
   const [activeIndex, setActiveIndex] = useState(0);
@@ -24,6 +25,7 @@ export default function RequestReasonCombobox({
   }, [open, value]);
 
   const choose = (reason: RequestReason) => {
+    input.current?.focus();
     onChange(reason);
     setQuery(requestReasonLabel(reason));
     setOpen(false);
@@ -41,7 +43,8 @@ export default function RequestReasonCombobox({
     } else if (event.key === 'Enter' && open && options[activeIndex]) {
       event.preventDefault();
       choose(options[activeIndex].value);
-    } else if (event.key === 'Escape') {
+    } else if (event.key === 'Escape' && open) {
+      event.preventDefault(); event.stopPropagation();
       setOpen(false);
     }
   };
@@ -55,6 +58,7 @@ export default function RequestReasonCombobox({
     >
       <Search className="pointer-events-none absolute left-4 top-6 z-10 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
       <input
+        ref={input}
         role="combobox"
         aria-label="Reason blood is needed"
         aria-autocomplete="list"
@@ -99,6 +103,8 @@ export default function RequestReasonCombobox({
               <button
                 id={`${listId}-${index}`}
                 type="button"
+                tabIndex={-1}
+                onMouseDown={event => event.preventDefault()}
                 role="option"
                 aria-selected={value === option.value}
                 onMouseEnter={() => setActiveIndex(index)}
@@ -112,6 +118,7 @@ export default function RequestReasonCombobox({
               </button>
             </li>
           ))}
+          {!options.length && <li role="status" className="p-3 text-sm">No matching reasons. Try another search.</li>}
         </ul>
       )}
     </div>

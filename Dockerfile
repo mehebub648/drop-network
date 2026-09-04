@@ -8,7 +8,7 @@ FROM base AS dev
 
 ENV NODE_ENV=development
 
-RUN npm ci
+RUN npm ci --no-audit
 
 COPY . .
 
@@ -20,7 +20,7 @@ FROM base AS build
 
 ENV NODE_ENV=production
 
-RUN npm ci
+RUN npm ci --no-audit
 
 COPY . .
 
@@ -37,7 +37,7 @@ ENV COMMUNITY_MEDIA_PATH=/data/media/community
 
 COPY --chown=node:node package.json package-lock.json ./
 
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --no-audit
 
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node server ./server

@@ -1,3 +1,4 @@
+import GuidedForm from '../components/GuidedForm';
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, BookOpenText, ChevronLeft, ChevronRight, FileImage, HeartHandshake, ImagePlus, LoaderCircle, Send, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
@@ -217,7 +218,7 @@ export default function CommunityEditorPage() {
         <p className="mt-2 text-sm leading-6 text-slate-600">Share a donation story or responsible health guidance without private details.</p>
       </header>
 
-      <form onSubmit={submit} className="community-editor-form space-y-4">
+      <GuidedForm onSubmit={submit} className="community-editor-form space-y-4">
         <div className="theme-card border border-slate-100 p-5 sm:p-8">
           <fieldset disabled={submitting}>
             <legend className="text-sm font-extrabold text-slate-950">Choose a post type</legend>
@@ -364,7 +365,7 @@ export default function CommunityEditorPage() {
             {body.trim() ? <MarkdownContent markdown={body} className="text-sm" /> : <p className="text-sm leading-6 text-slate-400">Start writing to preview the safely rendered Markdown.</p>}
           </div>
         </details>
-      </form>
+      </GuidedForm>
 
       <details className="community-owner-posts border-t border-slate-200 pt-5">
         <summary id="my-community-posts" className="flex min-h-12 cursor-pointer items-center justify-between gap-4 text-xl font-extrabold text-slate-950">

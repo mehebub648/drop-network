@@ -66,7 +66,7 @@ export async function syncDonorToPartition(user: any) {
   // Search partitions are only a lookup cache. Keep private account fields in
   // common_users, their authoritative store, and out of these public-facing
   // search documents.
-  const { password: _password, donor_profile: donorProfile, ...searchUser } = user;
+  const { password: _password, date_of_birth: _dob, account_location: _accountLocation, donor_profile: donorProfile, ...searchUser } = user;
   const {
     medical_conditions: _medicalConditions,
     private_coordination_note: _privateCoordinationNote,
@@ -697,8 +697,18 @@ export async function countCallReports(query: CallReportQuery = {}) {
 
 export async function saveToTable(name: string, obj: any, vector: number[] = [0,0]) {
   const table = await ensureTable(name);
+  if (name === 'common_requests') {
+    await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll()
+      .execute([{ vector, id: obj.id, doc: JSON.stringify(obj) }]);
+    return;
+  }
   try {
     await table.delete(idFilter(obj.id));
   } catch (e) {}
   await table.add([{ vector, id: obj.id, doc: JSON.stringify(obj) }]);
+}
+
+export async function deleteRequestDocument(id: string) {
+  const table = await ensureTable('common_requests');
+  await table.delete(idFilter(id));
 }

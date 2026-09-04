@@ -1,3 +1,5 @@
+import DateInput from '../components/DateInput';
+import GuidedForm from '../components/GuidedForm';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { CheckCircle2, Clock3, HeartHandshake, KeyRound, ShieldCheck, XCircle } from 'lucide-react';
@@ -99,12 +101,12 @@ export default function DonationFollowUpPage({ onAuthUpdate }: { onAuthUpdate: (
           <StatusBadge tone="brand" icon={KeyRound}>Phone verification</StatusBadge>
           <h2 className="mt-4 text-xl font-extrabold">Verify the donor phone</h2>
           <p className="mt-2 text-sm text-slate-600">Enter the number that received this link ({verification.phoneMasked || 'masked'}). The code is valid only for this donation follow-up.</p>
-          <form onSubmit={delivery ? verify : requestCode} className="mt-5 grid gap-4">
+          <GuidedForm onSubmit={delivery ? verify : requestCode} className="mt-5 grid gap-4">
             <label><span className="text-sm font-bold">Mobile number</span><input className="input mt-2" value={phone} onChange={event => setPhone(event.target.value)} placeholder="01XXXXXXXXX" required /></label>
             {delivery && !verificationToken && <label><span className="text-sm font-bold">Six-digit code</span><input className="input mt-2" value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" required /></label>}
             {delivery && <OtpDeliveryStatus delivery={delivery} onDeliveryChange={setDelivery} onResend={() => requestCode()} busy={busy} />}
             <button disabled={busy} className="primary-button justify-center">{busy ? 'Please wait…' : delivery ? 'Verify and continue' : 'Send verification code'}</button>
-          </form>
+          </GuidedForm>
         </Surface>
       )}
 

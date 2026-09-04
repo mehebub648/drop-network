@@ -1,3 +1,5 @@
+import GuidedForm from '../components/GuidedForm';
+import Select from '../components/Select';
 import { FormEvent, useEffect, useState } from 'react';
 import { Building2, CalendarDays, MapPin, ShieldCheck, Users } from 'lucide-react';
 import { api } from '../lib/api';
@@ -99,25 +101,25 @@ export default function PartnersPage({ user }: { user: any }) {
         {!user ? (
           <Notice tone="neutral" icon={ShieldCheck}>Log in with a verified account to apply.</Notice>
         ) : (
-          <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+          <GuidedForm onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-slate-700">Legal organization name</span>
               <input required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} className="input" />
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-slate-700">Organization type</span>
-              <select value={form.type} onChange={event => setForm({ ...form, type: event.target.value })} className="input">
+              <Select value={form.type} onChange={event => setForm({ ...form, type: event.target.value })} className="input">
                 <option value="HOSPITAL">Hospital</option>
                 <option value="BLOOD_BANK">Blood bank</option>
                 <option value="NGO">NGO</option>
-              </select>
+              </Select>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-slate-700">District</span>
-              <select required value={form.district} onChange={event => setForm({ ...form, district: event.target.value })} className="input">
+              <Select required value={form.district} onChange={event => setForm({ ...form, district: event.target.value })} className="input">
                 <option value="">Select district</option>
                 {BD_LOCATION_NAMES.map(name => <option key={name}>{name}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-slate-700">Official phone</span>
@@ -137,7 +139,7 @@ export default function PartnersPage({ user }: { user: any }) {
             </label>
             {message && <Notice tone={message.startsWith('Application') ? 'success' : 'danger'} className="sm:col-span-2">{message}</Notice>}
             <button className="primary-button sm:col-span-2">Submit for verification</button>
-          </form>
+          </GuidedForm>
         )}
       </Surface>
     </div>

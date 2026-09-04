@@ -2,6 +2,19 @@ import type { LastDonationInput, PublicDonationSummary } from './donation';
 
 const API_BASE = '/api';
 
+async function postJson(path: string, body: unknown = {}) {
+  return readJsonOrThrow(await fetch(`${API_BASE}${path}`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(body) }), 'Please try again');
+}
+
+export const experienceApi = {
+  initializeGuest: () => postJson('/guest/session'),
+  authStart: (phone: string) => postJson('/auth/start', { phone }),
+  register: (details: Record<string, unknown>) => postJson('/auth/register', { ...details, registration_context: 'GUIDED' }),
+  adopt: () => postJson('/guest/requests/adopt'),
+  closeRequest: (id: string, reason: string) => postJson(`/requests/${encodeURIComponent(id)}/close`, { reason }),
+  guestRequests: async () => readJsonOrThrow(await fetch(`${API_BASE}/guest/requests`, { cache: 'no-store' }), 'Cannot load device requests')
+};
+
 // Create or retrieve browser fingerprint. The server rejects fingerprints
 // shorter than 16 characters, so regenerate any legacy short value.
 function generateFingerprint() {
@@ -813,8 +826,7 @@ export const api = {
 
   async getRequestDetails(id: string) {
     const res = await fetch(`${API_BASE}/requests/${id}`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Not found');
-    return res.json();
+    return readJsonOrThrow(res, 'Could not load this request');
   },
 
   async updateRequestStatus(id: string, status: string) {

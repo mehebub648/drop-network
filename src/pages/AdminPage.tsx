@@ -1,3 +1,5 @@
+import GuidedForm from '../components/GuidedForm';
+import Select from '../components/Select';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity,
@@ -361,14 +363,14 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                     title="Member management"
                     description="Find accounts, inspect donor state, suspend unsafe access, revoke sessions, and manage staff hierarchy."
                   />
-                  <form onSubmit={submitMemberSearch} className="admin-filter-bar">
+                  <GuidedForm onSubmit={submitMemberSearch} className="admin-filter-bar">
                     <label className="search-field">
                       <Search className="h-4 w-4" />
                       <span className="sr-only">Search members</span>
                       <input value={userSearch} onChange={event => setUserSearch(event.target.value)} placeholder="Search name or Bangladesh phone" />
                     </label>
                     <button className="button button-primary" disabled={loading}>Search members</button>
-                  </form>
+                  </GuidedForm>
                   {loading ? <LoadingRows /> : members.length === 0 ? (
                     <EmptyState icon={Users} title="No members found" description="Try a broader name or phone search." />
                   ) : (
@@ -484,10 +486,10 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                     <label className="select-field">
                       <SlidersHorizontal className="h-4 w-4" />
                       <span className="sr-only">Filter request status</span>
-                      <select value={requestStatus} onChange={event => setRequestStatus(event.target.value)}>
+                      <Select value={requestStatus} onChange={event => setRequestStatus(event.target.value)}>
                         <option value="">All statuses</option>
                         {['DRAFT', 'ACTIVE', 'PARTIALLY_FULFILLED', 'FULFILLED', 'CANCELLED', 'EXPIRED', 'REJECTED'].map(status => <option key={status}>{status}</option>)}
-                      </select>
+                      </Select>
                     </label>
                     <span className="filter-count">{filteredRequests.length} visible request{filteredRequests.length === 1 ? '' : 's'}</span>
                   </div>
@@ -547,14 +549,14 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                     <label className="select-field">
                       <SlidersHorizontal className="h-4 w-4" />
                       <span className="sr-only">Filter community post status</span>
-                      <select
+                      <Select
                         value={communityStatus}
                         onChange={event => setCommunityStatus(event.target.value as '' | 'PUBLISHED' | 'HIDDEN')}
                       >
                         <option value="">Published and hidden</option>
                         <option value="PUBLISHED">Published</option>
                         <option value="HIDDEN">Hidden</option>
-                      </select>
+                      </Select>
                     </label>
                     <span className="filter-count">{filteredCommunityPosts.length} visible post{filteredCommunityPosts.length === 1 ? '' : 's'}</span>
                   </div>
@@ -1102,12 +1104,12 @@ function StaffRoleControl({ value, disabled, onChange }: { value: string; disabl
     <label className="compact-select">
       <span className="sr-only">Staff role</span>
       <UserCog className="h-4 w-4" />
-      <select value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
+      <Select value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
         <option value="">Member only</option>
         <option value="MODERATOR">Moderator</option>
         <option value="ADMIN">Admin</option>
         <option value="SUPERADMIN">Superadmin</option>
-      </select>
+      </Select>
     </label>
   );
 }

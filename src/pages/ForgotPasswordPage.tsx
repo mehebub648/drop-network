@@ -1,3 +1,4 @@
+import GuidedForm from '../components/GuidedForm';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { ArrowLeft, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react';
@@ -54,7 +55,7 @@ export default function ForgotPasswordPage() {
       <div className="mb-7 flex items-center gap-3" aria-label={`Step ${step} of 3`}>
         {[1, 2, 3].map(value => <span key={value} className={`h-2 flex-1 rounded-full ${value <= step ? 'bg-primary' : 'bg-slate-100'}`} />)}
       </div>
-      <form onSubmit={submit} className="space-y-5">
+      <GuidedForm onSubmit={submit} className="space-y-5">
         {step === 1 && (
           <label className="block">
             <span className="mb-2 block text-sm font-bold text-slate-800">Registered Bangladesh mobile</span>
@@ -101,7 +102,7 @@ export default function ForgotPasswordPage() {
         <button disabled={busy || (step === 2 && code.length !== 6)} className="primary-button min-h-12">
           {busy ? 'Please wait…' : step === 1 ? <>Send recovery code <ArrowRight className="h-5 w-5" /></> : step === 2 ? <>Verify code <KeyRound className="h-5 w-5" /></> : <>Save new password <CheckCircle2 className="h-5 w-5" /></>}
         </button>
-      </form>
+      </GuidedForm>
       <Link to="/login" className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-primary"><ArrowLeft className="h-4 w-4" />Back to sign in</Link>
     </AuthShell>
   );

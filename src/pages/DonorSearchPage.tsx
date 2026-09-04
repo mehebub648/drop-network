@@ -1,3 +1,4 @@
+import Select from '../components/Select';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
@@ -181,9 +182,9 @@ export default function DonorSearchPage({
   };
 
   /** Publishes the request if needed, unmasks one number, and opens the global outcome dialog. */
-  const openCall = useCallback(async (donor: SearchDonorCard) => {
+  const openCall = useCallback(async (donor: SearchDonorCard, publishedId?: string) => {
     const current = draftRef.current;
-    let requestId = current.request_id;
+    let requestId = publishedId || current.request_id;
     if (!requestId) {
       const created = await api.createSearchRequest(searchRequestPayload(current));
       requestId = created.request.id;
@@ -201,7 +202,7 @@ export default function DonorSearchPage({
       return;
     }
     setSelected(donor);
-    if (!user || !draft.request_id) {
+    if (!user?.is_verified || !draft.request_id) {
       setGateOpen(true);
       return;
     }
@@ -295,6 +296,7 @@ export default function DonorSearchPage({
 
       {hasQuery && (
         <section aria-label="Donor matches">
+          <button type="button" className="button button-primary mb-5" onClick={() => { if (!contextComplete) { setRefineOpen(true); setError('Choose the collection place and your role first.'); return; } setSelected(null); setGateOpen(true); }}>Publish a blood request</button>
           <div className="mb-5 flex items-center gap-2 sm:justify-end">
             <div className="flex w-full items-center gap-2 sm:w-auto sm:self-auto">
               {!loading && results && (
@@ -320,14 +322,14 @@ export default function DonorSearchPage({
               {!loading && !error && results && (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,1fr)_minmax(10rem,0.7fr)_auto_auto] lg:items-end">
                   <label className="text-sm font-extrabold text-slate-800">Sort donor matches
-                    <select value={sort} onChange={event => updateSearchOption('sort', event.target.value)} className="input mt-1.5">
+                    <Select value={sort} onChange={event => updateSearchOption('sort', event.target.value)} className="input mt-1.5">
                       {SEARCH_SORTS.map(option => <option key={option} value={option}>{SORT_LABELS[option]}</option>)}
-                    </select>
+                    </Select>
                   </label>
                   <label className="text-sm font-extrabold text-slate-800">Blood group needed
-                    <select value={criteria.blood_group} onChange={event => updateBloodGroup(event.target.value)} className="input mt-1.5">
+                    <Select value={criteria.blood_group} onChange={event => updateBloodGroup(event.target.value)} className="input mt-1.5">
                       {BLOOD_GROUPS.map(group => <option key={group} value={group}>{group}</option>)}
-                    </select>
+                    </Select>
                   </label>
                   <label className="flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
                     <input type="checkbox" checked={exactGroupOnly} onChange={event => updateSearchOption('exact_group', event.target.checked)} className="h-4 w-4 accent-red-600" />
@@ -451,7 +453,7 @@ export default function DonorSearchPage({
         />
       )}
 
-      {gateOpen && selected && (
+      {gateOpen && (
         <RequestGate
           draft={draft}
           onDraftChange={updateDraft}
@@ -462,9 +464,9 @@ export default function DonorSearchPage({
             setRefineOpen(true);
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          onReady={async () => {
+          onReady={async (requestId) => {
             await onLogin();
-            await openCall(selected);
+            if (selected) await openCall(selected, requestId);
             setGateOpen(false);
           }}
         />

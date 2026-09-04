@@ -1,3 +1,6 @@
+import Select from './Select';
+import DateInput from './DateInput';
+import QuestionPages from './QuestionPages';
 import {
   APPROXIMATE_DONATION_LIMITS,
   APPROXIMATE_DONATION_UNITS,
@@ -45,10 +48,10 @@ export default function DonationExperienceFields({
         Share an exact date, a rough time ago, or that you have never donated.
       </p>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <QuestionPages>
         <label className="block sm:col-span-2">
           <span className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Last donation</span>
-          <select
+          <Select
             value={value.kind}
             onChange={event => setKind(event.target.value as DonationExperienceDraft['kind'])}
             className="input"
@@ -58,14 +61,13 @@ export default function DonationExperienceFields({
             <option value="EXACT">I know the exact date</option>
             <option value="APPROXIMATE">I remember roughly how long ago</option>
             <option value="NEVER">I have never donated</option>
-          </select>
+          </Select>
         </label>
 
-        {value.kind === 'EXACT' && (
+        <div className="grid gap-4">{value.kind === 'EXACT' && (
           <label className="block">
             <span className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Exact date</span>
-            <input
-              type="date"
+            <DateInput
               required
               max={new Date().toISOString().slice(0, 10)}
               value={value.exactDate}
@@ -93,7 +95,7 @@ export default function DonationExperienceFields({
             </label>
             <label className="block">
               <span className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Unit</span>
-              <select
+              <Select
                 value={value.approximateUnit}
                 onChange={event => onChange({
                   ...value,
@@ -104,7 +106,7 @@ export default function DonationExperienceFields({
                 {APPROXIMATE_DONATION_UNITS.map(unit => (
                   <option key={unit} value={unit}>{unitLabels[unit]}</option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
         )}
@@ -131,7 +133,8 @@ export default function DonationExperienceFields({
             Lifetime donations are fixed at 0.
           </div>
         )}
-      </div>
+        </div>
+      </QuestionPages>
     </fieldset>
   );
 }

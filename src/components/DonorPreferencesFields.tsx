@@ -1,3 +1,5 @@
+import Select from './Select';
+import QuestionPages from './QuestionPages';
 import { useEffect, useMemo, useState } from 'react';
 import { Building2, Clock3, MapPinned, Plus, Trash2 } from 'lucide-react';
 import {
@@ -99,10 +101,10 @@ export default function DonorPreferencesFields({
   };
 
   return (
-    <div className="space-y-7">
+    <QuestionPages>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="sm:col-span-2">Travel willingness
-          <select
+          <Select
             value={value.travelWillingness}
             onChange={event => onChange({ ...value, travelWillingness: event.target.value as TravelWillingness })}
             className="input"
@@ -110,7 +112,7 @@ export default function DonorPreferencesFields({
             <option value="HOME_ONLY">Only my home upazila</option>
             <option value="PREFERRED_AREAS">My home and preferred areas</option>
             <option value="ANYWHERE_IN_DISTRICT">Anywhere in my home district</option>
-          </select>
+          </Select>
           <small>This controls where your available profile can match a blood search.</small>
         </label>
       </div>
@@ -121,13 +123,13 @@ export default function DonorPreferencesFields({
           <div><h3 className="font-extrabold text-slate-950">Preferred areas</h3><p className="text-sm leading-6 text-slate-600">Add up to 10 upazilas or thanas where donation is convenient.</p></div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-          <select value={areaDistrict} onChange={event => { setAreaDistrict(event.target.value); setAreaUpazila(''); }} className="input" aria-label="Preferred area district">
+          <Select value={areaDistrict} onChange={event => { setAreaDistrict(event.target.value); setAreaUpazila(''); }} className="input" aria-label="Preferred area district">
             {BD_LOCATION_NAMES.map(district => <option key={district}>{district}</option>)}
-          </select>
-          <select value={areaUpazila} onChange={event => setAreaUpazila(event.target.value)} className="input" aria-label="Preferred upazila or thana">
+          </Select>
+          <Select value={areaUpazila} onChange={event => setAreaUpazila(event.target.value)} className="input" aria-label="Preferred upazila or thana">
             <option value="">Choose upazila / thana</option>
             {areaUpazilas.map(upazila => <option key={upazila.value} value={upazila.value}>{upazila.label}</option>)}
-          </select>
+          </Select>
           <button type="button" disabled={!areaUpazila || value.preferredAreas.length >= 10} onClick={addArea} className="button button-secondary"><Plus className="h-4 w-4" aria-hidden="true" />Add</button>
         </div>
         {value.preferredAreas.length > 0 && (
@@ -148,9 +150,9 @@ export default function DonorPreferencesFields({
           <div><h3 className="font-extrabold text-slate-950">Preferred collection facilities</h3><p className="text-sm leading-6 text-slate-600">Choose up to 8 facilities from the registered DGHS list.</p></div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <select value={facilityDistrict} onChange={event => { setFacilityDistrict(event.target.value); setFacilityQuery(''); }} className="input" aria-label="Facility district">
+          <Select value={facilityDistrict} onChange={event => { setFacilityDistrict(event.target.value); setFacilityQuery(''); }} className="input" aria-label="Facility district">
             {BD_LOCATION_NAMES.map(district => <option key={district}>{district}</option>)}
-          </select>
+          </Select>
           <input value={facilityQuery} onChange={event => setFacilityQuery(event.target.value)} className="input" placeholder={facilitiesLoading ? 'Loading facilities…' : 'Type a facility name'} aria-label="Find a registered collection facility" />
         </div>
         {facilityMatches.length > 0 && (
@@ -182,7 +184,7 @@ export default function DonorPreferencesFields({
           <div className="flex items-start gap-3"><Clock3 className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" /><div><h3 className="font-extrabold text-slate-950">Usual contact or donation windows</h3><p className="text-sm leading-6 text-slate-600">Add up to 3 recurring times in Asia/Dhaka. Searchers see only a match reason, never your schedule.</p></div></div>
           <button type="button" disabled={value.contactWindows.length >= 3} onClick={() => onChange({ ...value, contactWindows: [...value.contactWindows, { days: [0, 1, 2, 3, 4, 5, 6], start_time: '09:00', end_time: '18:00' }] })} className="button button-secondary"><Plus className="h-4 w-4" aria-hidden="true" />Add</button>
         </div>
-        <div className="mt-3 space-y-3">
+        <QuestionPages>
           {value.contactWindows.map((window, index) => (
             <fieldset key={index} className="rounded-xl border border-slate-200 bg-white p-3">
               <legend className="px-1 text-xs font-extrabold uppercase tracking-wide text-slate-600">Window {index + 1}</legend>
@@ -199,13 +201,13 @@ export default function DonorPreferencesFields({
               </div>
             </fieldset>
           ))}
-        </div>
+        </QuestionPages>
       </div>
 
       <label>Private coordination note <em>Optional</em>
         <textarea rows={4} maxLength={500} value={value.privateCoordinationNote} onChange={event => onChange({ ...value, privateCoordinationNote: event.target.value })} className="input profile-textarea" placeholder="For example: I can usually travel after work; please call before leaving." />
         <small>{value.privateCoordinationNote.length}/500 characters. This stays private and is never copied into search results.</small>
       </label>
-    </div>
+    </QuestionPages>
   );
 }

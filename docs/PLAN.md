@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.151`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.152`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,6 +13,23 @@ delivered.
 
 ### Code quality / polish
 
+- [ ] **Approved experience restoration:** shared accessible controls and all-form
+  wizards; guest publication and expiring device ownership; phone-first guided
+  enrollment; date-only deadlines and 30-day owned lifetime; web/native parity;
+  isolated lifecycle/security tests, emulator/browser checks, and scoped release.
+  Fresh verified code/history and private production runtime backups were made
+  on 2026-09-04 before implementation. Do not deploy until the release gates pass.
+  Backup, shared controls, backend lifecycle/auth, and web/native journey changes
+  are implemented, including native staff operations. Isolated typecheck, 150 unit
+  tests, fake-SMS authentication/adoption/privacy/staff integration and web bundle
+  passed. Flutter analysis and 46 tests passed; the guest emulator journey and
+  narrow-browser publication/management/closure and Back checks passed. Account
+  controls passed automated label, touch-target and contrast checks at 200% text.
+  Real emulator TalkBack announced picker labels, field roles and missing-phone
+  validation; focus/activation and picker Back actions passed. Remaining: rebuild
+  the final signed APK, finish browser release checks and scoped deployment. The registry audit service
+  is currently unavailable; the identified query-parser advisories were patched.
+
 - [ ] **Extract the browser frontend from the backend runtime.** Preserve public
   SEO and social metadata, proxy browser `/api` calls through the web origin,
   and remove Vite/static delivery from the API only after independent build and
@@ -20,8 +37,10 @@ delivered.
 
 - [ ] **Post-implementation accessibility validation.** UX-001 through UX-016
   from the 1.0.11 Android-first audit are implemented. Re-capture the affected
-  journeys after release, complete a human TalkBack pass on physical hardware,
-  and run the remaining keyboard, 200% text, contrast, and low-bandwidth checks
+  journeys after release and run the remaining keyboard, browser 200% text,
+  contrast, and low-bandwidth checks. At the user's direction, real TalkBack was
+  checked on the emulator instead of requiring a physical-device human pass;
+  speech output was inspected, not heard through physical audio. See the checks
   recorded in `artifacts/ux-research/drop-ux-audit-v1.0.11-2026-09-03.html`.
 
 - [ ] **Pervasive `any` and limited focused tests.** Blood-domain and privacy

@@ -1,0 +1,32 @@
+services:
+  validate:
+    build:
+      context: .
+      target: dev
+    environment:
+      NODE_ENV: test
+      LANCEDB_PATH: /tmp/drop-experience-qa/lancedb
+      COMMUNITY_MEDIA_PATH: /tmp/drop-experience-qa/media
+      DROP_ISOLATED_QA: '1'
+    network_mode: none
+    cpus: 1.0
+    mem_limit: 2g
+    command: sh -c 'npm run lint && node --import tsx --test --test-concurrency=2 --test-reporter=dot src/lib/*.test.ts server/*.test.ts && node --import tsx scripts/experience.integration.ts && npm run build'
+  preview:
+    profiles: [preview]
+    build:
+      context: .
+      target: dev
+    environment:
+      NODE_ENV: test
+      APP_URL: http://127.0.0.1:8765
+      PORT: '3000'
+      LANCEDB_PATH: /tmp/drop-preview/lancedb
+      COMMUNITY_MEDIA_PATH: /tmp/drop-preview/media
+    ports: ['127.0.0.1:31051:3000']
+    networks: [preview]
+    cpus: 1.0
+    mem_limit: 2g
+    command: npm run start
+networks:
+  preview: {}

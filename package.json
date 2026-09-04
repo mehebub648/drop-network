@@ -1,7 +1,7 @@
 {
   "name": "drop-network",
   "private": true,
-  "version": "0.0.151",
+  "version": "0.0.152",
   "type": "module",
   "engines": {
     "node": ">=22.22.0"
@@ -60,6 +60,7 @@
     "vite": "^6.4.3"
   },
   "overrides": {
+    "qs": "6.16.0",
     "browserslist": "4.28.7",
     "postcss": "8.5.25"
   }

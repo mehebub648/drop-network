@@ -14,7 +14,8 @@ export type RequestFeedCandidate = {
 type RankedRequest<T> = { request: T; score: number };
 
 function isUrgent(request: RequestFeedCandidate, now: number) {
-  return !request.needed_by || new Date(request.needed_by).getTime() - now <= 72 * 3_600_000;
+  const remaining = request.needed_by ? new Date(request.needed_by).getTime() - now : 0;
+  return !request.needed_by || (remaining > 0 && remaining <= 72 * 3_600_000);
 }
 
 function oldestFirst<T extends RequestFeedCandidate>(left: T, right: T) {

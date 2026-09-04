@@ -1,3 +1,5 @@
+import GuidedForm from './GuidedForm';
+import Select from './Select';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Check, Copy, Info, Phone, PhoneCall, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useLocation } from 'react-router';
@@ -297,7 +299,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
               </button>
             </div>
           ) : pending ? (
-            <form onSubmit={submit} className="call-outcome-form">
+            <GuidedForm onSubmit={submit} className="call-outcome-form">
               <div className="call-outcome-scroll">
                 <header className="call-outcome-header">
                   <span className="dialog-icon"><PhoneCall className="h-5 w-5" aria-hidden="true" /></span>
@@ -352,7 +354,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
 
                 <label className="call-outcome-field call-outcome-section">
                   <span>What happened?</span>
-                  <select
+                  <Select
                     name="outcome"
                     value={outcome}
                     required
@@ -365,13 +367,13 @@ export default function CallOutcomeGate({ user }: { user: any }) {
                   >
                     <option value="" disabled>Select what happened</option>
                     {OUTCOMES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
+                  </Select>
                 </label>
 
                 {outcome === 'DECLINED' && (
                   <label className="call-outcome-field call-outcome-followup fade-in">
                     <span>Why not?</span>
-                    <select
+                    <Select
                       name="reason"
                       value={reason}
                       required
@@ -382,28 +384,28 @@ export default function CallOutcomeGate({ user }: { user: any }) {
                     >
                       <option value="" disabled>Select a reason</option>
                       {DECLINE_REASONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
+                    </Select>
                   </label>
                 )}
 
                 {outcome === 'DECLINED' && reason === 'LOCATION_FAR' && (
                   <label className="call-outcome-field call-outcome-followup fade-in">
                     <span>What made the location difficult?</span>
-                    <select name="detail" value={detail} required onChange={event => setDetail(event.target.value)}>
+                    <Select name="detail" value={detail} required onChange={event => setDetail(event.target.value)}>
                       <option value="" disabled>Select the location issue</option>
                       {FAR_DETAILS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
+                    </Select>
                   </label>
                 )}
 
                 {outcome === 'WILL_DONATE' && (
                   <label className="call-outcome-field call-outcome-followup fade-in">
                     <span>Did the donor agree to one follow-up SMS?</span>
-                    <select name="sms_consent" value={smsConsent} required onChange={event => setSmsConsent(event.target.value)}>
+                    <Select name="sms_consent" value={smsConsent} required onChange={event => setSmsConsent(event.target.value)}>
                       <option value="" disabled>Select yes or no</option>
                       <option value="YES">Yes, the donor agreed</option>
                       <option value="NO">No — keep the follow-up in the app</option>
-                    </select>
+                    </Select>
                   </label>
                 )}
 
@@ -423,7 +425,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
                   {busy ? 'Saving…' : 'Save and continue'}
                 </button>
               </footer>
-            </form>
+            </GuidedForm>
           ) : null}
         </div>
       </div>

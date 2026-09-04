@@ -1,3 +1,5 @@
+import GuidedForm from '../../components/GuidedForm';
+import Select from '../../components/Select';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { CheckCircle2, ChevronDown, Clock, HeartPulse, LockKeyhole, MapPin, Save, Stethoscope } from 'lucide-react';
 import DonationExperienceFields from '../../components/DonationExperienceFields';
@@ -128,7 +130,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
         </div>
       </div>
 
-      <form onSubmit={save} className="profile-editor">
+      <GuidedForm onSubmit={save} className="profile-editor">
         <header className="profile-editor-header">
           <span><HeartPulse aria-hidden="true" /></span>
           <div>
@@ -146,20 +148,20 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </summary>
           <div className="profile-section-body profile-form-grid">
             <label>Blood group
-              <select id="donor-blood-group" value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input">
+              <Select id="donor-blood-group" value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input">
                 {BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}
-              </select>
+              </Select>
             </label>
             <label>Home district
-              <select id="donor-district" value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input">
+              <Select id="donor-district" value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input">
                 {BD_LOCATION_NAMES.map(name => <option key={name}>{name}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="profile-grid-wide">Home upazila / thana
-              <select id="donor-upazila" value={upazila} onChange={event => setUpazila(event.target.value)} className="input">
+              <Select id="donor-upazila" value={upazila} onChange={event => setUpazila(event.target.value)} className="input">
                 <option value="">Not set</option>
                 {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
+              </Select>
               <small>Without an upazila, your profile will not appear in donor search results.</small>
             </label>
           </div>
@@ -235,9 +237,9 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </summary>
           <div className="profile-section-body profile-form-grid">
             <label className="profile-grid-wide">Current status
-              <select id="donor-status" value={status} onChange={event => setStatus(event.target.value as AvailabilityStatus)} className="input">
+              <Select id="donor-status" value={status} onChange={event => setStatus(event.target.value as AvailabilityStatus)} className="input">
                 {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              </Select>
             </label>
             {status !== 'AVAILABLE' && (
               <label className="profile-grid-wide">Reason <em>Optional</em>
@@ -254,7 +256,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </div>
           <button disabled={saving} className="profile-save-button"><Save aria-hidden="true" /> {saving ? 'Saving…' : 'Save donor profile'}</button>
         </footer>
-      </form>
+      </GuidedForm>
 
       <section className="profile-history-card">
         <h2>Availability history</h2>
