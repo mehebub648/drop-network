@@ -78,7 +78,11 @@ test('the oldest unanswered reveal is pending across every request', () => {
     { id: 'older', kind: 'REVEAL', request_id: 'request-1', actor_id: 'user-1', donor_ref: 'reg:1', donor_kind: 'REGISTERED', created_at: '2026-08-26T12:01:00.000Z' },
     { id: 'answered', kind: 'CALL_OUTCOME', request_id: 'request-1', actor_id: 'user-1', donor_ref: 'reg:1', donor_kind: 'REGISTERED', reveal_id: 'older', outcome: 'NO_ANSWER', created_at: '2026-08-26T12:03:00.000Z' }
   ];
-  assert.equal(findPendingReveal(reports)?.id, 'pending');
+  assert.equal(findPendingReveal(reports, new Set(['request-1', 'request-2', 'request-3']))?.id, 'pending');
+  // A closed, expired or deleted request must not block calls on a live request.
+  assert.equal(findPendingReveal(reports, new Set(['request-1', 'request-2']))?.id, 'newer');
+  assert.equal(findPendingReveal(reports, new Set(['request-1'])), null);
+  assert.equal(findPendingReveal(reports, new Set()), null);
 });
 
 test('contact issue summaries count each requester once and keep notes private', () => {

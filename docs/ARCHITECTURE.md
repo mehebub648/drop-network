@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.152`
+Current application version: `0.0.154`
 
 ## Overview
 
@@ -250,7 +250,7 @@ Routes:
   the current page with copy and `tel:` controls. The page behind it is inert,
   the dialog cannot be dismissed, and navigation, reload, focus, or another
   open tab restores the same pending report until it is saved. The server also
-  refuses another reveal while any request owned by the account has an
+  refuses another reveal while any live request owned by the account has an
   unanswered one. `/directory/call/:requestId/:donorRef` is now only a private
   compatibility route that redirects old links to `/directory`.
 - `/profile/donor-requests` is the donor's side: open requests their blood group
@@ -465,11 +465,11 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   - that the donor is still in that request's freshly recomputed results.
   Without that, one published request would be a bulk lookup oracle for the
   whole imported directory. It also refuses while any earlier reveal by the
-  account, across all of its requests, has no reported outcome. This closes the
+  account, across all of its live requests, has no reported outcome. This closes the
   separate-request loophole in "answer before calling someone else". The route
   is rate-limited separately at 60 per 15 minutes.
 - `GET /api/me/reveals/pending` returns the oldest unanswered reveal across all
-  requests owned by the authenticated account. `CallOutcomeGate` uses it to
+  live requests owned by the authenticated account. Closed or expired requests do not block new calls. `CallOutcomeGate` uses it to
   restore the blocking dialog after navigation, reload, focus, and cross-tab
   changes without putting the revealed phone number into the URL.
 - `POST /api/requests/:id/call-reports` records what happened on the call.

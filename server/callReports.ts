@@ -174,8 +174,8 @@ export function findUnansweredReveals(reports: CallReport[]) {
     .sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
 }
 
-export function findPendingReveal(reports: CallReport[]) {
-  return findUnansweredReveals(reports)[0] || null;
+export function findPendingReveal(reports: CallReport[], liveRequestIds: ReadonlySet<string>) {
+  return findUnansweredReveals(reports).find(report => liveRequestIds.has(report.request_id)) || null;
 }
 
 const NOTE_MAX_LENGTH = 300;

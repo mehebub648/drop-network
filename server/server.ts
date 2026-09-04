@@ -3646,6 +3646,10 @@ async function requestCallReports(requestId: string, actorId?: string) {
   return await queryCallReports<CallReport>({ requestId, actorId, limit: 1_000 });
 }
 
+function pendingLiveRequestReveal(reports: CallReport[]) {
+  const now = Date.now();
+  return findPendingReveal(reports, new Set(requests.filter(request => requestIsLive(request, now)).map(request => request.id)));
+}
 function duplicateActiveRequest(candidate: Pick<BloodRequest, 'blood_group' | 'location' | 'upazila' | 'contacts'>) {
   return findDuplicateActiveRequest(requests, candidate);
 }
@@ -3686,7 +3690,7 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
     requestCallReports(request.id, auth.user.id),
     actorCallReports(auth.user.id)
   ]);
-  const pending = findPendingReveal(actorReports);
+  const pending = pendingLiveRequestReveal(actorReports);
   if (pending && (pending.request_id !== request.id || pending.donor_ref !== donorRef)) {
     return res.status(409).json({
       error: 'Report how your last call went before asking for another number',
@@ -3793,7 +3797,7 @@ app.get('/api/requests/:id/reveals/pending', async (req, res) => {
   if (!request) return res.status(404).json({ error: 'Request not found' });
   if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can see these contacts' });
 
-  const pending = findPendingReveal(await requestCallReports(request.id, auth.user.id));
+  const pending = pendingLiveRequestReveal(await requestCallReports(request.id, auth.user.id));
   res.json({
     pending: pending
       ? { reveal_id: pending.id, donor_ref: pending.donor_ref, created_at: pending.created_at }
@@ -3806,7 +3810,7 @@ app.get('/api/me/reveals/pending', async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const pending = findPendingReveal(await actorCallReports(auth.user.id));
+  const pending = pendingLiveRequestReveal(await actorCallReports(auth.user.id));
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({
     pending: pending
