@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.146`
+Current application version: `0.0.151`
 
 ## Overview
 
@@ -22,14 +22,13 @@ automation API or a provider-neutral HTTP SMS gateway. Missing or incomplete
 delivery configuration fails closed in every environment, and codes are never
 written to application logs.
 
-The product is migrating toward three independently deployable applications:
-the backend API, the browser frontend, and the native Flutter app. During the
-transition, the established `/api/*` routes remain available and the native
+The product has separate browser and native Flutter clients over one backend.
+The established `/api/*` routes remain available and the fully native Android
 client uses the equivalent versioned `/api/v1/*` entry point. The versioned
 prefix is resolved before rate limiting and route handling, so both paths share
-the same validation, authorization, privacy, and data behavior. Physical
-frontend extraction and removal of Android WebView workflows happen only after
-native feature parity is verified.
+the same validation, authorization, privacy, and data behavior. The backend and
+browser frontend remain a same-origin monorepo deployment; physical frontend
+extraction is an optional later scaling step rather than a client-parity gate.
 
 ## Runtime Flow
 
@@ -170,9 +169,8 @@ Routes:
   matches, patient/contact details, and comments. Owners can correct the
   collection location while a request is active.
 - Member pages use a desktop side rail and an accessible mobile section sheet.
-  Android WebView documents receive a document-start marker that removes global
-  website chrome and applies app spacing before React paints, without changing
-  routes, sessions, or authorization behavior.
+  The Android application renders its corresponding member journeys as native
+  Flutter screens and authenticates through bearer sessions on `/api/v1`.
 - `/login` logs in an existing user by password or a purpose-bound Messavo
   verification code, including passwordless accounts created by a claim.
 - `/register` verifies a Bangladesh mobile by OTP before creating an account.

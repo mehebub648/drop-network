@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.150`
+Current version: `0.0.151`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -19,12 +19,13 @@ View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c
 
 ## Client separation
 
-Drop is migrating toward independently deployable backend, web, and native
-Android applications. Existing browser clients continue to use `/api/*`; native
-clients use the equivalent versioned `/api/v1/*` contract. Both prefixes reach
-the same server-side validation, permissions, privacy gates, and datastore.
-The current embedded Android workflows remain available until each one has a
-verified Flutter-native replacement.
+Drop has separate browser and native Android clients backed by one server-side
+contract. Browser clients continue to use `/api/*`; native clients use the
+equivalent versioned `/api/v1/*` contract. Both prefixes reach the same
+server-side validation, permissions, privacy gates, and datastore. The Android
+client is fully native and contains no embedded website renderer. The backend
+and browser frontend remain one production monorepo and one same-origin
+deployment; they can be extracted later without changing the native contract.
 
 Shared location discovery is available at `/api/v1/meta/districts`,
 `/api/v1/meta/upazilas?district=...`, and
