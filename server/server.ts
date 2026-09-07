@@ -10,7 +10,7 @@ import bcrypt from 'bcryptjs';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { v4 as uuidv4 } from 'uuid';
-import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports } from './db';
+import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports, deleteStoredDocument, deleteRequestCallReports, adoptGuestCallReports } from './db';
 import { claimSlugForPublicId, evaluateClaim, maskPhone, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
 import { BD_LOCATIONS, BD_LOCATION_NAMES, getLocationByName } from './locations';
 import { resolveRegistrationLocation } from './registrationLocation';
@@ -94,7 +94,8 @@ import { REQUEST_REASONS, type RequestReason } from './requestReasons';
 import { buildRequestFeedPage } from './requestFeed';
 import { deleteRequestDocument } from './db';
 import { DAY_MS, dhakaDate, isCalendarDate, requestDeadline, requestExpiry, requestIsLive, requestIsOverdue, migrateRequestLifecycle, REQUEST_CLOSURE_REASONS, type RequestOwnership } from './requestLifecycle';
-import { GUEST_COOKIE, newGuestToken, guestToken, guestTokenHash, ownsGuestRequest, adoptGuestRequest, RequestWriteQueue } from './guestRequests';
+import { resolveRequestTiming, type RequestTiming } from './requestLifecycle';
+import { GUEST_COOKIE, newGuestToken, guestToken, guestTokenHash, ownsGuestRequest, adoptGuestRequest, RequestWriteQueue, GUEST_IDLE_MS, GUEST_REQUEST_LIMIT, GUEST_CONTACT_LIMIT, guestDeviceExpired, guestCanPublish, guestCanReveal, type GuestDevice } from './guestRequests';
 import {
   DONATION_OUTCOMES,
   deriveFollowUpState,
@@ -109,7 +110,8 @@ import {
 const app = express();
 const requestWrites = new RequestWriteQueue();
 const accountWrites = new RequestWriteQueue();
-const guestDevices = new Set<string>();
+const guestDevices = new Map<string, GuestDevice>();
+const guestActivitySavedAt = new Map<string, number>();
 // Defense in depth: credentials never leave storage through any legacy JSON path.
 app.set('json replacer', (key: string, value: unknown) => key === 'guest_token_hash' ? undefined : value);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -270,16 +272,32 @@ app.use('/api/requests/:id', (req, res, next) => {
 const guestPublishLimiter = rateLimit({ windowMs: 3_600_000, limit: 10, standardHeaders: true, legacyHeaders: false,
   skip: req => Boolean(getCurrentAuth(req)), message: { error: 'Too many new requests. Please manage an existing post.' } });
 app.use('/api/search/requests', guestPublishLimiter);
-app.post('/api/guest/session', authLimiter, asyncRoute(async (req, res) => {
+app.use('/api', asyncRoute(async (req, _res, next) => {
+  const token = requestGuestToken(req);
+  if (token && !req.path.endsWith('/reveals/pending') && req.path !== '/me') {
+    const hash = guestTokenHash(token);
+    const device = guestDevices.get(hash)!;
+    const now = Date.now();
+    device.last_seen_at = new Date(now).toISOString();
+    if (now - (guestActivitySavedAt.get(hash) || 0) >= 60_000) {
+      await requestWrites.run(() => saveToTable('common_guest_devices', device));
+      guestActivitySavedAt.set(hash, now);
+    }
+  }
+  next();
+}));
+app.post('/api/guest/session', authLimiter, requestWriteRoute(async (req, res) => {
   const token = requestGuestToken(req) || newGuestToken();
   const hash = guestTokenHash(token);
-  if (!guestDevices.has(hash)) {
-    await saveToTable('common_guest_devices', { id: hash, created_at: new Date().toISOString() });
-    guestDevices.add(hash);
+  let device = guestDevices.get(hash);
+  if (!device) {
+    const now = new Date().toISOString();
+    device = { id: hash, created_at: now, last_seen_at: now, request_count: 0 };
+    await saveToTable('common_guest_devices', device);
+    guestDevices.set(hash, device);
   }
-  // The device secret is not a request grant; each post enforces its own deadline.
   res.cookie(GUEST_COOKIE, token, { httpOnly: true, secure: IS_PRODUCTION, sameSite: 'lax', path: '/', maxAge: 365 * DAY_MS });
-  res.set('Cache-Control', 'no-store').json({ ready: true });
+  res.set('Cache-Control', 'no-store').json({ ready: true, request_limit: GUEST_REQUEST_LIMIT, contact_limit: GUEST_CONTACT_LIMIT, requests_remaining: device.user_id ? 0 : Math.max(0, GUEST_REQUEST_LIMIT - device.request_count) });
 }));
 app.get('/api/guest/requests', asyncRoute(async (req, res) => {
   await enforceExpiredRequests();
@@ -471,6 +489,7 @@ type BloodRequest = {
   requester_relation?: string;
   contact_owner?: (typeof CONTACT_OWNERS)[number];
   needed_window?: (typeof NEEDED_WINDOWS)[number];
+  needed_when?: RequestTiming;
   collection_facility_code?: string;
   /** Marks rows created by the search flow rather than the legacy form. */
   flow_version?: 'SEARCH_V1';
@@ -541,6 +560,7 @@ type DonorResponse = {
 
 type AppNotification = {
   id: string;
+  request_id?: string;
   user_id: string;
   type: string;
   title: string;
@@ -867,9 +887,11 @@ let organizations: Organization[] = [];
 let otpBypassSetting: OtpBypassSetting | undefined;
 
 async function initDbData() {
-  for (const device of await getAllFromTable('common_guest_devices')) guestDevices.add(device.id);
-  users = await getAllFromTable('common_users');
   requests = await getAllFromTable('common_requests');
+  for (const device of await getAllFromTable('common_guest_devices')) {
+    guestDevices.set(device.id, { ...device, last_seen_at: device.last_seen_at || new Date().toISOString(), request_count: device.request_count ?? requests.filter(item => item.guest_token_hash === device.id).length });
+  }
+  users = await getAllFromTable('common_users');
   sessions = await getAllFromTable('common_sessions');
   sessionsByToken.clear();
   for (const session of sessions) sessionsByToken.set(session.token, session);
@@ -936,9 +958,9 @@ async function audit(actorId: string, action: string, targetType: string, target
   return event;
 }
 
-async function notify(userId: string, type: string, title: string, body: string, href: string) {
+async function notify(userId: string, type: string, title: string, body: string, href: string, requestId?: string) {
   const notification: AppNotification = {
-    id: uuidv4(), user_id: userId, type, title, body, href, created_at: new Date().toISOString()
+    id: uuidv4(), user_id: userId, type, title, body, href, request_id: requestId, created_at: new Date().toISOString()
   };
   notifications.push(notification);
   await saveToTable('common_notifications', notification);
@@ -1152,13 +1174,46 @@ async function enforceExpiredRequests() {
   return requestWrites.run(expireRequestsUnlocked);
 }
 
+async function purgeGuestRequest(request: BloodRequest) {
+  await deleteRequestCallReports(request.id);
+  for (const [table, rows] of [
+    ['common_responses', donorResponses], ['common_donation_followups', donationFollowUps],
+    ['common_audit_events', await getAllFromTable('common_audit_events')], ['common_notifications', notifications]
+  ] as const) {
+    for (const row of [...rows] as any[]) {
+      if (row.request_id === request.id || row.target_id === request.id || row.href === `/request/${request.id}`) {
+        await deleteStoredDocument(table, row.id);
+        const index = (rows as any[]).findIndex(item => item.id === row.id);
+        if (index >= 0) (rows as any[]).splice(index, 1);
+      }
+    }
+  }
+  await deleteRequestDocument(request.id);
+  requests = requests.filter(item => item.id !== request.id);
+}
+
 async function expireRequestsUnlocked() {
   const now = Date.now();
   for (const request of [...requests]) {
     if (request.ownership === 'GUEST' && Date.parse(request.expires_at) <= now) {
-      await deleteRequestDocument(request.id);
-      requests = requests.filter(item => item.id !== request.id);
+      await purgeGuestRequest(request);
     }
+  }
+  for (const [hash, device] of guestDevices) {
+    if (!guestDeviceExpired(device, now)) continue;
+    for (const request of [...requests].filter(item => item.ownership === 'GUEST' && item.guest_token_hash === hash)) await purgeGuestRequest(request);
+    for (const request of requests) {
+      if (!request.comments?.some(comment => comment.user_id === `guest:${hash}`)) continue;
+      request.comments = request.comments.filter(comment => comment.user_id !== `guest:${hash}`);
+      await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+    }
+    delete commentTimestamps[`guest:${hash}`];
+    for (const event of await getAllFromTable('common_audit_events')) {
+      if (event.actor_id === `guest:${hash}`) await deleteStoredDocument('common_audit_events', event.id);
+    }
+    await deleteStoredDocument('common_guest_devices', hash);
+    guestDevices.delete(hash);
+    guestActivitySavedAt.delete(hash);
   }
   const expiredRequests = requests.filter(r =>
     (r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED') &&
@@ -1172,19 +1227,6 @@ async function expireRequestsUnlocked() {
       id: uuidv4(), type: 'REQUEST_EXPIRED', actor_id: 'system', created_at: new Date().toISOString()
     }];
     await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
-  }
-}
-
-async function enforceStaleAvailability() {
-  const cutoff = Date.now() - AVAILABILITY_TTL_DAYS * 86_400_000;
-  for (const user of users.filter(item => item.donor_profile?.availability_status === 'AVAILABLE')) {
-    const confirmed = user.donor_profile?.availability_confirmed_at ? new Date(user.donor_profile.availability_confirmed_at).getTime() : 0;
-    if (confirmed >= cutoff) continue;
-    user.donor_profile!.availability_status = 'NOT_AVAILABLE';
-    user.donor_profile!.availability_history = [...(user.donor_profile!.availability_history || []), { status: 'NOT_AVAILABLE', changed_at: new Date().toISOString() }];
-    await saveToTable('common_users', user);
-    await removeDonorFromAllPartitions(user.id);
-    await notify(user.id, 'AVAILABILITY_EXPIRED', 'Availability paused', 'Reconfirm your availability before receiving new invitations.', '/profile/donor');
   }
 }
 
@@ -1253,7 +1295,7 @@ async function findDonorMatches(
 // unmasking is a separate, recorded action that requires a published request,
 // so masked search can never harvest contact details.
 
-const SEARCH_PAGE_SIZE = 24;
+const SEARCH_PAGE_SIZE = 30;
 
 type DonorCard = {
   /** `reg:<user_id>` or `imp:<public_id>` - the token used to ask for a reveal. */
@@ -1282,7 +1324,10 @@ type DonorCard = {
   preference_match_reasons?: string[];
   donation_total?: number;
   /** Internal sorting values removed before the response is serialized. */
+  is_district_fallback?: boolean;
   ranking?: {
+    facility_match?: boolean;
+    profile_complete?: boolean;
     location_match_score?: number;
     availability_confirmed_at?: string;
     donation_total?: number;
@@ -1308,7 +1353,7 @@ async function loadContactReports(donorRefs: string[]) {
     if (batch.length < 500) break;
   }
   const verifiedActors = new Set(users.filter(user => user.is_verified && !user.deleted_at).map(user => user.id));
-  return reports.filter(report => report.kind !== 'CALL_OUTCOME' || report.actor_verified === true || verifiedActors.has(report.actor_id));
+  return reports.filter(report => report.kind !== 'CALL_OUTCOME' || report.actor_verified === true || (report.actor_verified === undefined && verifiedActors.has(report.actor_id)));
 }
 
 async function contactIssueSummaries(donorRefs: string[]) {
@@ -1437,6 +1482,8 @@ function registeredDonorCard(
     ...(donationTotal !== undefined ? { donation_total: donationTotal } : {}),
     preference_match_reasons: preferenceMatch.reasons,
     ranking: {
+      facility_match: preferenceMatch.reasons.includes('Preferred collection facility'),
+      profile_complete: [profile.age, profile.weight_kg, profile.last_donation, profile.donation_count, profile.preferred_areas?.length, profile.contact_windows?.length, profile.medical_conditions].filter(value => value !== undefined && value !== null && value !== '' && value !== 0).length >= 4,
       location_match_score: preferenceMatch.score,
       availability_confirmed_at: profile.availability_confirmed_at,
       donation_total: donationTotal || 0,
@@ -1497,17 +1544,19 @@ async function findRequestDonors(params: {
   facilityName?: string;
   orderSeed?: string;
   excludeRequester?: boolean;
+  donorRef?: string;
 }) {
   const compatibleGroups = COMPATIBLE_DONORS[params.bloodGroup] || [params.bloodGroup];
   const upazilas = getUpazilaVariants(params.district, params.upazila);
   const pageSize = params.pageSize ?? SEARCH_PAGE_SIZE;
   const requester = params.requesterUserId ? users.find(user => user.id === params.requesterUserId) : undefined;
 
-  const allRegistered = users
+  const districtUpazilas = getUpazilasForDistrict(params.district).flatMap(value => getUpazilaVariants(params.district, value.value));
+  let allRegistered = users
     .filter(user => registeredMatchesRequestSearch(user, {
       compatibleGroups,
       district: params.district,
-      upazilas,
+      upazilas: districtUpazilas,
       requesterUserId: params.requesterUserId,
       excludeRequester: params.excludeRequester
     }, requester))
@@ -1518,19 +1567,26 @@ async function findRequestDonors(params: {
       facilityName: params.facilityName
     }, user.id === params.requesterUserId));
 
+  const sameUpazila = (donor: DonorCard) => upazilas.some(value => value.toLowerCase() === donor.upazila.toLowerCase());
+  const localRegistered = allRegistered.filter(donor => sameUpazila(donor) && (!params.exactGroupOnly || donor.is_exact_group) && (!params.phoneVerifiedOnly || donor.is_verified));
+  const localImported = params.phoneVerifiedOnly ? 0 : await countImportedDonors({ district: params.district, upazilas, bloodGroups: params.exactGroupOnly ? [params.bloodGroup] : compatibleGroups, claimStatus: 'UNCLAIMED' }).catch(() => 0);
+  const localTotal = localRegistered.length + localImported;
+  const includeDistrict = localTotal < 30;
+  const queryUpazilas = includeDistrict ? districtUpazilas : upazilas;
+  if (!includeDistrict) allRegistered = allRegistered.filter(sameUpazila);
   let directoryTotal = 0;
   let allDirectory: DonorCard[] = [];
   try {
     directoryTotal = await countImportedDonors({
       district: params.district,
-      upazilas,
+      upazilas: queryUpazilas,
       bloodGroups: compatibleGroups,
       claimStatus: 'UNCLAIMED'
     });
     if (directoryTotal > 0 && !params.phoneVerifiedOnly) {
       const listings = await queryImportedDonorsForRequest({
         district: params.district,
-        upazilas,
+        upazilas: queryUpazilas,
         bloodGroups: compatibleGroups,
         limit: directoryTotal
       });
@@ -1547,6 +1603,7 @@ async function findRequestDonors(params: {
   if (params.exactGroupOnly) allCards = allCards.filter(donor => donor.is_exact_group);
   if (params.phoneVerifiedOnly) allCards = allCards.filter(donor => donor.donor_kind === 'REGISTERED' && donor.is_verified);
 
+  allCards = allCards.filter(donor => sameUpazila(donor) || includeDistrict).map(donor => ({ ...donor, is_district_fallback: !sameUpazila(donor) }));
   try {
     const summaries = await contactIssueSummaries(allCards.map(donor => donor.donor_ref));
     for (const donor of allCards) {
@@ -1560,7 +1617,11 @@ async function findRequestDonors(params: {
     // must not hide otherwise eligible donors.
   }
 
-  allCards = rankDonorResults(allCards, params.bloodGroup, params.sort || 'recommended', params.orderSeed);
+  allCards = [
+    ...rankDonorResults(allCards.filter(donor => !donor.is_district_fallback), params.bloodGroup, params.sort || 'recommended', params.orderSeed),
+    ...rankDonorResults(allCards.filter(donor => donor.is_district_fallback), params.bloodGroup, params.sort || 'recommended', params.orderSeed)
+  ];
+  if (params.donorRef) allCards = allCards.filter(donor => donor.donor_ref === params.donorRef);
   const registeredTotal = allCards.filter(donor => donor.donor_kind === 'REGISTERED').length;
   const filteredDirectoryTotal = allCards.filter(donor => donor.donor_kind === 'IMPORTED').length;
   const total = allCards.length;
@@ -1572,6 +1633,9 @@ async function findRequestDonors(params: {
   const directory = pageCards.filter(donor => donor.donor_kind === 'IMPORTED').map(publicDonorCard);
 
   return {
+    items: pageCards.map(publicDonorCard),
+    local_total: localTotal,
+    includes_district: includeDistrict,
     registered,
     directory,
     compatibleGroups,
@@ -1751,8 +1815,14 @@ async function revokeSession(req: express.Request) {
 }
 
 function getActorId(req: express.Request) {
+  return contactActorId(req);
+}
+
+function contactActorId(req: express.Request) {
   const auth = getCurrentAuth(req);
-  return auth?.user.id || getFingerprint(req) || '';
+  if (auth) return auth.user.id;
+  const token = requestGuestToken(req);
+  return token ? `guest:${guestTokenHash(token)}` : '';
 }
 
 function isRequestOwner(request: BloodRequest, req: express.Request) {
@@ -1764,19 +1834,36 @@ function isRequestOwner(request: BloodRequest, req: express.Request) {
 function requestGuestToken(req: express.Request) {
   // Explicit native credential takes precedence, including an invalid value.
   const token = guestToken(req.get('x-drop-guest') ?? req.cookies?.[GUEST_COOKIE]);
-  return token && guestDevices.has(guestTokenHash(token)) ? token : '';
+  const device = token ? guestDevices.get(guestTokenHash(token)) : undefined;
+  return device && !guestDeviceExpired(device) ? token : '';
 }
 
 async function adoptDeviceRequests(req: express.Request, user: User) {
   const token = requestGuestToken(req);
   if (!token) return;
   await requestWrites.run(async () => {
+    const device = guestDevices.get(guestTokenHash(token))!;
+    if (device.user_id && device.user_id !== user.id) return;
+    await adoptGuestCallReports(`guest:${device.id}`, user.id);
     for (let index = 0; index < requests.length; index++) {
+      if (requests[index].comments?.some(comment => comment.user_id === `guest:${device.id}`)) {
+        requests[index].comments = requests[index].comments.map(comment => comment.user_id === `guest:${device.id}` ? { ...comment, user_id: user.id } : comment);
+        await saveToTable('common_requests', requests[index], [requests[index].location.lng, requests[index].location.lat]);
+      }
       const adopted = adoptGuestRequest(requests[index], token, user.id);
       if (!adopted) continue;
       await saveToTable('common_requests', adopted, [adopted.location.lng, adopted.location.lat]);
       requests[index] = adopted;
+      for (const [table, rows] of [['common_responses', donorResponses], ['common_donation_followups', donationFollowUps]] as const) {
+        for (const row of rows) {
+          if (row.request_id !== adopted.id) continue;
+          row.requester_id = user.id;
+          await saveToTable(table, row);
+        }
+      }
     }
+    device.user_id = user.id;
+    await saveToTable('common_guest_devices', device);
   });
 }
 
@@ -1801,7 +1888,7 @@ function publicRequestPayload(request: BloodRequest) {
     request_reason: request.request_reason, request_reason_details: request.request_reason_details,
     units_required: request.units_required, units_pledged: request.units_pledged, units_confirmed: request.units_confirmed,
     created_at: request.created_at, published_at: request.published_at, status: request.status,
-    needed_date: request.needed_date, needed_by: request.needed_by, expires_at: request.expires_at,
+    needed_when: request.needed_when, needed_window: request.needed_window, needed_date: request.needed_date, needed_by: request.needed_by, expires_at: request.expires_at,
     verification_state: request.ownership === 'GUEST' ? 'UNVERIFIED' : 'ACCOUNT_OWNED',
     past_deadline: requestIsOverdue(request),
     requester_name: request.ownership === 'GUEST' ? 'Unverified requester' : 'Account holder',
@@ -1814,7 +1901,7 @@ function requestOwnerPayload(request: BloodRequest) {
   const owner = users.find(user => user.id === request.user_id);
   return { ...safe, ...publicRequestPayload(request), permitted_actions: {
     manage: true,
-    reveal: request.ownership === 'USER' && Boolean(owner?.is_verified) && requestIsLive(request)
+    reveal: (request.ownership === 'GUEST' || Boolean(owner?.is_verified)) && requestIsLive(request)
   } };
 }
 
@@ -1880,7 +1967,6 @@ function registeredMatchesRequestSearch(
   return (!params.excludeRequester || user.id !== params.requesterUserId) &&
     user.account_status !== 'SUSPENDED' &&
     !user.deleted_at &&
-    user.is_verified &&
     !user.donor_profile?.contact_suspended_at &&
     (!params.requesterUserId || !user.blocked_user_ids?.includes(params.requesterUserId)) &&
     !requester?.blocked_user_ids?.includes(user.id) &&
@@ -2200,7 +2286,7 @@ app.get('/api/search/donors', async (req, res) => {
   res.setHeader('X-Daily-Search-Reset', budget.resetAt);
   if (!budget.allowed) return res.status(429).json({ error: budget.error, reset_at: budget.resetAt });
 
-  const { registered, directory, compatibleGroups, totals, pagination } = await findRequestDonors({
+  const { items, local_total, includes_district, registered, directory, compatibleGroups, totals, pagination } = await findRequestDonors({
     bloodGroup,
     district: location.area_name,
     upazila,
@@ -2225,6 +2311,9 @@ app.get('/api/search/donors', async (req, res) => {
       phone_verified_only: phoneVerifiedOnly
     },
     order_seed: orderSeed,
+    items,
+    local_total,
+    includes_district,
     registered,
     directory,
     totals,
@@ -3520,7 +3609,9 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
     ? undefined
     : normalizeBangladeshPhone(body.contact_phone);
   const needed_window = parseOptionalEnum(body.needed_window, NEEDED_WINDOWS);
-  const needed_date = body.needed_date ?? dhakaDate(Date.now() + (needed_window ? NEEDED_WINDOW_HOURS[needed_window] : 0) * 3_600_000);
+  const timing = body.needed_when !== undefined ? resolveRequestTiming(body.needed_when, body.needed_date) : null;
+  if (body.needed_when !== undefined && !timing) return { error: 'Choose a valid time or date for the request' } as const;
+  const needed_date = timing?.needed_date ?? body.needed_date ?? dhakaDate(Date.now() + (needed_window ? NEEDED_WINDOW_HOURS[needed_window] : 0) * 3_600_000);
   const needed_by = previous && needed_date === previous.needed_date ? previous.needed_by : requestDeadline(needed_date);
 
   if (!isOneOf(blood_group, BLOOD_GROUPS)) return { error: 'Valid blood group is required' } as const;
@@ -3531,7 +3622,7 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
   if (!location) return { error: 'Valid Bangladesh district is required' } as const;
   const upazila = parseUpazila(location.area_name, body.upazila);
   if (!upazila) return { error: 'Choose an upazila that belongs to the selected district' } as const;
-  if (!collection_facility) return { error: 'Where the blood will be collected is required' } as const;
+  if (patient_sex === 'MALE' && request_reason === 'CHILDBIRTH') return { error: 'Choose a reason appropriate for the patient gender' } as const;
   if (!isOneOf(requester_role, REQUESTER_ROLES)) return { error: 'Say whether you are the patient, a relative, or a volunteer' } as const;
   if (!patient_sex) return { error: 'Patient gender is required' } as const;
   if (!patient_name) return { error: "The patient's name is required" } as const;
@@ -3578,7 +3669,8 @@ function parseSearchRequest(body: Record<string, unknown>, requesterPhone: strin
       requester_relationship: REQUESTER_ROLE_RELATIONSHIPS[requester_role],
       requester_relation,
       contact_owner: requester_role === 'PATIENT' ? undefined : contact_owner,
-      needed_window,
+      needed_window: timing ? ({ ASAP: 'WITHIN_HOURS', TODAY: 'TODAY', THIS_WEEK: 'PLANNED', SPECIFIC_DATE: 'PLANNED' } as const)[timing.needed_when] : needed_window,
+      ...(timing ? { needed_when: timing.needed_when } : {}),
       needed_date: needed_date as string,
       needed_by,
       contacts
@@ -3602,9 +3694,8 @@ app.post('/api/search/requests', requestWriteRoute(async (req, res) => {
   const recent = duplicateActiveRequest(parsed.value);
   if (recent && isRequestOwner(recent, req)) return res.json({ request: requestOwnerPayload(recent), reused: true });
   if (recent) return res.status(409).json({ error: 'An active request already exists for these details', code: 'DUPLICATE_ACTIVE_REQUEST' });
-  if (!auth && requests.filter(item => ownsGuestRequest(item, deviceToken) && requestIsLive(item)).length >= 5) {
-    return res.status(429).json({ error: 'Manage an existing request before publishing another' });
-  }
+  const device = !auth ? guestDevices.get(guestTokenHash(deviceToken))! : undefined;
+  if (device && !guestCanPublish(device)) return res.status(428).json({ error: 'Continue with your account to create more requests', code: 'ACCOUNT_REQUIRED', reason: 'GUEST_REQUEST_LIMIT' });
 
   const now = new Date().toISOString();
   const request: BloodRequest = {
@@ -3625,6 +3716,7 @@ app.post('/api/search/requests', requestWriteRoute(async (req, res) => {
     comments: [],
     timeline: [{ id: uuidv4(), type: 'SEARCH_REQUEST_PUBLISHED', actor_id: auth?.user.id || 'guest', created_at: now }]
   };
+  if (device) { device.request_count++; await saveToTable('common_guest_devices', device); }
   await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
   requests.push(request);
   res.status(201).json({ request: requestOwnerPayload(request), reused: false });
@@ -3665,14 +3757,15 @@ async function actorCallReports(actorId: string) {
  * freshly recomputed results. Without it a single published request would be a
  * bulk lookup oracle for the whole imported directory.
  */
-app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
+app.post('/api/requests/:id/reveals', revealLimiter, requestWriteRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
-  if (!auth) return res.status(401).json({ error: 'Log in to see contact details' });
-  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before contacting donors' });
+  const actorId = contactActorId(req);
+  if (!actorId) return res.status(401).json({ error: 'Start a request before copying phone numbers' });
+  if (auth && !auth.user.is_verified) return res.status(428).json({ error: 'Verify your account to continue', code: 'ACCOUNT_REQUIRED' });
 
   const request = requests.find(item => item.id === req.params.id);
   if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can see these contacts' });
+  if (!isRequestOwner(request, req)) return res.status(403).json({ error: 'Only the requester can see these contacts' });
   if (!['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)) {
     return res.status(409).json({ error: 'This request is no longer active' });
   }
@@ -3687,9 +3780,10 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
   // One open call at a time. Navigating away without answering does not skip
   // the question, and the check covers every request owned by this account.
   const [reports, actorReports] = await Promise.all([
-    requestCallReports(request.id, auth.user.id),
-    actorCallReports(auth.user.id)
+    requestCallReports(request.id, actorId),
+    actorCallReports(actorId)
   ]);
+  if (!auth && !guestCanReveal(donorRef, reports)) return res.status(428).json({ error: 'Continue with your account to copy more phone numbers for this request', code: 'ACCOUNT_REQUIRED', reason: 'GUEST_CONTACT_LIMIT' });
   const pending = pendingLiveRequestReveal(actorReports);
   if (pending && (pending.request_id !== request.id || pending.donor_ref !== donorRef)) {
     return res.status(409).json({
@@ -3707,33 +3801,8 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
     report.request_id === request.id && report.donor_ref === donorRef
   );
 
-  const compatibleGroups = COMPATIBLE_DONORS[request.blood_group as BloodGroup] || [request.blood_group];
-  const upazilas = getUpazilaVariants(request.location.area_name, request.upazila);
-  let card: DonorCard | undefined;
-  if (reference.kind === 'REGISTERED') {
-    const donor = users.find(user => user.id === reference.id);
-    if (donor && registeredMatchesRequestSearch(donor, {
-      compatibleGroups,
-      district: request.location.area_name,
-      upazilas,
-      requesterUserId: auth.user.id,
-      excludeRequester: true
-    }, auth.user)) {
-      card = registeredDonorCard(donor, request.blood_group, {
-        district: request.location.area_name,
-        upazilas
-      });
-    }
-  } else {
-    const donor = await getImportedDonor(reference.id);
-    if (donor && importedMatchesRequestSearch(donor, {
-      compatibleGroups,
-      district: request.location.area_name,
-      upazilas
-    })) {
-      card = importedDonorCard(donor, request.blood_group);
-    }
-  }
+  const matches = await findRequestDonors({ bloodGroup: request.blood_group as BloodGroup, district: request.location.area_name, upazila: request.upazila, requesterUserId: auth?.user.id, excludeRequester: true, donorRef, pageSize: 1 });
+  const card = matches.items[0];
   if (!card) return res.status(409).json({ error: 'That donor is no longer among this request\'s matches' });
 
   let phone = '';
@@ -3757,7 +3826,7 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
     id: uuidv4(),
     kind: 'REVEAL',
     request_id: request.id,
-    actor_id: auth.user.id,
+    actor_id: actorId,
     donor_ref: donorRef,
     donor_kind: card.donor_kind,
     created_at: new Date().toISOString()
@@ -3769,7 +3838,7 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
   // silently truncate the moderation trail. The complete per-reveal history
   // lives in common_call_reports, which is queried on demand.
   if (!reports.some(report => report.kind === 'REVEAL')) {
-    await audit(auth.user.id, 'REQUEST_CONTACTS_REVEALED', 'REQUEST', request.id, {
+    await audit(actorId, 'REQUEST_CONTACTS_REVEALED', 'REQUEST', request.id, {
       blood_group: request.blood_group,
       district: request.location.area_name,
       upazila: request.upazila
@@ -3787,17 +3856,18 @@ app.post('/api/requests/:id/reveals', revealLimiter, async (req, res) => {
     source: card.source,
     phone
   });
-});
+}));
 
 /** The reveal the requester still owes an answer for, if any. */
 app.get('/api/requests/:id/reveals/pending', async (req, res) => {
   const auth = getCurrentAuth(req);
+  const actorId = contactActorId(req);
   const request = requests.find(item => item.id === req.params.id);
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!actorId) return res.status(401).json({ error: 'Unauthorized' });
   if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can see these contacts' });
+  if (!isRequestOwner(request, req)) return res.status(403).json({ error: 'Only the requester can see these contacts' });
 
-  const pending = pendingLiveRequestReveal(await requestCallReports(request.id, auth.user.id));
+  const pending = pendingLiveRequestReveal(await requestCallReports(request.id, actorId));
   res.json({
     pending: pending
       ? { reveal_id: pending.id, donor_ref: pending.donor_ref, created_at: pending.created_at }
@@ -3808,9 +3878,10 @@ app.get('/api/requests/:id/reveals/pending', async (req, res) => {
 /** The one call outcome this account must submit before continuing. */
 app.get('/api/me/reveals/pending', async (req, res) => {
   const auth = getCurrentAuth(req);
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const actorId = contactActorId(req);
+  if (!actorId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const pending = pendingLiveRequestReveal(await actorCallReports(auth.user.id));
+  const pending = pendingLiveRequestReveal(await actorCallReports(actorId));
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({
     pending: pending
@@ -3837,11 +3908,12 @@ app.get('/api/me/reveals/pending', async (req, res) => {
  */
 app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
+  const actorId = contactActorId(req);
   const request = requests.find(item => item.id === req.params.id);
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verified account required' });
+  if (!actorId) return res.status(401).json({ error: 'Unauthorized' });
+  if (auth && !auth.user.is_verified) return res.status(403).json({ error: 'Verified account required' });
   if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can report a call' });
+  if (!isRequestOwner(request, req)) return res.status(403).json({ error: 'Only the requester can report a call' });
 
   const parsed = parseCallOutcome(req.body || {});
   if ('error' in parsed) return validationError(res, parsed.error);
@@ -3852,7 +3924,7 @@ app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) =>
   const revealId = cleanString(req.body?.reveal_id, 80);
   if (!revealId) return validationError(res, 'A reveal reference is required');
 
-  const reports = await requestCallReports(request.id, auth.user.id);
+  const reports = await requestCallReports(request.id, actorId);
   const reveal = reports.find(report => report.kind === 'REVEAL' && report.id === revealId);
   if (!reveal) return res.status(404).json({ error: 'That call was not started from this request' });
   const previous = reports.filter(report => report.kind === 'CALL_OUTCOME' && report.reveal_id === revealId)
@@ -3869,10 +3941,10 @@ app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) =>
     id: uuidv4(),
     kind: 'CALL_OUTCOME',
     request_id: request.id,
-    actor_id: auth.user.id,
+    actor_id: actorId,
     donor_ref: reveal.donor_ref,
     donor_kind: reveal.donor_kind,
-    actor_verified: true,
+    actor_verified: Boolean(auth?.user.is_verified),
     reveal_id: revealId,
     ...(supersedesId ? { supersedes_report_id: supersedesId } : {}),
     outcome: parsed.value.outcome,
@@ -3905,7 +3977,7 @@ app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) =>
   }
 
   const followUp = parsed.value.outcome === 'WILL_DONATE'
-    ? await createDonationFollowUp(request, reveal, req.body.sms_consent === true)
+    ? await createDonationFollowUp(request, reveal, Boolean(auth?.user.is_verified) && req.body.sms_consent === true)
     : undefined;
   res.status(201).json({ report_id: report.id, follow_up: followUp });
 }));
@@ -4267,7 +4339,7 @@ async function inviteDonorToRequest(request: BloodRequest, donorId: string) {
   };
   donorResponses.push(response);
   await saveToTable('common_responses', response);
-  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group} ${request.blood_component?.replaceAll('_', ' ').toLowerCase()} is needed at ${request.hospital_name}.`, `/profile/responses`);
+  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group} ${request.blood_component?.replaceAll('_', ' ').toLowerCase()} is needed at ${request.hospital_name || request.upazila}.`, `/profile/responses`, request.id);
   return response;
 }
 
@@ -5556,7 +5628,7 @@ app.get('/api/requests', async (req, res) => {
   const limit = Math.min(50, Math.max(1, Math.floor(Number(req.query.limit) || 20)));
   const feed = buildRequestFeedPage(
     requests.filter(r => requestIsLive(r)),
-    { bloodGroup: group, district, urgentOnly },
+    { bloodGroup: group, district, urgentOnly, newestFirst: req.query.sort === 'recent' },
     page,
     limit
   );
@@ -5655,7 +5727,7 @@ app.get('/api/requests/:id', async (req, res) => {
           contact_owner
         }
       : { requester_name: request.ownership === 'GUEST' ? 'Unverified requester' : 'Account holder' }),
-    permitted_actions: { manage: requestOwner, reveal: requestOwner && request.ownership === 'USER' && Boolean(getCurrentAuth(req)?.user.is_verified) && requestIsLive(request) }
+    permitted_actions: { manage: requestOwner, reveal: requestOwner && requestIsLive(request) && (!getCurrentAuth(req) || Boolean(getCurrentAuth(req)?.user.is_verified)) }
   };
 
   const donorMatches = requestOwner ? await findRequestDonors({
@@ -5720,7 +5792,7 @@ app.post('/api/requests/:id/close', requestWriteRoute(async (req, res) => {
 
 app.post('/api/requests/:id/comments', requestWriteRoute(async (req, res) => {
   const { id } = req.params;
-  const fingerprint = getFingerprint(req);
+  const fingerprint = contactActorId(req);
   const text = cleanString(req.body?.text, 1000);
   const anonymous_name = optionalCleanString(req.body?.anonymous_name, 80);
 
@@ -5734,6 +5806,7 @@ app.post('/api/requests/:id/comments', requestWriteRoute(async (req, res) => {
     return res.status(404).json({ error: 'Request not found' });
   }
 
+  if (!user && !fingerprint) return res.status(428).json({ error: 'Start a private guest session first' });
   if (!user && !anonymous_name) return validationError(res, 'Anonymous name is required');
 
   // Rate Limiting for anonymous users
@@ -5782,7 +5855,7 @@ app.delete('/api/requests/:id/comments/:commentId', requestWriteRoute(async (req
   const comment = request.comments?.find(item => item.id === commentId);
   const auth = getCurrentAuth(req);
   if (!comment) return res.status(404).json({ error: 'Comment not found' });
-  if (request.user_id !== userId && comment.user_id !== userId && !isOperator(auth?.user)) {
+  if (!isRequestOwner(request, req) && (!userId || comment.user_id !== userId) && !isOperator(auth?.user)) {
     return res.status(403).json({ error: 'Only the comment author, request owner, or moderator can delete it' });
   }
 
@@ -5835,7 +5908,7 @@ app.use('/media', (_req, res) => res.status(404).end());
 async function startServer() {
   await initDbData();
   await enforceExpiredRequests();
-  await enforceStaleAvailability();
+
   await expireOtpChallenges();
   await processDonationFollowUps();
   // Prepare the imported directory before reporting ready. It is otherwise
@@ -5852,7 +5925,7 @@ async function startServer() {
   }
   const maintenanceTimer = setInterval(() => {
     void enforceExpiredRequests().catch(error => console.error('Request expiry failed', error));
-    void enforceStaleAvailability();
+
     void expireOtpChallenges();
     void processDonationFollowUps().catch(error => {
       console.error('donation follow-up processing failed', error);

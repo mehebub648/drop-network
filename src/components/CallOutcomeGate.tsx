@@ -79,13 +79,6 @@ export default function CallOutcomeGate({ user }: { user: any }) {
   }, []);
 
   const loadPending = useCallback(async (showLoading = false) => {
-    if (!user?.id) {
-      setChecking(false);
-      setPending(null);
-      setReveal(null);
-      setCheckError('');
-      return;
-    }
     if (showLoading) setChecking(true);
     try {
       const response = await api.getPendingCallOutcome();
@@ -115,7 +108,8 @@ export default function CallOutcomeGate({ user }: { user: any }) {
       }
     } catch (cause: any) {
       if (cause?.status === 401) {
-        window.location.reload();
+        if (user?.id) window.location.reload();
+        else { setPending(null); setReveal(null); }
         return;
       }
       setCheckError(cause?.message || 'We could not check whether a call report is waiting.');
@@ -132,7 +126,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
   }, [user?.id, pathname, loadPending]);
 
   useEffect(() => {
-    if (!user?.id) return;
+
     const onChanged = (event: Event) => {
       const changed = (event as CustomEvent<PendingCallChangedDetail | undefined>).detail;
       if (!changed) return void loadPending();
@@ -159,7 +153,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
         void loadPending();
       }
     };
-    const interval = window.setInterval(() => void loadPending(), 30_000);
+    const interval = window.setInterval(() => { if (document.visibilityState === 'visible') void loadPending(); }, 30_000);
     window.addEventListener(PENDING_CALL_CHANGED_EVENT, onChanged);
     window.addEventListener('storage', onStorage);
     window.addEventListener('focus', onVisible);
@@ -176,7 +170,7 @@ export default function CallOutcomeGate({ user }: { user: any }) {
   }, [clearForm, loadPending, user?.id]);
 
   const needsInitialCheck = Boolean(user?.id && checkedUserRef.current !== String(user.id));
-  const blocked = Boolean(user?.id && (needsInitialCheck || checking || checkError || pending));
+  const blocked = Boolean((user?.id && (needsInitialCheck || checking || checkError)) || pending);
 
   useEffect(() => {
     if (!blocked) return;

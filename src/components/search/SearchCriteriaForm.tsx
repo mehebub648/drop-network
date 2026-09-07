@@ -32,14 +32,14 @@ export type Criteria = {
 const QUESTIONS = [
   'What blood group is needed?',
   'Where is the blood needed?',
-  'Which hospital or blood bank?',
+  'Which hospital or blood bank? (optional)',
   'Who are you?'
 ] as const;
 
 const STEP_HELP = [
   'Choose the blood group the patient needs.',
   'Choose where the patient will receive blood.',
-  'Enter the collection hospital or blood bank.',
+  'Choose a collection hospital or blood bank, or continue without one.',
   'Tell donors whether you are the patient, a relative, or helping someone else.'
 ] as const;
 
@@ -265,13 +265,12 @@ export default function SearchCriteriaForm({
     value.blood_group
     && value.district
     && value.upazila
-    && value.collection_facility.trim()
     && value.requester_role
   );
   const stepComplete = [
     Boolean(value.blood_group),
     Boolean(value.district && value.upazila),
-    Boolean(value.collection_facility.trim()),
+    true,
     Boolean(value.requester_role)
   ][activeStep];
 
@@ -405,7 +404,7 @@ export default function SearchCriteriaForm({
         {activeStep === 2 && (
           <div className="mt-6 max-w-2xl">
             <label htmlFor={`${facilityListId}-input`} className="sr-only">
-              Hospital or blood bank
+              Hospital or blood bank (optional)
             </label>
             <div
               className="relative"
@@ -422,7 +421,6 @@ export default function SearchCriteriaForm({
               <input
                 ref={facilityInputRef}
                 id={`${facilityListId}-input`}
-                required
                 autoFocus
                 role="combobox"
                 aria-autocomplete="list"

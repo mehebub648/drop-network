@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
-import { Droplet, Heart, LogOut, MapPin, Menu, Plus, ShieldCheck, Sparkles, UserRound, X } from 'lucide-react';
+import { Bell, Home, FileText, Users, Droplet, Heart, LogOut, MapPin, Menu, Plus, ShieldCheck, Sparkles, UserRound, X } from 'lucide-react';
 import Footer from './Footer';
 
 const navigation: Array<{ label: string; to: string; end?: boolean }> = [
@@ -69,7 +69,7 @@ export default function Layout({
   }, [mobileOpen]);
 
   return (
-    <div className={`min-h-screen flex flex-col bg-transparent ${isAndroidEmbed ? 'android-embedded-layout' : ''}`}>
+    <div className={`min-h-screen flex flex-col bg-transparent ${pathname === '/' ? 'home-layout' : ''} ${isAndroidEmbed ? 'android-embedded-layout' : ''}`}>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-3 focus:font-bold focus:text-slate-950 focus:shadow-lg"
@@ -80,6 +80,7 @@ export default function Layout({
       <header className="site-header sticky top-0 z-50">
         <div className="site-header-inner mx-auto flex min-h-[4.5rem] items-center gap-4 px-4 sm:px-5">
           <Link to="/" className="group flex min-h-11 shrink-0 items-center gap-3 rounded-xl" aria-label="Drop Network home">
+            {pathname === '/' ? <span className="home-brand"><span><Droplet fill="currentColor" aria-hidden="true" />drop</span><small>Find Donors. Save Lives.</small></span> : <>
             <span className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-primary shadow-[0_12px_28px_-14px_rgba(190,18,60,0.8)] transition-transform group-hover:-rotate-3">
               <span className="absolute inset-1 rounded-xl border border-white/25" aria-hidden="true" />
               <Droplet className="relative h-5 w-5 text-white" aria-hidden="true" />
@@ -90,6 +91,7 @@ export default function Layout({
               </span>
               <span className="mt-1 hidden text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400 sm:block">Donor network</span>
             </span>
+            </>}
           </Link>
 
           <nav className="site-desktop-nav ml-4 hidden items-center gap-0.5 rounded-full p-1 xl:flex" aria-label="Primary navigation">
@@ -162,6 +164,7 @@ export default function Layout({
             )}
           </div>
 
+          {pathname === '/' && <Link to={user ? '/profile/responses' : '/login?returnTo=%2Fprofile%2Fresponses'} className="home-notification icon-button ml-auto xl:hidden" aria-label="Notifications"><Bell aria-hidden="true" /></Link>}
           <button
             ref={menuButtonRef}
             type="button"
@@ -268,7 +271,8 @@ export default function Layout({
         </div>
         {children}
       </main>
-      {!hideFooter && <Footer compact={isTaskRoute} />}
+      {!hideFooter && pathname !== '/' && <Footer compact={isTaskRoute} />}
+      {pathname === '/' && !isAndroidEmbed && <nav className="home-bottom-nav" aria-label="Main navigation">{[{ to: '/', label: 'Home', icon: Home }, { to: '/requests', label: 'Requests', icon: FileText }, { to: '/directory', label: 'Donors', icon: Users }, { to: '/profile', label: 'Profile', icon: UserRound }].map(({ to, label, icon: Icon }) => <NavLink to={to} end key={to}><Icon aria-hidden="true" /><span>{label}</span></NavLink>)}</nav>}
     </div>
   );
 }

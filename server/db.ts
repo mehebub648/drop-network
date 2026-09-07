@@ -712,3 +712,21 @@ export async function deleteRequestDocument(id: string) {
   const table = await ensureTable('common_requests');
   await table.delete(idFilter(id));
 }
+
+export async function deleteStoredDocument(tableName: string, id: string) {
+  const table = await ensureTable(tableName);
+  await table.delete(idFilter(id));
+}
+export async function deleteRequestCallReports(requestId: string) {
+  const table = await ensureCallReportTable();
+  await table.delete(buildCallReportFilter({ requestId }));
+}
+export async function adoptGuestCallReports(actorId: string, userId: string) {
+  const reports = await queryCallReports<any>({ actorId, limit: 10000 });
+  if (!reports.length) return;
+  const table = await ensureCallReportTable();
+  await table.mergeInsert('id').whenMatchedUpdateAll().execute(reports.map(report => ({
+    vector: [0, 0], id: report.id, kind: report.kind, request_id: report.request_id,
+    actor_id: userId, donor_ref: report.donor_ref, doc: JSON.stringify({ ...report, actor_id: userId })
+  })));
+}

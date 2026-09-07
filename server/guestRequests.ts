@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { requestExpiry, type LifecycleRequest } from './requestLifecycle';
+import { DAY_MS, requestExpiry, type LifecycleRequest } from './requestLifecycle';
 
 export const GUEST_COOKIE = 'drop_guest';
 export function newGuestToken() { return randomBytes(32).toString('hex'); }
@@ -27,4 +27,17 @@ export class RequestWriteQueue {
     this.pending = result.catch(() => {});
     return result;
   }
+}
+
+export const GUEST_IDLE_MS = 15 * DAY_MS;
+export const GUEST_REQUEST_LIMIT = 3;
+export const GUEST_CONTACT_LIMIT = 3;
+export type GuestDevice = { id: string; created_at: string; last_seen_at: string; request_count: number; user_id?: string };
+export function guestDeviceExpired(device: GuestDevice, now = Date.now()) {
+  return !device.user_id && Date.parse(device.last_seen_at || device.created_at) + GUEST_IDLE_MS <= now;
+}
+export function guestCanPublish(device: GuestDevice) { return !device.user_id && device.request_count < GUEST_REQUEST_LIMIT; }
+export function guestCanReveal(donorRef: string, reports: Array<{ kind: string; donor_ref: string }>) {
+  const contacts = new Set(reports.filter(report => report.kind === 'REVEAL').map(report => report.donor_ref));
+  return contacts.has(donorRef) || contacts.size < GUEST_CONTACT_LIMIT;
 }

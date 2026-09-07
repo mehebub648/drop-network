@@ -94,13 +94,13 @@ function profileMatchesLocation(profile: SearchableDonorProfile, search: Pick<Up
   return homeUpazila || preferredArea || anywhereInHomeDistrict;
 }
 
-/** Preference-aware version used by the public request search. */
+/** Home upazila only; travel preferences do not silently broaden this search. */
 export function matchesPreferenceSearch(profile: SearchableDonorProfile | undefined, search: UpazilaSearch, now = Date.now()) {
-  if (!profile) return false;
-  if (!search.compatibleGroups.includes(profile.blood_group)) return false;
-  if (!profileMatchesLocation(profile, search)) return false;
-  if (profile.availability_status !== 'AVAILABLE') return false;
-  return donorEligibility(profile, now).eligible;
+  if (!profile || !search.compatibleGroups.includes(profile.blood_group)) return false;
+  if (!sameText(profile.location?.area_name, search.district) || !profile.upazila) return false;
+  if (!search.upazilas.some(value => sameText(profile.upazila, value))) return false;
+  // Explicit availability does not expire automatically. Clinical deferrals remain respected.
+  return donorEligibility({ ...profile, availability_confirmed_at: new Date(now).toISOString() }, now).eligible;
 }
 
 /**
@@ -202,11 +202,14 @@ export type RankableDonor = {
   donor_kind: 'REGISTERED' | 'IMPORTED';
   blood_group: string;
   name: string;
+  availability_status?: string;
   donor_ref?: string;
   is_current_user?: boolean;
   is_verified?: boolean;
   is_exact_group?: boolean;
   ranking?: {
+    facility_match?: boolean;
+    profile_complete?: boolean;
     location_match_score?: number;
     availability_confirmed_at?: string;
     donation_total?: number;
@@ -224,8 +227,18 @@ export type RankableDonor = {
  * 4. name, so the order is stable between reloads.
  */
 export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGroup: string, sort: SearchSort = 'recommended', orderSeed = ''): T[] {
-  const currentUserTier = (donor: T) => donor.is_current_user ? 0 : 1;
-  const verifiedTier = (donor: T) => donor.donor_kind === 'REGISTERED' && donor.is_verified !== false ? 0 : 1;
+  const priority = (donor: T) => {
+    const available = (!donor.availability_status || donor.availability_status === 'AVAILABLE');
+    const registered = donor.donor_kind === 'REGISTERED';
+    const named = Boolean(donor.name?.trim()) && !/^(anonymous( donor)?|unknown|donor|blood donor|n\/a)$/i.test(donor.name.trim());
+    const facility = donor.ranking?.facility_match === true;
+    if (available && registered && facility && named && donor.ranking?.profile_complete) return 0;
+    if (available && registered && facility && named) return 1;
+    if (available && registered && facility) return 2;
+    if (available && registered && named) return 3;
+    if (available && named) return 4;
+    return 5;
+  };
   const exactTier = (donor: T) => (donor.is_exact_group ?? donor.blood_group === exactGroup) ? 0 : 1;
   const confirmed = (donor: T) => new Date(donor.ranking?.availability_confirmed_at || 0).getTime() || 0;
   const location = (donor: T) => donor.ranking?.location_match_score || 0;
@@ -240,9 +253,7 @@ export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGrou
     ? seededKey(a).localeCompare(seededKey(b), 'en') || stableName(a, b)
     : stableName(a, b);
   return [...donors].sort((a, b) => {
-    const currentUser = currentUserTier(a) - currentUserTier(b);
-    if (currentUser) return currentUser;
-    const tier = verifiedTier(a) - verifiedTier(b);
+    const tier = priority(a) - priority(b);
     if (tier) return tier;
     if (sort === 'name') return stableName(a, b);
     if (sort === 'recently_confirmed') {

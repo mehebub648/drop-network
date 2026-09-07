@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router';
 import { Droplets } from 'lucide-react';
-import { api } from './lib/api';
+import { api, experienceApi } from './lib/api';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
@@ -58,6 +58,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    void experienceApi.initializeGuest().catch(() => {});
     fetchUser();
     void api.getPublicConfig()
       .then(config => setOtpBypassEnabled(Boolean(config.otp_bypass_enabled)))

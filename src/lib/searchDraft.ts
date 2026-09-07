@@ -53,6 +53,7 @@ export type SearchDraft = {
   /** Public patient-side call number. Published by consent, not OTP-verified. */
   contact_phone: string;
   needed_window: NeededWindow | '';
+  needed_when?: 'ASAP' | 'TODAY' | 'THIS_WEEK' | 'SPECIFIC_DATE';
   needed_date?: string;
   /** Set once the request is published, so a reload does not publish twice. */
   request_id?: string;
@@ -84,7 +85,11 @@ export function readSearchDraft(): SearchDraft {
   try {
     const stored = localStorage.getItem(SEARCH_DRAFT_KEY);
     if (!stored) return { ...EMPTY_DRAFT };
-    const parsed = JSON.parse(stored) as Partial<SearchDraft> & { patient_title?: string };
+    const parsed = JSON.parse(stored) as Partial<SearchDraft> & { patient_title?: string; saved_at?: number };
+    if (!parsed.saved_at || Date.now() - parsed.saved_at > 15 * 86400_000) {
+      clearSearchDraft();
+      return { ...EMPTY_DRAFT };
+    }
     const { patient_title: legacyPatientTitle, ...storedDraft } = parsed;
     const legacySex = legacyPatientTitle === 'MR'
       ? 'MALE'
@@ -108,7 +113,7 @@ export function readSearchDraft(): SearchDraft {
 
 export function writeSearchDraft(draft: SearchDraft) {
   try {
-    localStorage.setItem(SEARCH_DRAFT_KEY, JSON.stringify(draft));
+    localStorage.setItem(SEARCH_DRAFT_KEY, JSON.stringify({ ...draft, saved_at: Date.now() }));
   } catch {
     // A full or disabled storage is not a reason to interrupt the flow.
   }
@@ -197,6 +202,7 @@ export function searchRequestPayload(draft: SearchDraft) {
     request_reason_details: draft.request_reason === 'OTHER' ? draft.request_reason_details.trim() || undefined : undefined,
     ...contactFields,
     needed_window: draft.needed_window || undefined,
+    needed_when: draft.needed_when || 'SPECIFIC_DATE',
     needed_date: draft.needed_date
   };
 }

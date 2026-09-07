@@ -27,6 +27,9 @@ import { announcePendingCall } from '../lib/callOutcome';
 import { BLOOD_GROUPS } from '../lib/blood';
 
 type SearchResponse = {
+  items?: SearchDonorCard[];
+  local_total?: number;
+  includes_district?: boolean;
   order_seed: string;
   registered: SearchDonorCard[];
   directory: SearchDonorCard[];
@@ -78,6 +81,7 @@ export default function DonorSearchPage({
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<SearchDonorCard | null>(null);
   const [profileDonor, setProfileDonor] = useState<SearchDonorCard | null>(null);
+  const [requireAccount, setRequireAccount] = useState(false);
   const [gateOpen, setGateOpen] = useState(false);
   const [busyRef, setBusyRef] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
@@ -99,7 +103,7 @@ export default function DonorSearchPage({
   const orderSeed = searchParams.get('order_seed') || '';
   const userId = user?.id || '';
   const hasQuery = Boolean(bloodGroup && district && upazila);
-  const contextComplete = Boolean(draft.request_id || (draft.collection_facility.trim() && draft.requester_role));
+  const contextComplete = Boolean(draft.request_id || draft.requester_role);
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
@@ -191,6 +195,7 @@ export default function DonorSearchPage({
       updateDraft({ ...current, request_id: requestId });
     }
     const reveal = await api.revealDonorPhone(requestId!, donor.donor_ref);
+    try { await navigator.clipboard.writeText(reveal.phone); } catch { /* The contact dialog offers a manual copy action. */ }
     announcePendingCall({ requestId: requestId!, reveal });
   }, [updateDraft]);
 
@@ -198,11 +203,12 @@ export default function DonorSearchPage({
     setError('');
     if (!contextComplete) {
       setRefineOpen(true);
-      setError('Add the collection place and your role before asking to contact a donor.');
+      setError('Choose your role before asking to contact a donor.');
       return;
     }
     setSelected(donor);
-    if (!user?.is_verified || !draft.request_id) {
+    if (!draft.request_id) {
+      setRequireAccount(false);
       setGateOpen(true);
       return;
     }
@@ -210,6 +216,7 @@ export default function DonorSearchPage({
     try {
       await openCall(donor);
     } catch (cause: any) {
+      if (cause?.status === 428) { setRequireAccount(true); setGateOpen(true); return; }
       setError(cause?.message || 'We could not open that contact.');
       if (cause?.status === 409 && cause?.data?.pending_reveal_id) {
         announcePendingCall();
@@ -245,7 +252,7 @@ export default function DonorSearchPage({
     setSearchParams(next);
   };
 
-  const donors = results ? [...results.registered, ...results.directory] : [];
+  const donors = results ? (results.items || [...results.registered, ...results.directory]) : [];
 
   return (
     <div className="space-y-6 pb-8 sm:space-y-8">
@@ -282,7 +289,7 @@ export default function DonorSearchPage({
               {!contextComplete && (
                 <div role="status" className="mt-5 flex flex-col gap-3 border-y border-amber-300 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-semibold leading-6 text-amber-950">
-                    Add the collection place and your role before asking to contact a donor.
+                    Choose your role before asking to contact a donor.
                   </p>
                   <button type="button" onClick={() => setRefineOpen(true)} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-amber-900 px-4 text-xs font-extrabold text-white">
                     Complete search details
@@ -296,7 +303,7 @@ export default function DonorSearchPage({
 
       {hasQuery && (
         <section aria-label="Donor matches">
-          <button type="button" className="button button-primary mb-5" onClick={() => { if (!contextComplete) { setRefineOpen(true); setError('Choose the collection place and your role first.'); return; } setSelected(null); setGateOpen(true); }}>Publish a blood request</button>
+          <button type="button" className="button button-primary mb-5" onClick={() => { if (!contextComplete) { setRefineOpen(true); setError('Choose your role first.'); return; } setSelected(null); setGateOpen(true); }}>Publish a blood request</button>
           <div className="mb-5 flex items-center gap-2 sm:justify-end">
             <div className="flex w-full items-center gap-2 sm:w-auto sm:self-auto">
               {!loading && results && (
@@ -385,7 +392,9 @@ export default function DonorSearchPage({
           ) : (
             <>
               <div className="donor-result-list divide-y divide-slate-200 border-y border-slate-200">
-                {donors.map(donor => (
+                {donors.map((donor, index) => (
+                  <div key={donor.donor_ref}>
+                  {donor.is_district_fallback && !donors[index - 1]?.is_district_fallback && <h2 className="border-t pt-5 text-lg font-bold">Other upazilas in {district}</h2>}
                   <DonorResultCard
                     key={donor.donor_ref}
                     donor={donor}
@@ -393,6 +402,7 @@ export default function DonorSearchPage({
                     onSelect={selectDonor}
                     busy={busyRef === donor.donor_ref}
                   />
+                  </div>
                 ))}
               </div>
               {results && results.pagination.total_pages > 1 && (
@@ -455,6 +465,7 @@ export default function DonorSearchPage({
 
       {gateOpen && (
         <RequestGate
+          requireAccount={requireAccount}
           draft={draft}
           onDraftChange={updateDraft}
           user={user}

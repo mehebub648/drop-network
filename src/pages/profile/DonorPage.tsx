@@ -43,7 +43,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
   const [age, setAge] = useState(user.donor_profile?.age ? String(user.donor_profile.age) : '');
   const [weight, setWeight] = useState(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
   const [medicalConditions, setMedicalConditions] = useState(user.donor_profile?.medical_conditions || '');
-  const [status, setStatus] = useState<AvailabilityStatus>(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
+  const [status, setStatus] = useState<AvailabilityStatus>(user.donor_profile?.availability_status || 'AVAILABLE');
   const [availabilityReason, setAvailabilityReason] = useState(user.donor_profile?.availability_reason || '');
   const [donationExperience, setDonationExperience] = useState<DonationExperienceDraft>(() => donationExperienceDraft(
     user.donor_profile?.last_donation,
@@ -61,7 +61,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
     setAge(user.donor_profile?.age ? String(user.donor_profile.age) : '');
     setWeight(user.donor_profile?.weight_kg ? String(user.donor_profile.weight_kg) : '');
     setMedicalConditions(user.donor_profile?.medical_conditions || '');
-    setStatus(user.donor_profile?.availability_status || 'NOT_AVAILABLE');
+    setStatus(user.donor_profile?.availability_status || 'AVAILABLE');
     setAvailabilityReason(user.donor_profile?.availability_reason || '');
     setDonationExperience(donationExperienceDraft(
       user.donor_profile?.last_donation,

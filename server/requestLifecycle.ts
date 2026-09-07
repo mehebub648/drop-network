@@ -53,3 +53,12 @@ export function migrateRequestLifecycle<T extends LifecycleRequest>(request: T, 
   const needed_by = new Date(Date.parse(needed_date) + DAY_MS - DHAKA_OFFSET_MS).toISOString();
   return { ...next, needed_date, needed_by, expires_at: requestExpiry(needed_by, ownership) };
 }
+
+export const REQUEST_TIMINGS = ['ASAP', 'TODAY', 'THIS_WEEK', 'SPECIFIC_DATE'] as const;
+export type RequestTiming = typeof REQUEST_TIMINGS[number];
+export function resolveRequestTiming(mode: unknown, date: unknown, now = Date.now()) {
+  if (!REQUEST_TIMINGS.includes(mode as RequestTiming)) return null;
+  const neededDate = mode === 'SPECIFIC_DATE' ? date : dhakaDate(now + (mode === 'THIS_WEEK' ? 7 * DAY_MS : 0));
+  const deadline = requestDeadline(neededDate, now);
+  return deadline ? { needed_when: mode as RequestTiming, needed_date: neededDate as string, needed_by: deadline } : null;
+}

@@ -64,3 +64,14 @@ test('does not add secondary requests when ten exact matches exist', () => {
   assert.deepEqual(page.otherItems, []);
   assert.equal(page.total, 10);
 });
+
+test('home recent requests use newest-first order before pagination', () => {
+  const items = [
+    request('old', 'A+', 'Dhaka', '2026-08-01T00:00:00.000Z'),
+    request('new', 'B+', 'Dhaka', '2026-08-03T00:00:00.000Z'),
+    request('middle', 'O+', 'Dhaka', '2026-08-02T00:00:00.000Z')
+  ];
+  assert.deepEqual(buildRequestFeedPage(items, { newestFirst: true }, 1, 2).items.map(item => item.id), ['new', 'middle']);
+  assert.deepEqual(buildRequestFeedPage(items, { newestFirst: true }, 2, 2).items.map(item => item.id), ['old']);
+  assert.deepEqual(buildRequestFeedPage(items, {}, 1, 2).items.map(item => item.id), ['old', 'middle']);
+});

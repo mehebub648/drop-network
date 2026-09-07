@@ -2,6 +2,7 @@ export type RequestFeedFilters = {
   bloodGroup?: string;
   district?: string;
   urgentOnly?: boolean;
+  newestFirst?: boolean;
 };
 
 export type RequestFeedCandidate = {
@@ -34,7 +35,7 @@ export function buildRequestFeedPage<T extends RequestFeedCandidate>(
     .filter(request => !filters.bloodGroup || request.blood_group === filters.bloodGroup)
     .filter(request => !filters.district || request.location.area_name === filters.district)
     .filter(request => !filters.urgentOnly || isUrgent(request, now))
-    .sort(oldestFirst);
+    .sort((left, right) => filters.newestFirst ? oldestFirst(right, left) : oldestFirst(left, right));
   const exactSet = new Set(exact);
 
   const other = hasFilters && exact.length < 10

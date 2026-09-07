@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.155`
+Current application version: `0.0.157`
 
 ## Overview
 
@@ -74,7 +74,13 @@ securely and sends `X-Drop-Guest`. Fingerprints do not authorize requests.
 Each guest grant expires at its request deadline independently of the credential.
 `GET /guest/requests` and the request detail permitted-actions projection support
 same-device management. All successful session-issuing login paths adopt all
-unexpired matching guest requests, persisting ownership before revoking grants.
+unexpired matching guest requests and call history, then mark the identity claimed.
+Devices may publish three requests total, including closed posts, and reveal
+three distinct donors per request. Further access returns 428 ACCOUNT_REQUIRED
+and clients continue guided account questions without losing their answers.
+Unclaimed identities expire after 15 inactive days; passive pending-call polling
+does not extend activity. Guest requests, related reports and comments are removed
+from active storage. Request deadlines still apply independently.
 Serialized request writes prevent adoption/expiry mutation races.
 
 `needed_date` is a Bangladesh calendar date from today through day 15 inclusive.
@@ -226,7 +232,7 @@ Routes:
   each donor's name; the full number still requires the recorded reveal flow. The imported-
   listing claim option is shown only to guests, because signed-in members
   already have a donor profile. An eligible signed-in member's own donor
-  profile appears first with “Your profile” and “Phone verified” labels; its
+  profile is identified with “Your profile” and “Phone verified” labels; its
   action opens profile management rather than revealing the member's own
   number. Asking for another donor's number opens the patient-details gate.
   Previously completed search, role,
@@ -237,7 +243,13 @@ Routes:
   use OTP. New verified phones continue through private DOB/location, optional
   donor enrollment and conditional donation/availability details, then password.
   Only the chosen call contact is published, while the request owner remains private.
-  Publication alone never unmasks a donor. Verified account ownership is required.
+  Copy Phone Number performs an explicit recorded reveal and copies the number.
+  Guests receive three distinct numbers per request before guided authentication.
+  Rank the selected upazila first; below 30 local matches, append other upazilas
+  in the same district. Priority is availability (missing means available),
+  registration, preferred facility, name, and optional profile completeness.
+  Clinical deferrals remain enforced. The optional facility is collected once.
+  Timing accepts ASAP, TODAY, THIS_WEEK (next seven days), or SPECIFIC_DATE.
   The keyboard-operable
   facility combobox preloads and searches only the selected district. The
   generated snapshot includes every DGHS registry function except the two
@@ -914,10 +926,10 @@ Operational endpoints and jobs:
   activities and must remain disabled outside controlled testing.
 - Notification choices are currently device-local preferences; there is no
   push or email delivery provider.
-- Legacy anonymous comment attribution still accepts a client fingerprint.
+- New anonymous comments use the server-issued guest identity.
   It does not authorize request access or account adoption. Guest device access
   is bearer-secret access: clearing local storage loses management rights, and
-  a stolen device secret grants management of its unexpired guest posts only.
+  a stolen device secret grants bounded anonymous access, never account access.
 - Rate limits (auth, general API, anonymous comments) are in memory, per
   process, and reset on restart.
 - User and request data are held in a server-memory write-through cache that

@@ -12,6 +12,20 @@ import {
 } from './donorSearch';
 
 const search = { compatibleGroups: ['A+', 'A-', 'O+', 'O-'], district: 'Dhaka', upazilas: ['Banani'] };
+test('availability, registration, facility match and profile completeness determine priority', () => {
+  const base = { donor_kind: 'REGISTERED' as const, blood_group: 'B+', name: 'Named donor' };
+  const ordered = [
+    { ...base, donor_ref: 'full', ranking: { facility_match: true, profile_complete: true } },
+    { ...base, donor_ref: 'facility-name', ranking: { facility_match: true } },
+    { ...base, donor_ref: 'facility', name: '', ranking: { facility_match: true } },
+    { ...base, donor_ref: 'member' },
+    { ...base, donor_ref: 'directory', donor_kind: 'IMPORTED' as const },
+    { ...base, donor_ref: 'unavailable', availability_status: 'NOT_AVAILABLE', ranking: { facility_match: true, profile_complete: true } },
+  ];
+  assert.deepEqual(rankDonorResults([...ordered].reverse(), 'B+').map(item => item.donor_ref), ordered.map(item => item.donor_ref));
+  assert.equal(matchesPreferenceSearch(profile({ availability_status: undefined, availability_confirmed_at: undefined }), search), true);
+  assert.equal(matchesPreferenceSearch(profile({ deferral_status: 'PERMANENT' }), search), false);
+});
 
 function profile(overrides: Partial<SearchableDonorProfile> = {}): SearchableDonorProfile {
   return {
@@ -90,16 +104,16 @@ test('results put registered members first and the exact group above a compatibl
   ]);
 });
 
-test('preferred areas and district-wide travel expand matching without guessing a location', () => {
+test('preferred travel areas do not bypass the selected upazila', () => {
   assert.equal(matchesPreferenceSearch(profile({
     upazila: 'Gulshan',
     preferred_areas: [{ district: 'Dhaka', upazila: 'Banani' }],
     travel_willingness: 'PREFERRED_AREAS'
-  }), search), true);
+  }), search), false);
   assert.equal(matchesPreferenceSearch(profile({
     upazila: 'Gulshan',
     travel_willingness: 'ANYWHERE_IN_DISTRICT'
-  }), search), true);
+  }), search), false);
   assert.equal(matchesPreferenceSearch(profile({
     upazila: 'Gulshan',
     travel_willingness: 'HOME_ONLY'
@@ -141,17 +155,6 @@ test('every public sort is deterministic and keeps verified registered donors ab
     const ranked = rankDonorResults(donors, 'A+', sort);
     assert.equal(ranked.at(-1)?.donor_kind, 'IMPORTED', `${sort} moved an import above verified members`);
     assert.deepEqual(rankDonorResults(donors, 'A+', sort), ranked, `${sort} changed between identical calls`);
-  }
-});
-
-test('the signed-in donor stays first in every sort when eligible for their own search', () => {
-  const donors = [
-    { donor_ref: 'reg:other', donor_kind: 'REGISTERED' as const, blood_group: 'A+', name: 'A Donor', is_verified: true, is_exact_group: true, ranking: { donation_total: 99, location_match_score: 8 } },
-    { donor_ref: 'reg:me', donor_kind: 'REGISTERED' as const, blood_group: 'A+', name: 'Z Donor', is_current_user: true, is_verified: true, is_exact_group: true, ranking: { donation_total: 0, location_match_score: 4 } },
-    { donor_ref: 'imp:1', donor_kind: 'IMPORTED' as const, blood_group: 'A+', name: 'Imported Donor', is_exact_group: true, ranking: { donation_total: 120, location_match_score: 9 } }
-  ];
-  for (const sort of ['recommended', 'recently_confirmed', 'best_location', 'most_donations', 'fewest_contact_issues', 'name'] as const) {
-    assert.equal(rankDonorResults(donors, 'A+', sort)[0]?.donor_ref, 'reg:me', `${sort} did not keep the current donor first`);
   }
 });
 

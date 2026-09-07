@@ -38,6 +38,12 @@ const seededRequest = {
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-expired-guest', user_id: '', ownership: 'GUEST', guest_token_hash: guestTokenHash(expiredDevice), expires_at: seededRequest.needed_by });
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-overdue-owned', user_id: 'qa-existing', ownership: 'USER', expires_at: requestExpiry(seededRequest.needed_by, 'USER') });
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-expired-owned', user_id: 'qa-existing', ownership: 'USER', expires_at: seededRequest.needed_by });
+for (let i = 0; i < 34; i++) {
+  await saveToTable('common_users', { id: `qa-donor-${i}`, name: `Fixture Donor ${i}`, phone: `+8801900000${String(i).padStart(3, '0')}`, is_verified: true, roles: ['MEMBER'], created_at: new Date().toISOString(), donor_profile: { blood_group: 'B+', upazila: i < 4 ? 'Savar' : 'Dhamrai', location: { area_name: 'Dhaka', lat: 23.8, lng: 90.4 }, last_donation: { kind: 'NEVER' } } });
+}
+const idleToken = 'b'.repeat(64);
+await saveToTable('common_guest_devices', { id: guestTokenHash(idleToken), created_at: new Date(Date.now() - 16 * DAY_MS).toISOString(), last_seen_at: new Date(Date.now() - 16 * DAY_MS).toISOString(), request_count: 1 });
+await saveToTable('common_requests', { ...seededRequest, id: 'qa-idle-guest', user_id: '', ownership: 'GUEST', guest_token_hash: guestTokenHash(idleToken), needed_by: new Date(Date.now() + DAY_MS).toISOString(), expires_at: new Date(Date.now() + DAY_MS).toISOString() });
 const codes = new Map<string, string>();
 const sms = createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk;
@@ -102,14 +108,14 @@ try {
   const published = await guest.call('/api/search/requests', payload('01800000001'), 'POST', 201);
   const id = published.request.id;
   assert.equal(published.request.verification_state, 'UNVERIFIED');
-  assert.equal(published.request.permitted_actions.reveal, false);
+  assert.equal(published.request.permitted_actions.reveal, true);
   assert.equal(published.request.expires_at, published.request.needed_by);
   assert.equal('guest_token_hash' in published.request, false);
   const duplicate = await guest.call('/api/search/requests', payload('01800000001'));
   assert.equal(duplicate.request.id, id);
   assert.equal(duplicate.reused, true);
   await stranger.call(`/api/requests/${id}/close`, { reason: 'RECEIVED' }, 'POST', 404);
-  await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'registered:any' }, 'POST', 401);
+  await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'registered:any' }, 'POST', 400);
   const publicDetail = await stranger.call(`/api/requests/${id}`);
   assert.equal(publicDetail.request.permitted_actions.manage, false);
   assert.equal('user_id' in publicDetail.request, false);
@@ -117,6 +123,32 @@ try {
   const second = await guest.call('/api/search/requests', payload('01800000002', dhakaDate(Date.now() + 15 * DAY_MS)), 'POST', 201);
   const guestCredential = guest.cookies.get('drop_guest')!;
   assert.equal((await guest.call('/api/guest/requests')).items.length, 2);
+  await guest.call('/api/requests/qa-idle-guest', undefined, 'GET', 404);
+  const local = await guest.call('/api/search/donors?blood_group=B%2B&district=Dhaka&upazila=Savar');
+  assert.equal(local.local_total, 4);
+  assert.equal(local.includes_district, true);
+  assert.equal(local.items.slice(0, 4).every((item: any) => item.upazila === 'Savar' && !item.is_district_fallback), true);
+  assert.equal(local.items.slice(4).every((item: any) => item.upazila === 'Dhamrai' && item.is_district_fallback), true);
+  const district = await guest.call('/api/search/donors?blood_group=B%2B&district=Dhaka&upazila=Dhamrai');
+  assert.equal(district.local_total, 30);
+  assert.equal(district.includes_district, false);
+  assert.equal(district.items.every((item: any) => item.upazila === 'Dhamrai'), true);
+  await stranger.call(`/api/requests/${id}/reveals`, { donor_ref: 'reg:qa-donor-0' }, 'POST', 403);
+  for (let i = 0; i < 3; i++) {
+    const reveal = await guest.call(`/api/requests/${id}/reveals`, { donor_ref: `reg:qa-donor-${i}` });
+    assert.ok(reveal.phone);
+    await guest.call(`/api/requests/${id}/call-reports`, { reveal_id: reveal.reveal_id, outcome: 'NOT_CALLED' }, 'POST', 201);
+  }
+  const contactLimited = await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'reg:qa-donor-3' }, 'POST', 428);
+  assert.equal(contactLimited.reason, 'GUEST_CONTACT_LIMIT');
+  const separate = await guest.call(`/api/requests/${second.request.id}/reveals`, { donor_ref: 'reg:qa-donor-3' });
+  await guest.call(`/api/requests/${second.request.id}/call-reports`, { reveal_id: separate.reveal_id, outcome: 'NOT_CALLED' }, 'POST', 201);
+  const third = await guest.call('/api/search/requests', { ...payload('01800000008'), needed_when: 'THIS_WEEK', collection_facility: '' }, 'POST', 201);
+  assert.equal(third.request.needed_date, dhakaDate(Date.now() + 7 * DAY_MS));
+  await guest.call(`/api/requests/${third.request.id}/close`, { reason: 'CANCELLED' });
+  const full = await guest.call('/api/search/requests', payload('01800000009'), 'POST', 428);
+  assert.equal(full.reason, 'GUEST_REQUEST_LIMIT');
+  console.log('PASS: distinct per-request contact quotas, total request quota after closure, 15-day idle purge, optional facility, timing and upazila fallback threshold');
   console.log('PASS: guest privacy, consent, deadline bounds, device isolation and duplicate publication');
   assert.equal((await guest.call('/api/auth/start', { phone: privatePhone })).next_step, 'PASSWORD');
   await guest.call('/api/auth/login', { phone: privatePhone, password });
@@ -132,7 +164,9 @@ try {
     assert.equal(JSON.stringify(await stranger.call(`/api/requests/${requestId}`)).includes(privatePhone), false);
   }
   assert.equal((await guest.call('/api/guest/requests')).items.length, 0);
-  console.log('PASS: password login adopted all guest requests');
+  const fourth = await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'reg:qa-donor-3' });
+  await guest.call(`/api/requests/${id}/call-reports`, { reveal_id: fourth.reveal_id, outcome: 'NOT_CALLED' }, 'POST', 201);
+  console.log('PASS: password login adopted guest requests and contact history, and unlocked the fourth donor');
   const replay = new Device('192.0.2.13'); replay.cookies.set('drop_guest', guestCredential);
   await replay.call(`/api/requests/${id}/close`, { reason: 'CANCELLED' }, 'POST', 404);
   await guest.call('/api/guest/requests/adopt', {});

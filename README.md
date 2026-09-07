@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.155`
+Current version: `0.0.157`
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -140,7 +140,7 @@ Refresh the district facility files from the public DGHS registry with:
 - Donors can optionally add 10 preferred areas, 8 DGHS-registered collection
   facilities, home/preferred/district-wide travel willingness, and 3 recurring
   Asia/Dhaka contact or donation windows. A bounded coordination note stays in
-  the account record only. These settings extend eligible search locations and
+  the account record only. These settings prioritize scoped search results and
   create concise match reasons; raw preferences, windows, and the private note
   are never included in public result cards or donor partition copies.
 - Guided registration verifies the private account phone, then collects private
@@ -150,7 +150,10 @@ Refresh the district facility files from the public DGHS registry with:
   patient-side contact before signing in. Account phone is never substituted.
   Dates are today through 15 days ahead in Bangladesh time. Guest posts expire
   at the end of that date; owned posts remain live for 30 more days unless closed.
-  Verified account ownership is still required for protected donor contact.
+  Guests can publish three requests and copy three distinct donor numbers per
+  request before guided account continuation. Unclaimed activity is deleted
+  after 15 inactive days. Timing supports urgent, today, next seven days or
+  a specific date; the optional facility is collected once in search.
   The searchable facility picker loads only the selected district from a
   33,799-entry DGHS registry snapshot. Duplicate registry codes with the same
   canonical facility name and locality are consolidated for display while all

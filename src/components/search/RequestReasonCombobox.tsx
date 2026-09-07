@@ -8,9 +8,11 @@ import {
 
 export default function RequestReasonCombobox({
   value,
+  patientSex,
   onChange
 }: {
   value: RequestReason | '';
+  patientSex?: string;
   onChange: (value: RequestReason) => void;
 }) {
   const listId = useId();
@@ -18,7 +20,7 @@ export default function RequestReasonCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(() => requestReasonLabel(value));
   const [activeIndex, setActiveIndex] = useState(0);
-  const options = useMemo(() => matchingRequestReasonOptions(query), [query]);
+  const options = useMemo(() => matchingRequestReasonOptions(query).filter(option => patientSex !== 'MALE' || option.value !== 'CHILDBIRTH'), [query, patientSex]);
 
   useEffect(() => {
     if (!open) setQuery(requestReasonLabel(value));
