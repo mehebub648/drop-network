@@ -4426,21 +4426,25 @@ body {
 .home-blood-groups button[aria-pressed="true"], .home-find { background: #d32027; color: white; }
 .home-blood-groups button:hover { box-shadow: inset 0 0 0 2px #d32027; }
 .home-find { display: flex; align-items: center; justify-content: center; gap: 14px; border-radius: 50px; width: 100%; min-height: 60px; margin-top: 18px; font-size: 21px; font-weight: 650; }
-.home-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 24px 0 36px; text-align: center; }
-.home-actions a { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.home-actions span { display: grid; place-items: center; background: #fff0f2; border-radius: 20px; width: 78px; height: 78px; color: #df1325; }
-.home-actions svg { width: 35px; height: 35px; stroke-width: 2.6; }
-.home-actions strong { max-width: 100px; font-size: 15px; font-weight: 600; line-height: 1.25; }
+.home-primary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 32px; }
+.home-primary-actions a { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 14px; border: 1px solid #f5d9dd; border-radius: 18px; background: white; color: #a71925; box-shadow: 0 10px 30px -24px #71111e; }
+.home-primary-actions a:hover { border-color: #e9aeb6; transform: translateY(-1px); }
+.home-primary-actions a > span:first-child { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border-radius: 13px; background: #fff0f2; color: #d32027; }
+.home-primary-actions strong { flex: 1; color: #3b1820; font-size: 16px; }
+.home-primary-actions svg { width: 20px; height: 20px; }
+.home-primary-actions > a > svg { color: #b65a64; }
 .home-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .home-section-heading h2 { font-size: 24px; font-weight: 800; letter-spacing: -.035em; }
 .home-section-heading a { display: flex; align-items: center; color: #d32027; font-weight: 700; }
-.home-request { display: flex; align-items: center; gap: 18px; padding: 20px; margin-top: 12px; background: white; border-radius: 20px; box-shadow: 0 4px 24px #15283b04; }
-.home-request-group { display: grid; place-items: center; border-radius: 50%; background: #fff0f2; color: #d32027; width: 74px; height: 74px; flex-shrink: 0; font-size: 27px; font-weight: 800; }
+.home-request { display: flex; align-items: center; gap: 18px; padding: 18px; margin-top: 12px; background: white; border: 1px solid #edf0f3; border-radius: 20px; box-shadow: 0 14px 38px -32px #182c40; transition: border-color .2s, transform .2s, box-shadow .2s; }
+.home-request:hover { border-color: #f0c4ca; transform: translateY(-2px); box-shadow: 0 18px 42px -30px #71111e; }
+.home-request-group { display: grid; place-items: center; border-radius: 18px; background: #fff0f2; color: #d32027; width: 72px; height: 72px; flex-shrink: 0; font-size: 27px; font-weight: 800; }
 .home-request > div { flex: 1; min-width: 0; }
 .home-request h3 { font-size: 18px; font-weight: 750; }
+.home-request-title { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; }
 .home-request p { display: flex; align-items: center; gap: 8px; color: #737d88; margin-top: 5px; font-size: 14px; }
 .home-request p svg { width: 16px; height: 16px; flex-shrink: 0; }
-.home-request-urgency { display: inline-block; padding: 2px 10px; background: #fff0f2; color: #c82028; border-radius: 8px; margin-top: 5px; font-size: 13px; }
+.home-request-urgency { display: inline-block; padding: 3px 9px; background: #fff0f2; color: #b81824; border-radius: 999px; font-size: 12px; font-weight: 750; }
 .home-request > svg { width: 20px; color: #77808b; flex-shrink: 0; }
 @media (max-width: 480px) {
   .home-search-card { padding: 18px 16px; border-radius: 18px; }
@@ -4450,9 +4454,10 @@ body {
   .home-blood-groups { gap: 8px; margin-top: 18px; }
   .home-blood-groups button { min-height: 48px; font-size: 19px; border-radius: 12px; }
   .home-find { min-height: 48px; font-size: 17px; }
-  .home-actions { gap: 10px; }
-  .home-actions span { width: 58px; height: 58px; border-radius: 16px; }
-  .home-actions strong { font-size: 13px; }
+  .home-primary-actions { gap: 8px; margin-bottom: 26px; }
+  .home-primary-actions a { min-height: 58px; padding: 8px 10px; gap: 8px; }
+  .home-primary-actions a > span:first-child { width: 38px; height: 38px; }
+  .home-primary-actions strong { font-size: 14px; }
   .home-section-heading h2 { font-size: 21px; }
   .home-section-heading a { font-size: 14px; }
   .home-request { padding: 14px 12px; gap: 12px; }
@@ -4474,5 +4479,12 @@ body {
 .home-bottom-nav a.active { color: #df0026; }
 @media (min-width: 1280px) { .home-bottom-nav { display: none; } }
 
-.home-become-donor { display:flex; align-items:center; justify-content:center; gap:12px; margin:20px 0 28px; min-height:52px; border-radius:16px; background:#fff0f2; color:#d32027; font-weight:700; }
-.home-docs { grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:28px; }
+.home-docs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:26px; }
+.home-docs a { display:flex; align-items:center; gap:12px; min-height:84px; padding:14px; border:1px solid #edf0f3; border-radius:18px; background:#fff; }
+.home-docs a > span:first-child { display:grid; place-items:center; width:42px; height:42px; flex-shrink:0; border-radius:13px; background:#fff4f5; color:#d32027; }
+.home-docs a > span:nth-child(2) { display:flex; flex:1; min-width:0; flex-direction:column; gap:3px; }
+.home-docs strong { color:#172334; font-size:14px; }
+.home-docs small { color:#737d88; font-size:12px; line-height:1.35; }
+.home-docs svg { width:19px; height:19px; }
+.home-docs > a > svg { color:#9aa1aa; flex-shrink:0; }
+@media (max-width: 700px) { .home-docs { grid-template-columns:1fr; gap:8px; } .home-docs a { min-height:68px; } }

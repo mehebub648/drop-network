@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
-import { Bell, Home, FileText, Users, Droplet, Heart, LogOut, MapPin, Menu, Plus, ShieldCheck, Sparkles, UserRound, X } from 'lucide-react';
+import { Bell, Home, FileText, MessagesSquare, Droplet, Heart, LogOut, MapPin, Menu, Plus, ShieldCheck, Sparkles, UserRound, X } from 'lucide-react';
 import Footer from './Footer';
 
 const navigation: Array<{ label: string; to: string; end?: boolean }> = [
@@ -272,7 +272,7 @@ export default function Layout({
         {children}
       </main>
       {!hideFooter && pathname !== '/' && <Footer compact={isTaskRoute} />}
-      {pathname === '/' && !isAndroidEmbed && <nav className="home-bottom-nav" aria-label="Main navigation">{[{ to: '/', label: 'Home', icon: Home }, { to: '/requests', label: 'Requests', icon: FileText }, { to: '/directory', label: 'Donors', icon: Users }, { to: '/profile', label: 'Profile', icon: UserRound }].map(({ to, label, icon: Icon }) => <NavLink to={to} end key={to}><Icon aria-hidden="true" /><span>{label}</span></NavLink>)}</nav>}
+      {pathname === '/' && !isAndroidEmbed && <nav className="home-bottom-nav" aria-label="Main navigation">{[{ to: '/', label: 'Home', icon: Home }, { to: '/requests', label: 'Requests', icon: FileText }, { to: '/community', label: 'Community', icon: MessagesSquare }, { to: '/profile', label: 'Profile', icon: UserRound }].map(({ to, label, icon: Icon }) => <NavLink to={to} end key={to}><Icon aria-hidden="true" /><span>{label}</span></NavLink>)}</nav>}
     </div>
   );
 }
