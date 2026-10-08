@@ -1,6 +1,27 @@
 # Drop Network Architecture
 
-Current application version: `0.0.161`
+Current application version: `0.0.162`
+
+### Desktop website redesign (0.0.162)
+
+`Layout` provides persistent desktop navigation and a compact top bar across
+public, member and administration routes. A collapsible navigation supports
+narrow desktop windows; mobile product routes still use `MobileAppCover`.
+The native client continues to use the same API independently.
+
+`src/index.css` defines theme tokens and imports workflow component styles and
+the single desktop presentation stylesheet in the CSS components layer. The
+older home, doodle and card-free theme overrides have been removed. Tailwind
+utilities now have predictable precedence over shared component defaults.
+
+Donor search retains the existing draft, URL parameters, privacy and validation
+flow, with visible step progress and contained form actions. Shared selects
+use the browser popover top layer with viewport-aware positioning, preserving
+their native form proxy, labels and keyboard behavior without being clipped by
+scroll containers or obscured by later controls.
+
+Guided forms preserve related fieldsets as a single question group, start new
+sections on a fresh step, and retain stable element keys and mounted values.
 
 ### Desktop homepage correction (0.0.161)
 

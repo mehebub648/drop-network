@@ -350,7 +350,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       )}
 
       {/* Main Request Header */}
-      <section className="relative overflow-hidden border-y border-rose-200 py-6 md:py-8">
+      <section className="surface relative overflow-hidden p-6 md:p-8">
         {request.status === 'FULFILLED' && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
             <div className="w-16 h-16 bg-green-100 text-green-700 rounded-full flex items-center justify-center mb-4">
@@ -373,7 +373,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
 
         <div className="relative z-0 flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div className="flex min-w-0 items-start gap-4 md:gap-5">
-             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-red-200 bg-rose-50 text-2xl font-extrabold text-red-700 md:h-20 md:w-20 md:text-3xl">
+             <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-rose-100 bg-rose-50 text-2xl font-semibold text-primary">
                {request.blood_group}
              </div>
              <div className="min-w-0 flex-1">
@@ -385,7 +385,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                   <RequestVerification state={request.verification_state} />
                   <span className="text-[11px] font-bold text-slate-400">#{request.id.split('-')[1]}</span>
                 </div>
-                <h1 className="text-xl font-extrabold leading-tight text-slate-950 md:text-3xl">
+                <h1 className="text-xl font-semibold leading-tight tracking-tight text-slate-800 md:text-3xl">
                   {request.hospital_name || 'Collection facility'}
                 </h1>
                 {request.ward && <p className="mt-1 text-sm font-semibold text-slate-500">{request.ward}</p>}
@@ -398,7 +398,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           )}
         </div>
 
-        <div className="relative z-0 mt-6 grid grid-cols-2 gap-2.5 border-t border-rose-100 pt-5 lg:grid-cols-5">
+        <div className="relative z-0 mt-6 grid grid-cols-2 gap-2.5 border-t border-slate-100 pt-5 xl:grid-cols-5">
           <div className="border-l border-slate-200 p-3">
             <MapPin className="mb-2 h-4 w-4 text-primary" aria-hidden="true" />
             <p className="request-metadata-label">Location</p>
@@ -435,7 +435,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         </div>
 
         {request.status === 'ACTIVE' && (
-          <div className="relative z-0 mt-5 flex flex-col gap-3 border-y border-rose-200 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative z-0 mt-5 flex flex-col gap-3 rounded-xl bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="px-1">
               <p className="text-sm font-extrabold text-slate-900">Help this request reach donors</p>
               <p className="text-xs font-medium text-slate-500">Share only the public request link.</p>

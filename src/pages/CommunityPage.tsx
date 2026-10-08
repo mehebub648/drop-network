@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, BookOpenText, ChevronLeft, ChevronRight, HeartHandshake, PenLine, ShieldCheck } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import CommunityPostCard from '../components/community/CommunityPostCard';
+import { PageHeader } from '../components/ui';
 import { api, type CommunityPostListResponse, type CommunityPostType, type PublicCommunityPostSummary } from '../lib/api';
 
 const filters: Array<{ value: '' | CommunityPostType; label: string; icon?: typeof HeartHandshake }> = [
@@ -55,31 +56,21 @@ export default function CommunityPage({ user }: { user: any }) {
   const totalPages = Math.max(1, data?.total_pages || 1);
 
   return (
-    <div className="space-y-8 sm:space-y-10">
-      <header className="border-b border-slate-200 py-6 sm:py-10 lg:flex lg:items-end lg:justify-between lg:gap-10">
-        <div className="max-w-3xl">
-          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Drop community</p>
-          <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
-            Donation stories and practical health suggestions
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
-            Read first-hand experiences from Bangladesh's donor community and member-written wellbeing guidance.
-            Every post has a permanent, shareable page.
-          </p>
-        </div>
+    <div className="space-y-7">
+      <PageHeader eyebrow="The Drop community" title="Small acts. Shared stories." description="Experiences, encouragement, and practical guidance from our donor community." aside={
         <Link
           to={user ? '/community/new' : '/login?returnTo=%2Fcommunity%2Fnew'}
-          className="mt-6 inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-rose-900/20 transition-colors hover:bg-primary-dark lg:mt-0"
+          className="button button-primary"
         >
           <PenLine className="h-4 w-4" aria-hidden="true" />
           Share a helpful post
         </Link>
-      </header>
+      } />
 
       <section aria-labelledby="community-feed-heading">
         <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 id="community-feed-heading" className="text-2xl font-extrabold tracking-tight text-slate-950">Latest community posts</h2>
+            <h2 id="community-feed-heading" className="text-lg font-semibold tracking-tight text-slate-800">From the community</h2>
             <p className="mt-1 text-sm text-slate-500" aria-live="polite">
               {data ? `${data.total.toLocaleString()} published post${data.total === 1 ? '' : 's'}` : 'Loading published posts…'}
             </p>
@@ -136,7 +127,7 @@ export default function CommunityPage({ user }: { user: any }) {
             <Link to="/community" className="mt-5 inline-flex min-h-11 items-center font-extrabold text-primary hover:text-primary-dark">View all community posts</Link>
           </div>
         ) : data ? (
-          <div className="mt-6 border-t border-slate-200">
+          <div className="community-feed-grid">
             {data.posts.map(post => <CommunityPostCard key={post.id} post={post} />)}
           </div>
         ) : null}
@@ -164,7 +155,7 @@ export default function CommunityPage({ user }: { user: any }) {
         </nav>
       )}
 
-      <aside className="flex gap-4 border-y border-amber-300 py-5 text-sm leading-6 text-amber-950">
+      <aside className="community-safety-note">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
         <p><strong>Community content is not medical care.</strong> Health suggestions are member-written. Confirm medical decisions and donation eligibility with a qualified clinician or collection facility.</p>
       </aside>

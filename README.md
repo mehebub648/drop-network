@@ -6,7 +6,12 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.161`
+Current version: `0.0.162`
+
+The desktop website uses a shared navigation rail and consistent workspace
+across donor search, requests, community, accounts and administration. Phones
+use the app download cover; privacy, safety, support and listing removal remain
+available in mobile browsers. Website theme styles live in `src/styles/`.
 
 The native Android app is the primary mobile experience. Desktop browsers use
 the website; mobile browsers show an app-download cover. Privacy, terms, safety,

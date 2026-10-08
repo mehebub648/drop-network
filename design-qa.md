@@ -122,3 +122,24 @@ preview passed visual checks at 1280, 1536 and 1920 pixels: two-line heading,
 The O-negative selection reached `/directory?blood_group=O-` with the correct
 location step. No browser console warnings or errors occurred. The supported
 hosted image build passed; local Docker Desktop was not started.
+
+## Desktop website redesign - 0.0.162
+
+- Rebuilt the shared desktop frame, typography, surfaces and controls across
+  public pages, donor search, account screens and administration. Removed
+  competing legacy themes and put shared styles in the CSS components layer.
+- An isolated site-user rootless Compose preview passed TypeScript and production
+  bundling. Browser checks covered 820, 1024, 1280 and 1536-pixel layouts, collapsed
+  navigation, donor search through results, request filters, community, information
+  pages, sign-in, member forms and administration. No horizontal overflow was
+  observed in the checked desktop layouts.
+- The upazila dropdown accepts typed filtering and keyboard selection without
+  overlapping form actions. Escape closes a select inside the request-filter
+  dialog while leaving the dialog open. All eight donor blood groups stay on one
+  guided-form step; a changed selection survives Continue and Back.
+- Protected preview checks used disposable fixtures with no production data or
+  SMS credentials. The provider form was inspected without saving. No real OTP,
+  SMS or member changes were submitted. Preview HMR websocket errors came from
+  the SSH tunnel; pages were reloaded after source updates.
+- Local Docker Desktop checks were skipped under repository policy. Canonical
+  release checks and screenshots are recorded separately after deployment.

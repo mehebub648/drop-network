@@ -15,17 +15,19 @@ export function InfoPage({ eyebrow, title, intro, children }: { eyebrow: string;
   });
 
   return (
-    <article className="mx-auto max-w-5xl space-y-6">
+    <article className="space-y-6">
       <PageHeader eyebrow={eyebrow} title={title} description={intro} icon={BookOpenText} />
-      <details className="info-contents surface px-5 py-4">
-        <summary className="min-h-11 cursor-pointer font-extrabold text-slate-900">On this page</summary>
-        <nav className="grid gap-1 pt-2 sm:grid-cols-2" aria-label={`${title} sections`}>
+      <div className="info-document">
+      <aside className="info-contents surface">
+        <h2 className="font-semibold text-slate-800">On this page</h2>
+        <nav className="pt-3" aria-label={`${title} sections`}>
           {sections.map(section => <a key={section.id} href={`#${section.id}`}>{section.title}</a>)}
         </nav>
-      </details>
-      <Surface className="space-y-9 px-0 py-8 text-slate-600 leading-7 [&_section]:relative [&_section]:border-b [&_section]:border-slate-200 [&_section]:pb-9 [&_h2]:mb-3 [&_h2]:flex [&_h2]:items-center [&_h2]:gap-3 [&_h2]:text-xl [&_h2]:font-extrabold [&_h2]:tracking-tight [&_h2]:text-slate-950 [&_h2]:before:h-2 [&_h2]:before:w-2 [&_h2]:before:shrink-0 [&_h2]:before:rounded-full [&_h2]:before:bg-primary [&_ul]:list-disc [&_ul]:pl-6 [&_li]:mb-2 [&_li]:marker:text-primary [&_a]:font-bold [&_a]:text-primary [&_a:hover]:underline">
+      </aside>
+      <Surface className="info-content space-y-8 text-sm text-slate-600 leading-7 [&_section]:border-b [&_section]:border-slate-100 [&_section]:pb-8 [&_section:last-child]:border-0 [&_h2]:mb-3 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight [&_h2]:text-slate-800 [&_ul]:list-disc [&_ul]:pl-6 [&_li]:mb-2 [&_a]:font-medium [&_a]:text-primary [&_a:hover]:underline">
         {sections.map(section => section.node)}
       </Surface>
+      </div>
     </article>
   );
 }

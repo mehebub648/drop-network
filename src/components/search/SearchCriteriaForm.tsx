@@ -320,8 +320,14 @@ export default function SearchCriteriaForm({
   };
 
   return (
-    <form onSubmit={submit} className={`search-criteria-form surface p-5 ${compact ? 'sm:p-6' : 'sm:p-7'}`}>
-      <div className="mb-4 flex min-h-9 items-center justify-between gap-3">
+    <form onSubmit={submit} className={`search-criteria-form ${compact ? 'search-criteria-compact' : ''}`}>
+      <aside className="search-progress" aria-label="Search progress">
+        <p>Find your donor</p>
+        <ol>{['Blood group', 'Location', 'Collection facility', 'Your role'].map((label, index) => <li key={label} aria-current={activeStep === index ? 'step' : undefined} className={index < activeStep ? 'is-complete' : ''}><span>{index < activeStep ? <Check size={14} aria-hidden="true" /> : index + 1}</span><div>{label}<small>{['Choose the group needed', 'District and upazila', 'Hospital or blood bank', 'Who you are helping'][index]}</small></div></li>)}</ol>
+        <div className="search-progress-note">You can search freely. Donor contact details stay protected.</div>
+      </aside>
+      <div className="search-stage">
+      <div className="search-stage-heading">
         <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">
           {activeStep > 0 && value.blood_group ? `Finding ${value.blood_group} donors` : 'Donor search'}
         </p>
@@ -334,9 +340,9 @@ export default function SearchCriteriaForm({
 
       <div
         key={activeStep}
-        className={`fade-in ${compact ? '' : 'min-h-[10rem]'}`}
+        className="search-stage-fields"
       >
-        <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950 sm:text-3xl">{question}</h2>
+        <h2>{question}</h2>
         <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{STEP_HELP[activeStep]}</p>
 
         {activeStep === 0 && (
@@ -383,20 +389,16 @@ export default function SearchCriteriaForm({
 
             <label className="block">
               <span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Upazila or thana</span>
-              <span className="relative block">
-                <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" aria-hidden="true" />
                 <Select
                   required
                   disabled={!value.district}
                   value={value.upazila}
                   onChange={event => onChange({ ...value, upazila: event.target.value })}
-                  className="input appearance-none pl-11 pr-10 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="input disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="">{value.district ? 'Choose an upazila or thana' : 'Choose a district first'}</option>
                   {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </Select>
-                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-              </span>
             </label>
           </div>
         )}
@@ -463,7 +465,7 @@ export default function SearchCriteriaForm({
                       }}
                       className="min-h-10 rounded-lg px-2 text-xs font-extrabold text-primary hover:bg-rose-50"
                     >
-                      Hide keyboard
+                      Close suggestions
                     </button>
                   </div>
                   {facilityLoading ? (
@@ -522,7 +524,7 @@ export default function SearchCriteriaForm({
         )}
       </div>
 
-      <div className={`${compact ? 'mt-4' : 'mt-5'} search-step-navigation flex items-center gap-3`}>
+      <div className="search-step-navigation">
         {activeStep > firstStep && (
           <button
             type="button"
@@ -531,18 +533,19 @@ export default function SearchCriteriaForm({
               setFacilityOpen(false);
               setActiveStep(step => step - 1);
             }}
-            className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-700 transition-colors hover:border-rose-200 hover:bg-rose-50"
+            className="button button-secondary"
           >
             Back
           </button>
         )}
-        <button data-search-navigation type="submit" disabled={!stepComplete || submitting} className="primary-button disabled:cursor-not-allowed disabled:opacity-60">
+        <button data-search-navigation type="submit" disabled={!stepComplete || submitting} className="button button-primary disabled:cursor-not-allowed disabled:opacity-60">
           {submitting
             ? 'Searching...'
             : activeStep === QUESTIONS.length - 1 || (activeStep === 0 && handoffAfterBloodGroup)
               ? submitLabel
               : nextLabel}
         </button>
+      </div>
       </div>
     </form>
   );

@@ -1,4 +1,4 @@
-import { Children, Fragment, isValidElement, useEffect, useRef, useState, type FormHTMLAttributes, type ReactNode } from 'react';
+import { Children, Fragment, cloneElement, isValidElement, useEffect, useRef, useState, type FormHTMLAttributes, type ReactNode } from 'react';
 import Select from './Select';
 import DateInput from './DateInput';
 import DonationExperienceFields from './DonationExperienceFields';
@@ -9,6 +9,9 @@ type NodeProps = { children?: ReactNode; type?: string; name?: string; className
 function fieldCount(node: ReactNode): number {
   return Children.toArray(node).reduce<number>((count, child) => {
     if (!isValidElement<NodeProps>(child)) return count;
+    // A fieldset is one question group. Never split its related radio/checkbox
+    // choices across pages (for example, the eight blood groups).
+    if (child.type === 'fieldset') return count + Math.min(3, fieldCount(child.props.children));
     if (['input', 'textarea', 'select'].includes(String(child.type)) || child.type === Select || child.type === DateInput) return count + (child.props.type === 'hidden' ? 0 : 1);
     // Composite field editors get their own page; their internal choices stay together.
     if ([DonationExperienceFields, DonorPreferencesFields, DonorAvailabilityFields].includes(child.type as any)) return count + 3;
@@ -20,17 +23,18 @@ function hasSubmit(node: ReactNode): boolean {
     child.type === 'button' && (!child.props.type || child.props.type === 'submit') || hasSubmit(child.props.children)
   ));
 }
-function flattenGroups(children: ReactNode): ReactNode[] {
-  return Children.toArray(children).flatMap<ReactNode>(child => {
+function flattenGroups(children: ReactNode, path = 'form'): ReactNode[] {
+  return Children.toArray(children).flatMap<ReactNode>((child, index) => {
     if (!isValidElement<NodeProps>(child)) return [child];
+    const key = `${path}/${child.key ?? index}`;
     const count = fieldCount(child);
     if (child.type === Fragment || (['div', 'section', 'fieldset', 'details'].includes(String(child.type)) && count > 3)) {
-      return flattenGroups(child.props.children);
+      return flattenGroups(child.props.children, key);
     }
     // A disclosure with at most three fields becomes an always-open question group.
-    if (child.type === 'details') return flattenGroups(child.props.children);
-    if (child.type === 'summary') return [<div key={child.key} className="guided-section-title">{child.props.children}</div>];
-    return [child];
+    if (child.type === 'details') return flattenGroups(child.props.children, key);
+    if (child.type === 'summary') return [<div key={key} className={`${child.props.className || ''} guided-section-title`}>{child.props.children}</div>];
+    return [cloneElement(child, { key })];
   });
 }
 
@@ -43,6 +47,8 @@ export default function GuidedForm({ children, onSubmit, ...props }: FormHTMLAtt
   const footer: ReactNode[] = [];
   let count = 0;
   for (const child of flattenGroups(children)) {
+    const startsSection = isValidElement<NodeProps>(child) && child.props.className?.includes('guided-section-title');
+    if (startsSection && count) { groups.push([]); count = 0; }
     const fields = fieldCount(child);
     if (!fields && hasSubmit(child)) { footer.push(child); continue; }
     if (fields && count + fields > 3 && count) { groups.push([]); count = 0; }

@@ -7,6 +7,9 @@
 - Do not run Node, npm, npx, Vite, or TSX directly on the host. If an npm script is needed, run it inside a Docker Compose service.
 - Use PowerShell-safe Docker commands on Windows.
 - Prefer the existing structure and scripts in `package.json` before adding new tooling.
+- Website theme tokens live in `src/index.css`; desktop presentation lives in
+  `src/styles/website.css`, and workflow layouts in `src/styles/components.css`.
+  Both stylesheets use the components layer so Tailwind utilities retain precedence.
 
 ## Plan File (PLAN.md)
 - Read [PLAN.md](./docs/PLAN.md) before starting work and check whether any planned item covers the current task.

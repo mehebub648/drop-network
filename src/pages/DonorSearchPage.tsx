@@ -253,14 +253,13 @@ export default function DonorSearchPage({
   const donors = results ? [...results.registered, ...results.directory] : [];
 
   return (
-    <div className="space-y-6 pb-8 sm:space-y-8">
+    <div className="directory-workspace space-y-6">
       <BloodHelpNotice />
-      <section className="page-hero block px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
-        <div className="page-hero-grid" aria-hidden="true" />
-        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-rose-200/40 blur-3xl" />
-        <div className="relative">
+      {!hasQuery && <header className="web-page-heading"><p className="eyebrow">Blood donor directory</p><h1 className="page-title">Find someone who can help.</h1><p className="page-description">A few details help us find donors near the patient.</p></header>}
+      <section className={hasQuery ? 'search-results-heading' : 'search-workspace'}>
+        <div>
           {!hasQuery ? (
-            <div className="mx-auto max-w-5xl">
+            <div>
               <SearchCriteriaForm
                 value={criteria}
                 onChange={next => updateDraft({ ...draft, ...next, request_id: undefined })}
@@ -431,9 +430,9 @@ export default function DonorSearchPage({
         </section>
       )}
 
-      <aside className="border-y border-emerald-300 py-5">
+      <aside className="search-privacy-note">
         <div className="flex gap-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-slate-500">
             <ShieldCheck className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>

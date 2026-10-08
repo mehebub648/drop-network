@@ -246,7 +246,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
           <TypeIcon className="h-4 w-4" aria-hidden="true" />
           {communityPostTypeLabel(post.type)}
         </span>
-        <h1 className="mt-5 text-3xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-5xl" itemProp="headline">
+        <h1 className="mt-5 text-3xl font-semibold leading-tight tracking-tight text-slate-800 sm:text-4xl" itemProp="headline">
           {post.title}
         </h1>
         <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-semibold text-slate-500">

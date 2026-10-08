@@ -8,7 +8,7 @@ export default function CommunityPostCard({ post }: { post: PublicCommunityPostS
 
   return (
     <article
-      className={`community-post-row grid min-w-0 gap-5 border-b border-slate-200 py-6 sm:items-center ${post.image ? 'sm:grid-cols-[12rem_minmax(0,1fr)]' : ''}`}
+      className="community-post-row gap-5"
       itemScope
       itemType="https://schema.org/BlogPosting"
     >

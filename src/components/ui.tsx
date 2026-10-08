@@ -30,18 +30,17 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn('page-hero', aside && 'page-hero-with-aside', className)}>
-      <div className="page-hero-grid" aria-hidden="true" />
-      <div className="relative z-10 min-w-0 max-w-3xl">
+    <header className={cn('web-page-heading', aside && 'web-page-heading-with-aside', className)}>
+      <div className="min-w-0 max-w-3xl">
         <div className="eyebrow-chip">
           {Icon && <Icon className="h-4 w-4" aria-hidden="true" />}
           {eyebrow}
         </div>
         <h1 className="page-title">{title}</h1>
         <p className="page-description">{description}</p>
-        {actions && <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">{actions}</div>}
+        {actions && <div className="mt-5 flex flex-wrap gap-3">{actions}</div>}
       </div>
-      {aside && <div className="relative z-10 min-w-0">{aside}</div>}
+      {aside && <div className="min-w-0">{aside}</div>}
     </header>
   );
 }

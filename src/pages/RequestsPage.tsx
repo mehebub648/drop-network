@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Activity, AlertCircle, ChevronLeft, ChevronRight, Plus, SlidersHorizontal, X } from 'lucide-react';
 import ModalPortal from '../components/ModalPortal';
-import { EmptyState, Surface } from '../components/ui';
+import { EmptyState, PageHeader, Surface } from '../components/ui';
 import { UrgencyBadge } from '../components/UrgencyBadge';
 import { api } from '../lib/api';
 import { BLOOD_GROUPS } from '../lib/blood';
@@ -158,8 +158,8 @@ export default function RequestsPage({ user, authLoading = false }: { user?: any
   const hasAnyRequests = requests.length > 0 || otherRequests.length > 0;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 sm:space-y-6">
-      <header className="flex items-center justify-between gap-4"><h1 className="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Blood requests</h1><Link to="/directory" className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-extrabold text-white shadow-sm transition-colors hover:bg-primary-dark"><Plus className="h-4 w-4" aria-hidden="true" /> New <span className="hidden sm:inline">request</span></Link></header>
+    <div className="space-y-5 sm:space-y-6">
+      <PageHeader eyebrow="People helping people" title="Blood requests" description="Find a nearby request and see where your donation could help." aside={<Link to="/directory" className="button button-primary"><Plus className="h-4 w-4" aria-hidden="true" />New request</Link>} />
 
       <div className="flex min-h-12 items-center justify-between gap-3 border-b border-slate-200 px-1 pb-3"><p className="text-sm font-extrabold text-slate-700" aria-live="polite">{loading ? 'Loading requests…' : `${visibleCount} ${hasFilters ? 'matching' : 'active'} request${visibleCount === 1 ? '' : 's'}`}</p><button ref={filterButtonRef} type="button" onClick={() => setFiltersOpen(true)} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-extrabold text-primary hover:bg-rose-50" aria-haspopup="dialog"><SlidersHorizontal className="h-4 w-4" aria-hidden="true" /> Filters{filterCount ? ` (${filterCount})` : ''}</button></div>
 
@@ -168,7 +168,7 @@ export default function RequestsPage({ user, authLoading = false }: { user?: any
       ) : error ? (
         <Surface className="border-red-200 bg-red-50 p-8 text-center" role="alert"><AlertCircle className="mx-auto h-10 w-10 text-red-600" aria-hidden="true" /><h2 className="mt-3 font-extrabold text-red-950">Requests could not be loaded</h2><p className="mt-1 text-sm text-red-800">{error}</p><button type="button" onClick={() => setReloadKey(value => value + 1)} className="mt-5 min-h-12 rounded-2xl bg-red-700 px-5 text-sm font-extrabold text-white">Try again</button></Surface>
       ) : !hasAnyRequests ? (
-        <EmptyState icon={Activity} title={hasFilters ? 'No requests match these filters' : 'No active requests right now'} description={hasFilters ? 'Reset or change your filters to see more requests.' : 'Pull down to refresh when a new need is published.'} action={hasFilters ? <button type="button" onClick={() => setSearchParams({})} className="theme-button">Reset filters</button> : undefined} />
+        <EmptyState icon={Activity} title={hasFilters ? 'No requests match these filters' : 'No active requests right now'} description={hasFilters ? 'Reset or change your filters to see more requests.' : 'Check again soon, or create a request if someone needs blood.'} action={hasFilters ? <button type="button" onClick={() => setSearchParams({})} className="theme-button">Reset filters</button> : undefined} />
       ) : (
         <>{requests.length > 0 && <RequestRows requests={requests} />}{otherRequests.length > 0 && <section aria-labelledby="other-emergency-heading" className="space-y-3 pt-1"><div><h2 id="other-emergency-heading" className="text-lg font-black text-slate-900">Other emergency blood</h2><p className="mt-1 text-xs font-semibold text-slate-500">Nearby or similar active requests outside your exact filters.</p></div><RequestRows requests={otherRequests} secondary /></section>}</>
       )}

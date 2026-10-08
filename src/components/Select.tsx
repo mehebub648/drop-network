@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { Children, isValidElement, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SelectHTMLAttributes } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
 
 type Option = { value: string; label: string; disabled: boolean };
@@ -17,6 +17,7 @@ export default function Select({ children, value, defaultValue, onChange, classN
   const trigger = useRef<HTMLButtonElement>(null);
   const native = useRef<HTMLSelectElement>(null);
   const root = useRef<HTMLDivElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
   const [ownValue, setOwnValue] = useState(String(defaultValue ?? ''));
   const selected = String(value ?? ownValue);
   const [open, setOpen] = useState(false);
@@ -33,6 +34,31 @@ export default function Select({ children, value, defaultValue, onChange, classN
   const options = useMemo(() => optionsFrom(children), [children]);
   const filtered = options.filter(option => option.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const close = () => { setOpen(false); setQuery(''); };
+  // The browser's top layer escapes animated parents, overflow clipping and
+  // dialog stacking contexts while retaining this control's DOM/focus scope.
+  useLayoutEffect(() => {
+    if (!open || !popup.current || !trigger.current) return;
+    const panel = popup.current;
+    panel.showPopover();
+    const position = () => {
+      if (!trigger.current) return;
+      const rect = trigger.current.getBoundingClientRect();
+      const below = window.innerHeight - rect.bottom - 12;
+      const above = rect.top - 12;
+      const upwards = below < 220 && above > below;
+      const available = Math.max(120, upwards ? above : below);
+      panel.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8))}px`;
+      panel.style.width = `${Math.min(rect.width, window.innerWidth - 16)}px`;
+      panel.style.maxHeight = `${available}px`;
+      panel.style.top = upwards ? 'auto' : `${rect.bottom + 6}px`;
+      panel.style.bottom = upwards ? `${window.innerHeight - rect.top + 6}px` : 'auto';
+    };
+    position();
+    panel.querySelector<HTMLInputElement>('input')?.focus();
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, true);
+    return () => { window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); if (panel.matches(':popover-open')) panel.hidePopover(); };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) close(); };
@@ -70,7 +96,7 @@ export default function Select({ children, value, defaultValue, onChange, classN
       className={`drop-select-trigger ${className}`} onClick={() => { setOpen(!open); setActive(Math.max(0, filtered.findIndex(option => option.value === selected))); }}>
       <span>{options.find(option => option.value === selected)?.label || 'Choose an option'}</span><ChevronDown size={18} aria-hidden="true" />
     </button>
-    {open && <div className="drop-select-popup">
+    {open && <div ref={popup} popover="manual" className="drop-select-popup">
       {options.length > 6 && <div className="drop-select-search"><Search size={17} aria-hidden="true" /><input autoFocus value={query} onChange={event => { setQuery(event.target.value); setActive(0); }} placeholder="Type to find…" aria-label="Search options" role="combobox" aria-expanded="true" aria-controls={listId} aria-activedescendant={filtered[active] ? `${listId}-${active}` : undefined} /></div>}
       <div id={listId} role="listbox" aria-label={props['aria-label'] || 'Options'} className="drop-select-options">
         {filtered.map((option, index) => <button key={`${option.value}-${index}`} id={`${listId}-${index}`} type="button" tabIndex={-1} role="option" aria-selected={option.value === selected} disabled={option.disabled}

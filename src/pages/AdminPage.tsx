@@ -445,7 +445,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
           </div>
         </aside>
 
-        <main ref={contentRef} className="admin-content">
+        <section ref={contentRef} className="admin-content" aria-label="Administration content">
           {error && <div role="alert" className="alert alert-error"><AlertTriangle className="h-5 w-5" />{error}</div>}
           {notice && <div role="status" className="alert alert-success"><CheckCircle2 className="h-5 w-5" />{notice}</div>}
           {loading && !overview ? <LoadingState /> : (
@@ -1140,7 +1140,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
               )}
             </>
           )}
-        </main>
+        </section>
       </div>
 
       {dialog && (
