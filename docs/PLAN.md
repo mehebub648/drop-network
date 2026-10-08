@@ -13,9 +13,9 @@ delivered.
 
 ### Code quality / polish
 
-- [ ] Publish 0.0.160 / Android 1.0.38+39 after deployment authorization, with a private datastore backup, stable SMS encryption key and signed APK download. Isolated rootless typecheck, 170 unit tests, eight admin/API integration groups, emergency-access regression, production image build and desktop/mobile browser checks passed; Flutter analysis, 42 focused tests and signed APK/AAB passed. Canonical hosted release checks, physical-device acceptance and Play publication remain.
+- [ ] Finish Android physical-device notification acceptance: FCM foreground/background/cold-start, token refresh, logout/account switching and denied permissions. The private sender is active as of 0.0.160; authentication and validation-only FCM passed without delivery. Emulator installation/cold launch and canonical desktop/mobile/admin acceptance passed; see `design-qa.md`.
 
-- [ ] Verify 0.0.158 / Android 1.0.36 on the hosted runtime after deployment is authorized: request comment/reply persistence and permissions, notification actions, profile round-trips, mobile/desktop layout, and FCM foreground/background/cold-start, token refresh, logout/account switching and denied permissions. Local web/backend checks were skipped because Docker Desktop was not authorized. Firebase project, Android registration and private sender are prepared; authenticated FCM dry-run passed without delivery. Live configuration is not activated.
+- [ ] Complete real-device SMS provider failover acceptance and Play Store publication for Android 1.0.38+39. The signed direct-download APK is live and checksum-verified; no real SMS was sent during release validation.
 
 
 - [ ] Release backend 0.0.157 with Android 1.0.35 and verify optional decline reasons on the hosted API. Android analysis, 26 focused tests, native layout captures, and release APK build passed; backend checks were skipped under the local Docker policy. Physical keyboard/dialer checks need a connected device.

@@ -75,3 +75,35 @@ final result: release-gated
 - Android source commit `ddead88` matches the signed 1.0.38+39 build. An installed
   emulator upgrade and cold launch passed. Private Firebase authentication and
   an FCM validation-only request passed without delivering a notification.
+
+## Canonical 0.0.160 release - 2026-10-08
+
+- Website/backend code commit: `fb472900ea840a754da91f2ee72bda0c0631ed4a`.
+  Android source: `ddead88f2271f45f8b0d3820b8ab049f4933adb8`, version 1.0.38+39.
+  [GitHub CI](https://github.com/mehebub648/drop-network/actions/runs/37797811055)
+  passed typecheck, 171 unit tests, bundle, dependency audit and secret scanning.
+- Panelavo deployed only Drop's rootless app on loopback port 31000. The container
+  is healthy with restart count zero; `/`, `/health`, `/ready` and the hashed
+  application asset returned 200. All 12 runtime static-asset checks passed.
+- A private non-disruptive backup restored all 14 original data tables with
+  matching versions and counts. Existing private environment settings, donor
+  sources and community media were preserved. After test cleanup, donor totals
+  were 134,588 (134,586 imported, two registered), with two available donors and
+  two open requests, matching the baseline.
+- Six protected HTTPS acceptance groups passed: overview, account edit/audit/undo,
+  failed-login redaction, request/comment/post moderation, disabled provider
+  encryption/redaction/persistence and human-readable audit projection. Exact
+  disposable operational records and sessions were removed; their labelled,
+  immutable audit history remains. Existing provider configuration was unchanged.
+  No OTP or SMS was sent.
+- A real browser on the canonical origin passed donor-group handoff, requests and
+  community detail, admin deep links/refresh/Back/Forward, member undo and disabled
+  `Undone` state, saved disabled provider state and blank credential field. Android
+  UA at 390 pixels showed the download cover and allowed privacy/listing removal.
+  No console warnings/errors or failed network requests were recorded. Rendered
+  captures are in `artifacts/launch-v0.0.160/canonical-*`; Messavo evidence is the
+  live API/DOM interaction, not a screenshot.
+- The full canonical APK download matched the signed artifact byte for byte:
+  SHA-256 `d60798723a04ab37b45349237ac1c8c3875a63b2981b1984f23ddbf16565ffca`.
+  The private push sender and stable SMS encryption key are active and backed up.
+  Real-device push/SMS delivery acceptance and Play upload remain in `PLAN.md`.

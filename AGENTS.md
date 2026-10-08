@@ -63,7 +63,7 @@
   remain a clean fast-forward-only checkout. Never make the durable code fix
   directly on the server.
 - Runtime data is not in Git. Preserve `data/lancedb`,
-  `data/media/community`, `data/releases`, `.env`, and the private donor source files in
+  `data/media/community`, `data/releases`, `data/push`, `.env`, and the private donor source files in
   `data/scraped` across every deployment. Never commit donor source files or
   copy them into a public artifact.
 
