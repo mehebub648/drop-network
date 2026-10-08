@@ -1,10 +1,79 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getFollowUpSmsProvider, getSmsProvider, isSmsConfigured, mapMessavoState, type SmsEnvironment } from './sms';
+import { createRankedMessavoProvider, getFollowUpSmsProvider, getSmsProvider, isSmsConfigured, mapMessavoState, smsOutageReason, SmsProviderError, type SmsEnvironment } from './sms';
 
 function environment(values: SmsEnvironment): SmsEnvironment {
   return values;
 }
+
+test('only confirmed service and sender failures qualify for blood-help access', () => {
+  for (const code of ['device_offline', 'active_sync_device_required', 'subscription_unavailable', 'device_disconnected', 'device_disconnected_while_sending', 'radio_off', 'no_service']) {
+    assert.equal(smsOutageReason(409, code), 'SENDER_UNAVAILABLE');
+    assert.equal(smsOutageReason(0, code), 'SENDER_UNAVAILABLE');
+  }
+  for (const code of ['invalid_request', 'invalid_number', 'recipient_opted_out', 'sms_error_1', 'integration_canceled', 'device_unknown']) {
+    assert.equal(smsOutageReason(409, code), undefined);
+    assert.equal(smsOutageReason(0, code), undefined);
+  }
+  for (const status of [400, 404, 408, 422, 429]) assert.equal(smsOutageReason(status, 'device_offline'), undefined);
+  assert.equal(smsOutageReason(503), 'SERVICE_UNAVAILABLE');
+  assert.equal(smsOutageReason(401), 'PROVIDER_CONFIGURATION');
+  assert.equal(smsOutageReason(403), 'PROVIDER_CONFIGURATION');
+});
+
+test('Messavo preserves transport and sender evidence while retaining its status interface', async () => {
+  const original = globalThis.fetch;
+  const provider = getSmsProvider({ SMS_PROVIDER: 'messavo', SMS_API_BASE_URL: 'https://sms.example.test', SMS_API_TOKEN: 'fixture' })!;
+  try {
+    globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
+    await assert.rejects(provider.sendOtp('+8801700000001', '123456', 'test'), (error: unknown) => error instanceof SmsProviderError && error.outageReason === 'SERVICE_UNAVAILABLE');
+    globalThis.fetch = async () => Response.json({ error: 'device_offline' }, { status: 409 });
+    await assert.rejects(provider.sendOtp('+8801700000001', '123456', 'test'), (error: unknown) => error instanceof SmsProviderError && error.outageReason === 'SENDER_UNAVAILABLE');
+    globalThis.fetch = async () => Response.json({ message: { status: 'failed', error: 'radio_off' } });
+    assert.deepEqual(await provider.getDelivery!('job'), { status: 'failed', outageReason: 'SENDER_UNAVAILABLE' });
+    assert.equal(await provider.getStatus!('job'), 'failed');
+    for (const status of ['ready', 'sent', 'delivered', 'canceled']) {
+      globalThis.fetch = async () => Response.json({ message: { status, error: 'radio_off' } });
+      assert.equal((await provider.getDelivery!('job')).outageReason, undefined);
+    }
+    globalThis.fetch = async () => Response.json({ message: { status: 'failed', error: 'sms_error_1' } });
+    assert.equal((await provider.getDelivery!('job')).outageReason, undefined);
+  } finally { globalThis.fetch = original; }
+});
+
+test('ranked Messavo falls back only after a definitive rejection and keeps receipt affinity', async () => {
+  const original = globalThis.fetch;
+  const calls: string[] = [];
+  const attempts: Array<{ providerId: string; outcome: string }> = [];
+  const provider = createRankedMessavoProvider([
+    { id: 'primary', baseUrl: 'https://primary.example.test', token: 'one', priority: 1 },
+    { id: 'backup', baseUrl: 'https://backup.example.test', token: 'two', priority: 2 }
+  ], event => { attempts.push({ providerId: event.providerId, outcome: event.outcome }); })!;
+  try {
+    globalThis.fetch = async input => {
+      const url = String(input); calls.push(url);
+      if (url.includes('primary')) return Response.json({ error: 'unavailable' }, { status: 503 });
+      if (url.endsWith('/api/v1/messages')) return Response.json({ id: 'backup-job', status: 'sent' }, { status: 202 });
+      return Response.json({ message: { status: 'delivered' } });
+    };
+    const sent = await provider.sendOtp('+8801700000001', '123456', 'ranked');
+    assert.equal(sent.providerId, 'backup');
+    assert.equal(calls.length, 2);
+    assert.deepEqual(attempts, [
+      { providerId: 'primary', outcome: 'ATTEMPTED' }, { providerId: 'primary', outcome: 'FAILED' },
+      { providerId: 'backup', outcome: 'ATTEMPTED' }, { providerId: 'backup', outcome: 'SUCCEEDED' }
+    ]);
+    assert.equal((await provider.getDelivery!(sent.jobId!)).status, 'delivered');
+    assert.equal(calls.at(-1)?.includes('backup.example.test'), true);
+
+    calls.length = 0;
+    attempts.length = 0;
+    globalThis.fetch = async input => { calls.push(String(input)); throw new TypeError('connection lost'); };
+    await assert.rejects(provider.sendOtp('+8801700000001', '123456', 'ambiguous'));
+    assert.equal(calls.length, 1);
+    assert.deepEqual(attempts, [{ providerId: 'primary', outcome: 'ATTEMPTED' }, { providerId: 'primary', outcome: 'FAILED' }]);
+  } finally { globalThis.fetch = original; }
+});
 
 test('blank, console, and unknown providers fail closed', () => {
   assert.equal(getSmsProvider(environment({ NODE_ENV: 'development' })), null);

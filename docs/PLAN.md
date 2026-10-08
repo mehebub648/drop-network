@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.158`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.160`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,8 +13,22 @@ delivered.
 
 ### Code quality / polish
 
-- [ ] Verify v0.0.155 donor contact in an authenticated client after an older
-  request closes; focused pending-call regression tests pass.
+- [ ] Publish 0.0.160 / Android 1.0.38+39 after deployment authorization, with a private datastore backup, stable SMS encryption key and signed APK download. Isolated rootless typecheck, 170 unit tests, eight admin/API integration groups, emergency-access regression, production image build and desktop/mobile browser checks passed; Flutter analysis, 42 focused tests and signed APK/AAB passed. Canonical hosted release checks, physical-device acceptance and Play publication remain.
+
+- [ ] Verify 0.0.158 / Android 1.0.36 on the hosted runtime after deployment is authorized: request comment/reply persistence and permissions, notification actions, profile round-trips, mobile/desktop layout, and FCM foreground/background/cold-start, token refresh, logout/account switching and denied permissions. Local web/backend checks were skipped because Docker Desktop was not authorized. Firebase project, Android registration and private sender are prepared; authenticated FCM dry-run passed without delivery. Live configuration is not activated.
+
+
+- [ ] Release backend 0.0.157 with Android 1.0.35 and verify optional decline reasons on the hosted API. Android analysis, 26 focused tests, native layout captures, and release APK build passed; backend checks were skipped under the local Docker policy. Physical keyboard/dialer checks need a connected device.
+
+- [ ] Verify v0.0.156 home/request changes in the supported web runtime and
+  hosted browser when a release is authorized; web build/typecheck and the
+  recent-feed regression test were skipped under the local Docker policy.
+  Android 1.0.32 fixture tests pass; physical-device/release checks remain.
+
+- [ ] Verify v0.0.155 / Android 1.0.31 donor actions on a signed-in device.
+  Isolated API and Flutter fixture checks pass; no device was connected.
+- [ ] Repair Panelavo file backups for container-owned LanceDB files.
+  A private stopped-table backup was verified before deploying v0.0.155.
 
 - [ ] **Approved experience restoration:** shared accessible controls and all-form
   wizards; guest publication and expiring device ownership; phone-first guided
@@ -99,7 +113,7 @@ These cannot be finished by editing code alone.
   multi-instance hosting.
 - [ ] **Push / email notification delivery** - persisted in-app notifications,
   invitations, and consented Messavo donation follow-ups with delivery receipts
-  exist; FCM/APNs and email remain future channels.
+  exist; Android FCM is implemented in 0.0.158 with live acceptance pending. APNs and email remain future channels.
 - [ ] **Partner operating agreements and clinical confirmation.** Organization
   applications, verification, directory listing, roles, and campaigns exist;
   real partners still need contracts, reviewer ownership, and a process for

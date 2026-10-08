@@ -20,7 +20,7 @@ export const CALL_OUTCOMES = [
 ] as const;
 export type CallOutcome = (typeof CALL_OUTCOMES)[number];
 
-/** Required when, and only when, the outcome is DECLINED. */
+/** Optional explanation, applicable only when the outcome is DECLINED. */
 export const DECLINE_REASONS = [
   'RECENTLY_DONATED',
   'LOCATION_FAR',
@@ -221,6 +221,9 @@ export function parseCallOutcome(input: CallOutcomeInput) {
     return { value: { outcome: outcome as CallOutcome, note: rawNote || undefined } } as const;
   }
 
+  if (reason === undefined && detail === undefined) {
+    return { value: { outcome: outcome as CallOutcome, note: rawNote || undefined } } as const;
+  }
   if (typeof reason !== 'string' || !DECLINE_REASONS.includes(reason as DeclineReason)) {
     return { error: 'Choose why the donor could not help' } as const;
   }

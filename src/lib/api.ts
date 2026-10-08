@@ -2,12 +2,47 @@ import type { LastDonationInput, PublicDonationSummary } from './donation';
 
 const API_BASE = '/api';
 
+export type BloodHelpAccess = { active: boolean; expires_at: string | null; has_activity: boolean };
+export const BLOOD_HELP_CHANGED = 'drop:blood-help-changed';
+let bloodHelp: BloodHelpAccess = { active: false, expires_at: null, has_activity: false };
+export function currentBloodHelpAccess(): BloodHelpAccess {
+  return { ...bloodHelp, active: bloodHelp.active && Date.parse(bloodHelp.expires_at || '') > Date.now() };
+}
+function rememberBloodHelp(result: { blood_help_access?: BloodHelpAccess }) {
+  if (result.blood_help_access) {
+    bloodHelp = result.blood_help_access;
+    window.dispatchEvent(new Event(BLOOD_HELP_CHANGED));
+  }
+  return result;
+}
+let guestInitialization: Promise<unknown> | undefined;
+async function initializeGuest() {
+  guestInitialization ||= postJson('/guest/session').then(rememberBloodHelp).finally(() => { guestInitialization = undefined; });
+  return guestInitialization;
+}
+let guestRefresh: Promise<unknown> | undefined;
+export async function refreshBloodHelpAccess() {
+  guestRefresh ||= fetch(`${API_BASE}/guest/session`, { cache: 'no-store' })
+    .then(res => readJsonOrThrow(res, 'Cannot check temporary access')).then(rememberBloodHelp)
+    .finally(() => { guestRefresh = undefined; });
+  await guestRefresh;
+  return currentBloodHelpAccess();
+}
+const redemptions = new Map<string, Promise<unknown>>();
+async function redeemOtpOutage(result: { challenge_id?: string; blood_help_eligible?: boolean }) {
+  if (!result.blood_help_eligible || !result.challenge_id || currentBloodHelpAccess().active) return;
+  const id = result.challenge_id;
+  if (!redemptions.has(id)) redemptions.set(id, postJson('/guest/emergency-access', { challenge_id: id })
+    .then(rememberBloodHelp).finally(() => redemptions.delete(id)));
+  await redemptions.get(id);
+}
+
 async function postJson(path: string, body: unknown = {}) {
   return readJsonOrThrow(await fetch(`${API_BASE}${path}`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(body) }), 'Please try again');
 }
 
 export const experienceApi = {
-  initializeGuest: () => postJson('/guest/session'),
+  initializeGuest,
   authStart: (phone: string) => postJson('/auth/start', { phone }),
   register: (details: Record<string, unknown>) => postJson('/auth/register', { ...details, registration_context: 'GUIDED' }),
   adopt: () => postJson('/guest/requests/adopt'),
@@ -57,6 +92,7 @@ export type OtpDelivery = {
   challenge_id: string;
   delivery_status: OtpDeliveryStatus;
   expires_at: string;
+  blood_help_eligible?: boolean;
 };
 
 export type SearchDonorCard = {
@@ -97,6 +133,7 @@ export type DonationFollowUp = {
 };
 
 export type ContactedDonorSummary = {
+  follow_up_id?: string;
   donor_ref: string;
   donor_kind: 'REGISTERED' | 'IMPORTED';
   name: string;
@@ -201,10 +238,18 @@ export const api = {
   },
 
   async requestOtp(phone: string, purpose: OtpPurpose) {
+    await initializeGuest();
     const res = await fetch(`${API_BASE}/auth/otp/request`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone, purpose })
     });
-    return readJsonOrThrow(res, 'Failed to send verification code');
+    try {
+      const result = await readJsonOrThrow(res, 'Failed to send verification code');
+      await redeemOtpOutage(result);
+      return result;
+    } catch (error: any) {
+      if (error.data) await redeemOtpOutage(error.data).catch(() => {});
+      throw error;
+    }
   },
 
   async getOtpStatus(challengeId: string): Promise<OtpDelivery> {
@@ -212,7 +257,9 @@ export const api = {
       headers: getHeaders(),
       cache: 'no-store'
     });
-    return readJsonOrThrow(res, 'Failed to check verification delivery');
+    const result = await readJsonOrThrow(res, 'Failed to check verification delivery');
+    await redeemOtpOutage(result).catch(() => {});
+    return result;
   },
 
   async verifyOtp(phone: string, purpose: OtpPurpose, code: string) {
@@ -299,11 +346,11 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to update account');
   },
 
-  async changePassword(currentPassword: string, newPassword: string) {
+  async changePassword(newPassword: string) {
     const res = await fetch(`${API_BASE}/me/change-password`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+      body: JSON.stringify({ new_password: newPassword })
     });
     return readJsonOrThrow(res, 'Failed to change password');
   },
@@ -333,8 +380,8 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to export account');
   },
 
-  async deleteAccount(password: string) {
-    const res = await fetch(`${API_BASE}/me`, { method: 'DELETE', headers: getHeaders(), body: JSON.stringify({ password }) });
+  async deleteAccount() {
+    const res = await fetch(`${API_BASE}/me`, { method: 'DELETE', headers: getHeaders(), body: '{}' });
     return readJsonOrThrow(res, 'Failed to delete account');
   },
 
@@ -396,7 +443,9 @@ export const api = {
 
   async markNotificationRead(id: string) {
     const res = await fetch(`${API_BASE}/me/notifications/${id}/read`, { method: 'PATCH', headers: getHeaders(), body: '{}' });
-    return readJsonOrThrow(res, 'Failed to mark notification read');
+    const result = await readJsonOrThrow(res, 'Failed to mark notification read');
+    window.dispatchEvent(new Event('drop-notifications-changed'));
+    return result;
   },
 
   async report(targetType: 'REQUEST' | 'COMMENT' | 'USER' | 'POST', targetId: string, reason: string, details?: string) {
@@ -459,9 +508,47 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to update OTP bypass mode');
   },
 
-  async getAdminUsers(search = '') {
-    const res = await fetch(`${API_BASE}/admin/users?search=${encodeURIComponent(search)}`, { headers: getHeaders() });
+  async getAdminUsers(search = '', filters: { status?: string; include_deleted?: boolean } = {}) {
+    const query = new URLSearchParams({ search });
+    if (filters.status) query.set('status', filters.status);
+    if (filters.include_deleted) query.set('include_deleted', 'true');
+    const res = await fetch(`${API_BASE}/admin/users?${query}`, { headers: getHeaders() });
     return readJsonOrThrow(res, 'Failed to load users');
+  },
+
+  async deleteAdminUser(id: string, reason: string) {
+    const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: getHeaders(), body: JSON.stringify({ reason })
+    });
+    return readJsonOrThrow(res, 'Failed to delete this account');
+  },
+
+  async restoreAdminUser(id: string, reason: string) {
+    const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(id)}/restore`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ reason })
+    });
+    return readJsonOrThrow(res, 'Failed to restore this account');
+  },
+
+  async moderateAdminRequest(id: string, body: { action: 'UPDATE' | 'DELETE' | 'RESTORE'; changes?: Record<string, unknown>; reason: string }) {
+    const res = await fetch(`${API_BASE}/admin/requests/${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to update this blood request');
+  },
+
+  async moderateAdminComment(requestId: string, commentId: string, body: { action: 'UPDATE' | 'DELETE' | 'RESTORE'; text?: string; reason: string }) {
+    const res = await fetch(`${API_BASE}/admin/requests/${encodeURIComponent(requestId)}/comments/${encodeURIComponent(commentId)}`, {
+      method: 'PATCH', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to update this comment');
+  },
+
+  async mutateAdminCommunityPost(id: string, body: { action: 'UPDATE' | 'DELETE' | 'RESTORE'; changes?: Record<string, unknown>; reason: string }) {
+    const res = await fetch(`${API_BASE}/admin/community/${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to update this community post');
   },
 
   async updateAdminUser(id: string, data: any) {
@@ -522,9 +609,60 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to update ticket');
   },
 
-  async getAuditLog() {
-    const res = await fetch(`${API_BASE}/admin/audit`, { headers: getHeaders() });
+  async getAuditLog(filters: { user_id?: string; activity?: string; target_type?: string; from?: string; to?: string; limit?: number } = {}) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== '') query.set(key, String(value));
+    }
+    const res = await fetch(`${API_BASE}/admin/audit?${query}`, { headers: getHeaders(), cache: 'no-store' });
     return readJsonOrThrow(res, 'Failed to load audit log');
+  },
+
+  async undoAuditEvent(id: string, reason: string) {
+    const res = await fetch(`${API_BASE}/admin/audit/${encodeURIComponent(id)}/undo`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ reason })
+    });
+    return readJsonOrThrow(res, 'Failed to undo this change');
+  },
+
+  async getAdminSmsProviders() {
+    const res = await fetch(`${API_BASE}/admin/sms-providers`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load SMS providers');
+  },
+
+  async createAdminSmsProvider(body: { name: string; base_url: string; api_token: string; priority?: number; enabled?: boolean; reason: string }) {
+    const res = await fetch(`${API_BASE}/admin/sms-providers`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to add this SMS provider');
+  },
+
+  async updateAdminSmsProvider(id: string, body: { name?: string; base_url?: string; api_token?: string; priority?: number; enabled?: boolean; reason: string }) {
+    const res = await fetch(`${API_BASE}/admin/sms-providers/${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to update this SMS provider');
+  },
+
+  async deleteAdminSmsProvider(id: string, reason: string) {
+    const res = await fetch(`${API_BASE}/admin/sms-providers/${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: getHeaders(), body: JSON.stringify({ reason })
+    });
+    return readJsonOrThrow(res, 'Failed to remove this SMS provider');
+  },
+
+  async restoreAdminSmsProvider(id: string, reason: string) {
+    const res = await fetch(`${API_BASE}/admin/sms-providers/${encodeURIComponent(id)}/restore`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ reason })
+    });
+    return readJsonOrThrow(res, 'Failed to restore this SMS provider');
+  },
+
+  async rankAdminSmsProviders(providerIds: string[], reason = 'Updated SMS provider priority') {
+    const res = await fetch(`${API_BASE}/admin/sms-providers/rankings`, {
+      method: 'PUT', headers: getHeaders(), body: JSON.stringify({ provider_ids: providerIds, reason })
+    });
+    return readJsonOrThrow(res, 'Failed to change SMS provider priority');
   },
 
   async getMyRequests() {
@@ -688,11 +826,11 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load contact reports');
   },
 
-  async reverifyContactPhone(verificationToken: string) {
-    const res = await fetch(`${API_BASE}/me/contact-reports/reverify-phone`, {
-      method: 'POST', headers: getHeaders(), body: JSON.stringify({ verification_token: verificationToken })
+  async confirmContactPhone() {
+    const res = await fetch(`${API_BASE}/me/contact-reports/confirm-phone`, {
+      method: 'POST', headers: getHeaders(), body: '{}'
     });
-    return readJsonOrThrow(res, 'Failed to reverify the contact number');
+    return readJsonOrThrow(res, 'Failed to confirm the contact number');
   },
 
   async disputeContactReport(category: string, note: string) {
@@ -849,11 +987,18 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to update request details');
   },
 
-  async addComment(id: string, text: string, anonymousName?: string) {
+  async markAllNotificationsRead() {
+    const res = await fetch(`${API_BASE}/me/notifications/read-all`, { method: 'PATCH', headers: getHeaders(), body: '{}' });
+    const result = await readJsonOrThrow(res, 'Could not mark notifications read');
+    window.dispatchEvent(new Event('drop-notifications-changed'));
+    return result;
+  },
+
+  async addComment(id: string, text: string, anonymousName?: string, parentId?: string, clientId?: string) {
     const res = await fetch(`${API_BASE}/requests/${id}/comments`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ text, anonymous_name: anonymousName })
+      body: JSON.stringify({ text, anonymous_name: anonymousName, parent_id: parentId, client_id: clientId })
     });
     return readJsonOrThrow(res, 'Failed to submit comment');
   },

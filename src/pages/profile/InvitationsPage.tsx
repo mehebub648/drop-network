@@ -7,12 +7,13 @@ export default function InvitationsPage({ user }: { user: { id: string } }) {
   const [responses, setResponses] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [followUps, setFollowUps] = useState<DonationFollowUp[]>([]);
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
 
   const load = async () => {
     const [responseData, notificationData, followUpData] = await Promise.all([api.getInvitations(), api.getNotifications(), api.getDonationFollowUps()]);
-    setResponses(responseData);
+    setResponses([...responseData].sort((a, b) => Number(b.status === 'INVITED') - Number(a.status === 'INVITED')));
     setNotifications(notificationData);
     setFollowUps(followUpData);
   };
@@ -62,7 +63,7 @@ export default function InvitationsPage({ user }: { user: { id: string } }) {
               <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
                 <div className="w-12 h-12 rounded-xl bg-red-50 text-red-700 font-extrabold flex items-center justify-center">{response.request?.blood_group}</div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap"><strong>{isDonor ? response.requester?.name : response.donor?.name}</strong><span className="text-[10px] font-bold rounded-full bg-slate-100 px-2 py-1">{response.status}</span></div>
+                  <div className="flex items-center gap-2 flex-wrap"><strong>{isDonor ? response.requester?.name : response.donor?.name}</strong><span className="text-[10px] font-bold rounded-full bg-slate-100 px-2 py-1">{response.status.replaceAll('_', ' ').toLowerCase()}</span></div>
                   <p className="mt-2 text-sm text-slate-600 flex items-center gap-1"><Hospital className="w-4 h-4" /> {response.request?.hospital_name}</p>
                   <p className="mt-1 text-sm text-slate-500 flex items-center gap-1"><MapPin className="w-4 h-4" /> {response.request?.location?.area_name} · {new Date(response.request?.needed_by).toLocaleString()}</p>
                   {(response.donor_phone || response.requester_contacts?.length) && <div className="mt-3 rounded-xl bg-green-50 p-3 text-sm text-green-900"><p className="font-bold">Accepted coordination contact</p>{response.donor_phone && <a className="mt-1 flex items-center gap-1" href={`tel:${response.donor_phone}`}><Phone className="w-4 h-4" /> {response.donor_phone}</a>}{response.requester_contacts?.map((contact: any) => <a key={contact.phone} className="mt-1 flex items-center gap-1" href={`tel:${contact.phone}`}><Phone className="w-4 h-4" /> {contact.name}: {contact.phone}</a>)}</div>}
@@ -82,9 +83,10 @@ export default function InvitationsPage({ user }: { user: { id: string } }) {
 
       <section className="theme-card border border-slate-100 p-6 sm:p-8">
         <h2 className="font-extrabold flex items-center gap-2"><Bell className="w-5 h-5 text-primary" /> Notifications</h2>
+        <div className="mt-3 flex flex-wrap gap-3"><label className="flex items-center gap-2"><input type="checkbox" checked={unreadOnly} onChange={event => setUnreadOnly(event.target.checked)} />Unread only</label><button className="min-h-11 text-primary" onClick={async () => { try { await api.markAllNotificationsRead(); await load(); } catch { setMessage('Could not mark notifications read. Try again.'); } }}>Mark all as read</button></div>
         <div className="mt-4 divide-y divide-slate-100">
           {notifications.length === 0 && <p className="text-sm text-slate-500 py-6">No notifications.</p>}
-          {notifications.slice(0, 20).map(notification => <Link key={notification.id} to={notification.href} onClick={() => api.markNotificationRead(notification.id).catch(() => undefined)} className="block py-4"><div className="flex gap-3"><Clock3 className="w-4 h-4 text-slate-400 mt-1" /><div><p className={notification.read_at ? 'font-medium text-slate-600' : 'font-extrabold text-slate-900'}>{notification.title}</p><p className="text-sm text-slate-500 mt-1">{notification.body}</p></div></div></Link>)}
+          {notifications.filter(item => !unreadOnly || !item.read_at).map(notification => <Link key={notification.id} to={notification.href?.startsWith('/') && !notification.href.startsWith('//') ? notification.href : '/profile/responses'} onClick={() => api.markNotificationRead(notification.id).then(() => setNotifications(items => items.map(item => item.id === notification.id ? { ...item, read_at: new Date().toISOString() } : item))).catch(() => setMessage('Could not mark this notification read. Try again.'))} className="block py-4"><div className="flex gap-3"><Clock3 className="w-4 h-4 text-slate-400 mt-1" /><div><p className={notification.read_at ? 'font-medium text-slate-600' : 'font-extrabold text-slate-900'}>{notification.title}</p><p className="text-sm text-slate-500 mt-1">{notification.body}</p></div></div></Link>)}
         </div>
       </section>
     </div>

@@ -2,7 +2,7 @@ import Select from '../components/Select';
 import DateInput from '../components/DateInput';
 import GuidedForm from '../components/GuidedForm';
 import { dhakaDate, DAY_MS } from '../../server/requestLifecycle';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, HeartPulse, MapPin, MessageCircle, Phone, Plus, Share2, Trash2, User as UserIcon, Users } from 'lucide-react';
@@ -19,6 +19,8 @@ import { cn } from '../lib/utils';
 import { UrgencyBadge } from '../components/UrgencyBadge';
 import VerifiedBadge from '../components/VerifiedBadge';
 import ModalPortal from '../components/ModalPortal';
+import { announcePendingCall } from '../lib/callOutcome';
+import BloodHelpNotice from '../components/BloodHelpNotice';
 
 export default function RequestDetailsPage({ user }: { user: any }) {
   const { id } = useParams();
@@ -28,16 +30,46 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   const [loadError, setLoadError] = useState('');
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [contactedDonors, setContactedDonors] = useState<ContactedDonorSummary[]>([]);
+  const [contactBusy, setContactBusy] = useState(false);
+  const reopenContact = async (donor: ContactedDonorSummary) => {
+    if (!id || contactBusy) return;
+    setContactBusy(true);
+    try {
+      const reveal = await api.revealDonorPhone(id, donor.donor_ref);
+      announcePendingCall({ requestId: id, reveal });
+    } catch (error: any) {
+      if (error.data?.pending_reveal_id) announcePendingCall();
+      setActionMessage({ type: 'error', text: error.message || 'Could not reopen this contact' });
+    } finally { setContactBusy(false); }
+  };
+  const updateFollowUp = async (donor: ContactedDonorSummary, outcome: 'DONATED' | 'NOT_DONATED' | 'REMIND_LATER') => {
+    if (!id || !donor.follow_up_id || contactBusy) return;
+    setContactBusy(true);
+    try {
+      await api.submitDonationFollowUp(donor.follow_up_id, outcome);
+      setContactedDonors((await api.getContactedDonors(id)).items);
+      setActionMessage({ type: 'success', text: 'Your donation update is saved.' });
+    } catch (error: any) { setActionMessage({ type: 'error', text: error.message || 'Could not save this update' }); }
+    finally { setContactBusy(false); }
+  };
   
   // UI States
   const [isEditing, setIsEditing] = useState(false);
   const [newComment, setNewComment] = useState('');
+  const [replyTo, setReplyTo] = useState<any>(null);
+  const [posting, setPosting] = useState(false);
+  const commentAttempt = useRef({ key: '', id: '' });
+  const postingRef = useRef(false);
   const [anonName, setAnonName] = useState('');
   const [copied, setCopied] = useState(false);
   const [copiedContact, setCopiedContact] = useState<string | null>(null);
   const [reportTarget, setReportTarget] = useState<{ type: 'REQUEST' | 'COMMENT', id: string } | null>(null);
   const [reportReason, setReportReason] = useState('OTHER');
   const [reportDetails, setReportDetails] = useState('');
+
+  useEffect(() => {
+    if (window.location.hash.startsWith('#comment-')) document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: 'center' });
+  }, [data?.request?.id, data?.request?.comments?.length]);
 
   const shareRequest = (target: 'copy' | 'whatsapp') => {
     if (!data) return;
@@ -106,7 +138,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       try {
         const payload = await api.getRequestDetails(id);
         setData(payload);
-        if (user?.id === payload.request.user_id) {
+        if (payload.request.permitted_actions?.contact_history || payload.request.permitted_actions?.reveal) {
           const contacted = await api.getContactedDonors(id).catch(() => ({ items: [] }));
           setContactedDonors(contacted.items);
         }
@@ -174,33 +206,26 @@ export default function RequestDetailsPage({ user }: { user: any }) {
       return;
     }
     
+    if (postingRef.current) return;
+    postingRef.current = true;
+    setPosting(true);
+    const key = JSON.stringify([id, newComment.trim(), anonName, replyTo?.id]);
+    if (commentAttempt.current.key !== key) commentAttempt.current = { key, id: crypto.randomUUID() };
     try {
-      const comment = await api.addComment(data.request.id, newComment, user ? undefined : anonName);
-      setData({
-        ...data,
-        request: {
-          ...data.request,
-          comments: [...(data.request.comments || []), comment]
-        }
-      });
-      setNewComment('');
+      const comment = await api.addComment(data.request.id, newComment, user ? undefined : anonName, replyTo?.id, commentAttempt.current.id);
+      setData(current => current && ({ ...current, request: { ...current.request, comments: [...(current.request.comments || []).filter((item: any) => item.id !== comment.id), comment] } }));
+      setNewComment(''); setReplyTo(null); commentAttempt.current = { key: '', id: '' };
       setActionMessage({ type: 'success', text: 'Comment posted.' });
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: err.message || 'Failed to submit comment.' });
-    }
+      setActionMessage({ type: 'error', text: err.message || 'Could not post. Your draft is saved here; try again.' });
+    } finally { postingRef.current = false; setPosting(false); }
   };
 
   const handleDeleteComment = async (commentId: string) => {
-    if (!data) return;
+    if (!data || !window.confirm('Delete this update? Replies will remain.')) return;
     try {
       await api.deleteComment(data.request.id, commentId);
-      setData({
-        ...data,
-        request: {
-          ...data.request,
-          comments: data.request.comments.filter((c: any) => c.id !== commentId)
-        }
-      });
+      setData(current => current && ({ ...current, request: { ...current.request, comments: current.request.comments.map((c: any) => c.id === commentId ? { ...c, text: 'Comment deleted', user_name: '', deleted: true, can_delete: false } : c) } }));
     } catch (err: any) {
       setActionMessage({ type: 'error', text: err.message || 'Failed to delete comment.' });
     }
@@ -433,11 +458,12 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         )}
       </section>
 
+      {isOwner && <BloodHelpNotice />}
       {isOwner && (
         <section className="theme-card border border-slate-100 p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3"><div><h3 className="text-lg font-bold text-slate-900">Contacted donors</h3><p className="mt-1 text-sm text-slate-500">Numbers stay masked here. Reopen an active contact through donor search when needed.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{contactedDonors.length}</span></div>
           {contactedDonors.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">No donor has been contacted for this request yet.</p> : <div className="mt-5 divide-y divide-slate-100">
-            {contactedDonors.map(donor => <div key={donor.donor_ref} className="grid gap-3 py-4 sm:grid-cols-[1.2fr_1fr_1fr] sm:items-center"><div><p className="font-extrabold">{donor.name}</p><p className="mt-1 font-mono text-xs text-slate-500">{donor.phone_masked || 'Masked'} · {donor.donor_kind === 'IMPORTED' ? 'Directory listing' : 'Registered donor'}</p></div><div className="text-sm"><p className="font-bold">{donor.latest_call_outcome?.replaceAll('_', ' ') || 'Contacted'}</p><p className="mt-1 text-xs text-slate-500">Reminder: {donor.reminder_state.replaceAll('_', ' ')}</p></div><div className="text-sm sm:text-right"><p className="font-bold text-primary">{donor.next_action}</p>{donor.final_state && <p className="mt-1 text-xs text-slate-500">{donor.final_state.replaceAll('_', ' ')}</p>}</div></div>)}
+            {contactedDonors.map(donor => <div key={donor.donor_ref} className="grid gap-3 py-4 sm:grid-cols-[1.2fr_1fr_1fr] sm:items-center"><div><p className="font-extrabold">{donor.name}</p><p className="mt-1 font-mono text-xs text-slate-500">{donor.phone_masked || 'Masked'} · {donor.donor_kind === 'IMPORTED' ? 'Directory listing' : 'Registered donor'}</p></div><div className="text-sm"><p className="font-bold">{donor.latest_call_outcome?.replaceAll('_', ' ') || 'Contacted'}</p><p className="mt-1 text-xs text-slate-500">Reminder: {donor.reminder_state.replaceAll('_', ' ')}</p></div><div className="text-sm sm:text-right"><p className="font-bold text-primary">{donor.next_action}</p><div className="mt-2 flex flex-wrap gap-2"><button type="button" className="button button-secondary" disabled={contactBusy} onClick={() => void reopenContact(donor)}>View phone number</button>{donor.follow_up_id && !donor.requester_outcome && <><button type="button" className="button button-secondary" disabled={contactBusy} onClick={() => void updateFollowUp(donor, 'DONATED')}>Blood received</button><button type="button" className="button button-secondary" disabled={contactBusy} onClick={() => void updateFollowUp(donor, 'NOT_DONATED')}>Donation did not happen</button><button type="button" className="button button-secondary" disabled={contactBusy} onClick={() => void updateFollowUp(donor, 'REMIND_LATER')}>Remind me later</button></>}</div>{donor.final_state && <p className="mt-1 text-xs text-slate-500">{donor.final_state.replaceAll('_', ' ')}</p>}</div></div>)}
           </div>}
         </section>
       )}
@@ -699,8 +725,8 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           {(!request.comments || request.comments.length === 0) ? (
             <p className="border-y border-slate-200 py-4 text-sm font-medium text-slate-500">No updates yet.</p>
           ) : (
-            request.comments.map((c: any) => (
-              <div key={c.id} className="flex gap-4">
+            request.comments.filter((c: any) => !c.parent_id).flatMap((root: any) => [root, ...request.comments.filter((c: any) => c.parent_id === root.id)]).map((c: any) => (
+              <div key={c.id} id={`comment-${c.id}`} className={`flex gap-3 scroll-mt-24 ${c.parent_id ? 'ml-6 border-l-2 pl-3' : ''}`}>
                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold flex-shrink-0">
                   {c.user_name?.charAt(0) || '?'}
                 </div>
@@ -710,15 +736,16 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                     <span className="text-xs font-semibold text-slate-400">{formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}</span>
                   </div>
                   <p className="text-sm text-slate-700 leading-relaxed">{c.text}</p>
-                  {(isOwner || (user && c.user_id === user.id)) && (
+                  {c.can_delete && (
                     <button 
                       onClick={() => handleDeleteComment(c.id)}
-                      className="absolute right-2 top-2 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                      aria-label="Delete update" className="mt-2 p-2 text-slate-500 hover:text-red-500 rounded-lg"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
-                  {user && c.user_id !== user.id && <button onClick={() => setReportTarget({ type: 'COMMENT', id: c.id })} className="mt-2 text-xs font-bold text-slate-400 hover:text-red-600"><Flag className="inline w-3 h-3 mr-1" />Report</button>}
+                  {!c.deleted && <button onClick={() => { setReplyTo(c); document.getElementById('comment-composer')?.focus(); }} className="min-h-11 px-3 text-sm font-bold text-primary">Reply</button>}
+                  {user && !c.is_mine && !c.deleted && <button onClick={() => setReportTarget({ type: 'COMMENT', id: c.id })} className="mt-2 text-xs font-bold text-slate-400 hover:text-red-600"><Flag className="inline w-3 h-3 mr-1" />Report</button>}
                 </div>
               </div>
             ))
@@ -726,6 +753,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         </div>
 
         <div className="flex flex-col gap-3 border-t border-slate-100 pt-5">
+          {replyTo && <p role="status">Replying to {replyTo.user_name} <button onClick={() => setReplyTo(null)} className="min-h-11 px-3 text-primary">Cancel reply</button></p>}
           {!user && (
             <input 
               type="text" 
@@ -738,14 +766,14 @@ export default function RequestDetailsPage({ user }: { user: any }) {
           <div className="flex flex-col gap-3 sm:flex-row">
             <input 
               type="text" 
-              value={newComment} 
+              id="comment-composer" maxLength={1000} disabled={posting} value={newComment}
               onChange={e => setNewComment(e.target.value)}
               placeholder="Type your comment or question..."
               className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-primary focus:ring-4 focus:ring-rose-100 text-sm font-medium outline-none transition-all"
               onKeyDown={e => e.key === 'Enter' && submitComment()}
             />
-            <button onClick={submitComment} className="min-h-11 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white shadow-sm transition-transform hover:bg-primary-dark active:scale-[0.98]">
-              Post
+            <button disabled={posting || !newComment.trim()} onClick={submitComment} className="min-h-11 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white shadow-sm transition-transform hover:bg-primary-dark active:scale-[0.98]">
+              {posting ? 'Posting…' : replyTo ? 'Post reply' : 'Post'}
             </button>
           </div>
           {!user && <p className="text-xs text-slate-500 font-medium">Commenting anonymously. Max 3/min. <Link to="/login" className="text-primary hover:underline">Log in</Link> for unlimited messaging.</p>}

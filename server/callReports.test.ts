@@ -31,7 +31,8 @@ test('a simple outcome carries no reason and rejects one', () => {
 });
 
 test('declining requires a reason, and distance requires a detail', () => {
-  assert.ok(error({ outcome: 'DECLINED' }));
+  assert.ok(parseCallOutcome({ outcome: 'DECLINED' }).value);
+  assert.ok(error({ outcome: 'DECLINED', detail: 'TRAVELLING' }));
   assert.ok(error({ outcome: 'DECLINED', reason: 'NOWHERE_NEAR' }));
   assert.ok(error({ outcome: 'DECLINED', reason: 'LOCATION_FAR' }));
   assert.ok(error({ outcome: 'DECLINED', reason: 'LOCATION_FAR', detail: 'SOMEWHERE' }));

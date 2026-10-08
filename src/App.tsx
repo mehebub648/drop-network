@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-r
 import { Droplets } from 'lucide-react';
 import { api, experienceApi } from './lib/api';
 import ErrorBoundary from './components/ErrorBoundary';
+import MobileAppCover, { isMobileBrowser } from './components/MobileAppCover';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -46,6 +47,8 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [otpBypassEnabled, setOtpBypassEnabled] = useState(false);
+  const [mobileBrowser] = useState(isMobileBrowser);
+  const [androidDownloadUrl, setAndroidDownloadUrl] = useState<string | null>(null);
 
   const fetchUser = async () => {
     try {
@@ -61,7 +64,10 @@ export default function App() {
     void experienceApi.initializeGuest().catch(() => {});
     fetchUser();
     void api.getPublicConfig()
-      .then(config => setOtpBypassEnabled(Boolean(config.otp_bypass_enabled)))
+      .then(config => {
+        setOtpBypassEnabled(Boolean(config.otp_bypass_enabled));
+        setAndroidDownloadUrl(config.android_download_url || null);
+      })
       .catch(() => setOtpBypassEnabled(false));
   }, []);
 
@@ -88,6 +94,7 @@ export default function App() {
     <BrowserRouter>
       <ErrorBoundary>
         <RouteMetadata />
+        <MobileAppCover mobile={mobileBrowser} downloadUrl={androidDownloadUrl}>
         <Layout user={user} onLogout={handleLogout} otpBypassEnabled={otpBypassEnabled}>
           <Routes>
             <Route path="/" element={<LandingPage user={user} />} />
@@ -136,8 +143,9 @@ export default function App() {
             <Route path="/admin" element={loading ? <RouteLoading /> : isStaff ? <DeferredRoute label="Loading operations…"><AdminPage user={user} onOtpBypassChange={setOtpBypassEnabled} /></DeferredRoute> : <Navigate to="/" replace />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
-          <CallOutcomeGate user={user} />
+          {!mobileBrowser && <CallOutcomeGate user={user} />}
         </Layout>
+        </MobileAppCover>
       </ErrorBoundary>
     </BrowserRouter>
   );

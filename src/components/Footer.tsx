@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { Activity, Droplet, HeartHandshake, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
+import { Activity, Droplet, Mail, ShieldCheck } from 'lucide-react';
 
 const columns = [
   {
@@ -30,24 +30,6 @@ const columns = [
   }
 ];
 
-const trustItems = [
-  {
-    icon: LockKeyhole,
-    title: 'Private by default',
-    body: 'Phone numbers stay out of public search results.'
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Verified coordination',
-    body: 'Accounts and request workflows add accountability.'
-  },
-  {
-    icon: HeartHandshake,
-    title: 'Clinical care comes first',
-    body: 'Every donation must happen through an appropriate facility.'
-  }
-];
-
 export default function Footer({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
@@ -69,21 +51,7 @@ export default function Footer({ compact = false }: { compact?: boolean }) {
   return (
     <footer className="site-footer relative mt-14">
       <div className="site-footer-inner mx-auto px-4 py-9 sm:px-6 sm:py-11">
-        <div className="footer-trust-grid grid overflow-hidden lg:grid-cols-3">
-          {trustItems.map(({ icon: Icon, title, body }, index) => (
-            <div key={title} className={`footer-trust-item flex gap-4 p-5 sm:p-6 ${index ? 'lg:border-l' : ''}`}>
-              <span className="cartoon-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl">
-                <Icon className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="font-extrabold text-slate-950">{title}</p>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{body}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="grid gap-10 py-10 md:grid-cols-[1.1fr_2fr] lg:gap-14">
+        <div className="grid gap-10 md:grid-cols-[1.1fr_2fr] lg:gap-16">
           <div className="footer-story">
             <Link to="/" className="inline-flex min-h-11 items-center gap-3 rounded-xl" aria-label="Drop Network home">
               <span className="footer-logo relative flex h-11 w-11 items-center justify-center rounded-2xl bg-primary">
@@ -91,7 +59,7 @@ export default function Footer({ compact = false }: { compact?: boolean }) {
               </span>
               <span className="text-xl font-extrabold tracking-tight text-slate-950">Drop<span className="text-primary">.</span></span>
             </Link>
-            <p className="mt-5 max-w-md text-sm leading-7 text-slate-600">
+            <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">
               A community blood-donor matching service helping people across Bangladesh find compatible,
               available donors and coordinate responsibly.
             </p>
@@ -99,17 +67,7 @@ export default function Footer({ compact = false }: { compact?: boolean }) {
               <Activity className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
               Coordination, not clinical care
             </div>
-            <p className="mt-4 max-w-md text-xs leading-5 text-slate-500">
-              Drop does not collect blood, provide medical care, or replace a hospital or licensed blood bank.
-            </p>
-            <img
-              src="/images/doodles/facility-doodle.webp"
-              alt=""
-              className="footer-doodle mt-5 h-auto w-full max-w-sm"
-              loading="lazy"
-              decoding="async"
-              aria-hidden="true"
-            />
+            <p className="mt-4 max-w-sm text-xs leading-5 text-slate-500">Drop does not collect blood or replace a hospital or licensed blood bank.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">

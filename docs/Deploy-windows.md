@@ -8,6 +8,16 @@ This project runs as one Node.js server:
 4. LanceDB data and processed community story images are stored in host
    directories bind-mounted into Docker.
 
+For the native-app download, place the signed APK at
+`data/releases/drop-android.apk`; Compose mounts this directory read-only.
+The public download directory and file must be readable by the container user;
+on a Linux host use directory mode `755` and APK mode `644`. Keep private data
+permissions separate.
+Preserve it alongside the datastore, media and `.env` during deployments.
+Before configuring ranked Messavo APIs in `/admin`, set a stable private
+`SETTINGS_ENCRYPTION_KEY` with at least 32 random characters in `.env` and
+retain it with private backups. Never publish API credentials or this key.
+
 ## 1. Prerequisites
 
 Install:

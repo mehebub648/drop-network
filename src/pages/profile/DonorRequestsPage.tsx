@@ -1,3 +1,4 @@
+import { Link } from 'react-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Droplet, MapPin, Phone } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -90,6 +91,7 @@ export default function DonorRequestsPage({ user }: ProfilePageProps) {
           Set your blood group and upazila on the donor profile page, and requests in your area will
           appear here.
         </p>
+        <Link className="button button-primary mt-4" to="/profile/donor?returnTo=%2Fprofile%2Fdonor-requests">Set up donor profile</Link>
       </div>
     );
   }

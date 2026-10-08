@@ -32,8 +32,8 @@ export default function AuthShell({
         </div>
         <div className="relative space-y-4">
           {([
-            [ShieldCheck, 'Short-lived OTP verification'],
-            [LockKeyhole, 'Private, httpOnly login sessions'],
+            [ShieldCheck, 'Secure phone verification'],
+            [LockKeyhole, 'Your account stays private'],
             [CheckCircle2, 'Control your availability at any time']
           ] as const).map(([Icon, label]) => (
             <div key={label} className="flex items-center gap-3 text-sm font-semibold text-slate-700">

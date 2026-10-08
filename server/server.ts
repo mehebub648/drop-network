@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { pushConfigured, registerPush, removePush, deliverPush } from './pushNotifications';
+import { publicComments, commentParent } from './requestComments';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
@@ -6,15 +8,19 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import { otpResendRetrySeconds, otpWrongCodeStatus } from './otpPolicy';
 import bcrypt from 'bcryptjs';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
 import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports, deleteStoredDocument, deleteRequestCallReports, adoptGuestCallReports } from './db';
 import { claimSlugForPublicId, evaluateClaim, maskPhone, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
 import { BD_LOCATIONS, BD_LOCATION_NAMES, getLocationByName } from './locations';
 import { resolveRegistrationLocation } from './registrationLocation';
-import { getFollowUpSmsProvider, getSmsProvider, isFollowUpSmsConfigured, isSmsConfigured, type SmsDeliveryStatus } from './sms';
+import { createRankedMessavoProvider, getFollowUpSmsProvider, getSmsProvider, SmsProviderError, type RankedMessavoConfig, type SmsDelivery, type SmsDeliveryStatus } from './sms';
+import { auditCategory, decryptSetting, encryptSetting, humanAuditSummary, maskedPhone, publicSmsProvider, validatePublicSmsBaseUrl, type StoredSmsProvider } from './adminControl';
+import { bloodHelpActive, eligibleOutage, redeemBloodHelp, verifiedContactEvidence, type GuestDevice as EmergencyGuestDevice, type OutageEvidence } from './emergencyAccess';
 import { getUpazilaByName, getUpazilaVariants, getUpazilasForDistrict } from './upazilas';
 import { BLOOD_GROUPS, COMPATIBLE_DONORS, type BloodGroup } from './blood';
 import {
@@ -92,10 +98,10 @@ import { migrateDonationLedger, resolveDonationLedger } from './donationLedger';
 import { findDuplicateActiveRequest } from './requestDeduplication';
 import { REQUEST_REASONS, type RequestReason } from './requestReasons';
 import { buildRequestFeedPage } from './requestFeed';
-import { deleteRequestDocument } from './db';
+import { deleteRequestDocument, adoptCallReports } from './db';
 import { DAY_MS, dhakaDate, isCalendarDate, requestDeadline, requestExpiry, requestIsLive, requestIsOverdue, migrateRequestLifecycle, REQUEST_CLOSURE_REASONS, type RequestOwnership } from './requestLifecycle';
 import { resolveRequestTiming, type RequestTiming } from './requestLifecycle';
-import { GUEST_COOKIE, newGuestToken, guestToken, guestTokenHash, ownsGuestRequest, adoptGuestRequest, RequestWriteQueue, GUEST_IDLE_MS, GUEST_REQUEST_LIMIT, GUEST_CONTACT_LIMIT, guestDeviceExpired, guestCanPublish, guestCanReveal, type GuestDevice } from './guestRequests';
+import { GUEST_COOKIE, newGuestToken, guestToken, guestTokenHash, ownsGuestRequest, adoptGuestRequest, RequestWriteQueue, GUEST_REQUEST_LIMIT, GUEST_CONTACT_LIMIT, guestDeviceExpired, guestCanPublish, guestCanReveal, type GuestDevice as LifecycleGuestDevice } from './guestRequests';
 import {
   DONATION_OUTCOMES,
   deriveFollowUpState,
@@ -107,13 +113,16 @@ import {
   type DonationOutcome
 } from './donationFollowUps';
 
+type GuestDevice = EmergencyGuestDevice & LifecycleGuestDevice;
+
 const app = express();
 const requestWrites = new RequestWriteQueue();
 const accountWrites = new RequestWriteQueue();
 const guestDevices = new Map<string, GuestDevice>();
+const guestWrites = new RequestWriteQueue();
 const guestActivitySavedAt = new Map<string, number>();
 // Defense in depth: credentials never leave storage through any legacy JSON path.
-app.set('json replacer', (key: string, value: unknown) => key === 'guest_token_hash' ? undefined : value);
+app.set('json replacer', (key: string, value: unknown) => ['guest_token_hash', 'api_token_encrypted', 'password'].includes(key) ? undefined : value);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const configuredPort = Number(process.env.PORT || process.env.PROD_PORT || 3000);
 const PORT = Number.isFinite(configuredPort) ? configuredPort : 3000;
@@ -243,12 +252,18 @@ app.use((req, res, next) => {
   res.status(403).json({ error: 'This signed-in action must come from the configured Drop website' });
 });
 
-const authLimiter = rateLimit({
+const passwordLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many attempts, please try again later' }
+  handler(req, res) {
+    const phone = normalizeBangladeshPhone(req.body?.phone);
+    void activityAudit(req, 'LOGIN_FAILED', 'USER', phone ? `phone:${createHash('sha256').update(phone).digest('hex').slice(0, 16)}` : 'unknown', {
+      ...(phone ? { phone: maskedPhone(phone) } : {}), reason: 'Rate limit reached'
+    });
+    res.status(429).json({ error: 'Too many attempts, please try again later' });
+  }
 });
 
 const apiLimiter = rateLimit({
@@ -269,39 +284,68 @@ app.use('/api/requests/:id', (req, res, next) => {
   next();
 });
 
+const guestSessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many guest session requests, please try again later' }
+});
+
 const guestPublishLimiter = rateLimit({ windowMs: 3_600_000, limit: 10, standardHeaders: true, legacyHeaders: false,
-  skip: req => Boolean(getCurrentAuth(req)), message: { error: 'Too many new requests. Please manage an existing post.' } });
+  skip: req => Boolean(getCurrentAuth(req)) || bloodHelpActive(requestGuestDevice(req)), message: { error: 'Too many new requests. Please manage an existing post.' } });
 app.use('/api/search/requests', guestPublishLimiter);
 app.use('/api', asyncRoute(async (req, _res, next) => {
   const token = requestGuestToken(req);
   if (token && !req.path.endsWith('/reveals/pending') && req.path !== '/me') {
     const hash = guestTokenHash(token);
-    const device = guestDevices.get(hash)!;
-    const now = Date.now();
-    device.last_seen_at = new Date(now).toISOString();
-    if (now - (guestActivitySavedAt.get(hash) || 0) >= 60_000) {
-      await requestWrites.run(() => saveToTable('common_guest_devices', device));
-      guestActivitySavedAt.set(hash, now);
+    const device = guestDevices.get(hash);
+    if (device) {
+      const now = Date.now();
+      device.last_seen_at = new Date(now).toISOString();
+      if (now - (guestActivitySavedAt.get(hash) || 0) >= 60_000) {
+        await guestWrites.run(() => saveToTable('common_guest_devices', device));
+        guestActivitySavedAt.set(hash, now);
+      }
     }
   }
   next();
 }));
-app.post('/api/guest/session', authLimiter, requestWriteRoute(async (req, res) => {
+app.post('/api/guest/session', guestSessionLimiter, asyncRoute((req, res) => guestWrites.run(async () => {
   const token = requestGuestToken(req) || newGuestToken();
   const hash = guestTokenHash(token);
   let device = guestDevices.get(hash);
   if (!device) {
     const now = new Date().toISOString();
-    device = { id: hash, created_at: now, last_seen_at: now, request_count: 0 };
+    device = { id: hash, actor_id: `guest:${uuidv4()}`, created_at: now, last_seen_at: now, request_count: 0 };
     await saveToTable('common_guest_devices', device);
     guestDevices.set(hash, device);
   }
   res.cookie(GUEST_COOKIE, token, { httpOnly: true, secure: IS_PRODUCTION, sameSite: 'lax', path: '/', maxAge: 365 * DAY_MS });
-  res.set('Cache-Control', 'no-store').json({ ready: true, request_limit: GUEST_REQUEST_LIMIT, contact_limit: GUEST_CONTACT_LIMIT, requests_remaining: device.user_id ? 0 : Math.max(0, GUEST_REQUEST_LIMIT - device.request_count) });
-}));
+  res.set('Cache-Control', 'no-store').json(guestAccessPayload(guestDevices.get(hash)));
+})));
+app.get('/api/guest/session', (req, res) => {
+  res.set('Cache-Control', 'no-store').json(guestAccessPayload(requestGuestDevice(req)));
+});
+app.post('/api/guest/emergency-access', guestSessionLimiter, asyncRoute((req, res) => guestWrites.run(async () => {
+  const device = requestGuestDevice(req);
+  const challenge = otpChallenges.find(item => item.id === req.body?.challenge_id);
+  const grant = device && challenge ? redeemBloodHelp(device, challenge) : null;
+  if (!grant || !challenge) return res.status(403).json({ error: 'Temporary blood-help access is not available for this device' });
+  const grantedDevice: GuestDevice = { ...device!, ...grant.device };
+  if (grant.device !== device) {
+    // Publish only after durable writes. A partial write can be safely retried.
+    await saveToTable('common_guest_devices', grantedDevice);
+  }
+  const updated = { ...challenge, blood_help_redeemed_at: grant.redeemedAt };
+  await saveToTable('common_otps', updated);
+  Object.assign(challenge, updated);
+  guestDevices.set(grantedDevice.id, grantedDevice);
+  res.set('Cache-Control', 'no-store').json(guestAccessPayload(grantedDevice));
+})));
 app.get('/api/guest/requests', asyncRoute(async (req, res) => {
   await enforceExpiredRequests();
-  res.set('Cache-Control', 'no-store').json({ items: requests.filter(item => ownsGuestRequest(item, requestGuestToken(req))).map(requestOwnerPayload) });
+  res.set('Cache-Control', 'no-store').json({ items: requests.filter(item => ownsGuestRequest(item, requestGuestToken(req))).map(item => requestOwnerPayload(item, req)) });
 }));
 app.post('/api/guest/requests/adopt', asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
@@ -309,19 +353,9 @@ app.post('/api/guest/requests/adopt', asyncRoute(async (req, res) => {
   await adoptDeviceRequests(req, auth.user);
   res.json({ success: true });
 }));
-const phoneStartAttempts = new Map<string, { count: number; until: number }>();
-app.post('/api/auth/start', authLimiter, (req, res) => {
+app.post('/api/auth/start', (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   if (!phone) return validationError(res, 'Enter a valid Bangladesh mobile number');
-  const now = Date.now();
-  for (const [key, value] of phoneStartAttempts) if (value.until <= now) phoneStartAttempts.delete(key);
-  const keys = [guestTokenHash(phone), ...(requestGuestToken(req) ? [guestTokenHash(requestGuestToken(req))] : [])];
-  if (keys.some(key => (phoneStartAttempts.get(key)?.count || 0) >= 5)) return res.status(429).json({ error: 'Please wait before trying this phone again' });
-  for (const key of keys) {
-    const entry = phoneStartAttempts.get(key) || { count: 0, until: now + 15 * 60_000 };
-    entry.count++;
-    phoneStartAttempts.set(key, entry);
-  }
   const user = users.find(item => item.phone === phone && !item.deleted_at);
   res.set('Cache-Control', 'no-store').json({ next_step: user?.password ? 'PASSWORD' : 'OTP' });
 });
@@ -444,6 +478,9 @@ type ContactDetail = {
 };
 
 type Comment = {
+  parent_id?: string;
+  deleted_at?: string;
+  client_id?: string;
   id: string;
   user_id: string;
   user_name: string;
@@ -515,9 +552,13 @@ type BloodRequest = {
   timeline?: Array<{ id: string; type: string; actor_id: string; created_at: string; note?: string }>;
   contacts?: ContactDetail[];
   comments?: Comment[];
+  admin_deleted_at?: string;
+  admin_deleted_by?: string;
+  admin_delete_reason?: string;
+  admin_previous_status?: (typeof REQUEST_STATUSES)[number];
 };
 
-type OtpChallenge = {
+type OtpChallenge = OutageEvidence & {
   id: string;
   phone: string;
   purpose: (typeof OTP_PURPOSES)[number];
@@ -593,6 +634,14 @@ type AuditEvent = {
   metadata?: Record<string, unknown>;
   created_at: string;
 };
+
+const REVERSIBLE_AUDIT_ACTIONS = new Set([
+  'USER_ADMIN_UPDATED', 'USER_ADMIN_DELETED', 'USER_ADMIN_RESTORED', 'PROFILE_UPDATED', 'DONOR_PROFILE_UPDATED',
+  'REQUEST_CREATED', 'REQUEST_UPDATED', 'REQUEST_CLOSED', 'REQUEST_ADMIN_UPDATED',
+  'COMMENT_CREATED', 'COMMENT_DELETED', 'COMMENT_ADMIN_UPDATED',
+  'COMMUNITY_POST_DRAFTED', 'DONATION_STORY_DRAFTED', 'COMMUNITY_POST_UPDATED', 'DONATION_STORY_DRAFT_UPDATED',
+  'COMMUNITY_POST_PUBLISHED', 'COMMUNITY_POST_DELETED', 'COMMUNITY_POST_ADMIN_UPDATED'
+]);
 
 type SupportTicket = {
   id: string;
@@ -885,13 +934,68 @@ let moderationReports: ModerationReport[] = [];
 let supportTickets: SupportTicket[] = [];
 let organizations: Organization[] = [];
 let otpBypassSetting: OtpBypassSetting | undefined;
+let smsProviders: StoredSmsProvider[] = [];
+
+function smsSettingsSecret() {
+  return process.env.SETTINGS_ENCRYPTION_KEY?.trim() || process.env.FOLLOW_UP_LINK_SECRET?.trim() || '';
+}
+
+function rankedSmsConfigs(): RankedMessavoConfig[] | null {
+  const stored = smsProviders;
+  const enabled = stored.filter(provider => provider.enabled && !provider.deleted_at);
+  if (!enabled.length) return [];
+  const secret = smsSettingsSecret();
+  if (!secret || secret.length < 32) return null;
+  const configs: RankedMessavoConfig[] = [];
+  for (const provider of stored) {
+    try {
+      configs.push({ id: provider.id, baseUrl: provider.base_url, token: decryptSetting(provider.api_token_encrypted, secret),
+        priority: provider.priority, enabled: provider.enabled && !provider.deleted_at });
+    } catch {
+      if (provider.enabled) return null;
+    }
+  }
+  return configs;
+}
+
+function activeSmsProvider() {
+  const configs = rankedSmsConfigs();
+  if (configs === null) return null;
+  if (configs.length) return createRankedMessavoProvider(configs, async event => {
+    await audit('system', `SMS_PROVIDER_${event.outcome}`, 'SMS_PROVIDER', event.providerId, {
+      channel: event.kind, ...(event.status ? { delivery_status: event.status } : {}), ...(event.reason ? { reason: event.reason } : {})
+    });
+  }, async config => { await validatePublicSmsBaseUrl(config.baseUrl); });
+  return getSmsProvider();
+}
+
+function activeFollowUpSmsProvider() {
+  const configs = rankedSmsConfigs();
+  if (configs === null) return null;
+  if (configs.length) return createRankedMessavoProvider(configs, async event => {
+    await audit('system', `SMS_PROVIDER_${event.outcome}`, 'SMS_PROVIDER', event.providerId, {
+      channel: event.kind, ...(event.status ? { delivery_status: event.status } : {}), ...(event.reason ? { reason: event.reason } : {})
+    });
+  }, async config => { await validatePublicSmsBaseUrl(config.baseUrl); });
+  return getFollowUpSmsProvider();
+}
+
+function activeSmsConfigured() { return Boolean(activeSmsProvider()); }
+function activeFollowUpSmsConfigured() { return Boolean(activeFollowUpSmsProvider()); }
 
 async function initDbData() {
-  requests = await getAllFromTable('common_requests');
-  for (const device of await getAllFromTable('common_guest_devices')) {
-    guestDevices.set(device.id, { ...device, last_seen_at: device.last_seen_at || new Date().toISOString(), request_count: device.request_count ?? requests.filter(item => item.guest_token_hash === device.id).length });
-  }
   users = await getAllFromTable('common_users');
+  requests = await getAllFromTable('common_requests');
+  for (const stored of await getAllFromTable('common_guest_devices')) {
+    const device: GuestDevice = {
+      ...stored,
+      actor_id: stored.actor_id || `guest:${uuidv4()}`,
+      last_seen_at: stored.last_seen_at || stored.created_at,
+      request_count: Number.isFinite(stored.request_count) ? stored.request_count : requests.filter(item => item.guest_token_hash === stored.id).length
+    };
+    guestDevices.set(device.id, device);
+    if (JSON.stringify(device) !== JSON.stringify(stored)) await saveToTable('common_guest_devices', device);
+  }
   sessions = await getAllFromTable('common_sessions');
   sessionsByToken.clear();
   for (const session of sessions) sessionsByToken.set(session.token, session);
@@ -902,6 +1006,7 @@ async function initDbData() {
   moderationReports = await getAllFromTable('common_reports');
   supportTickets = await getAllFromTable('common_support_tickets');
   organizations = await getAllFromTable('common_organizations');
+  smsProviders = await getAllFromTable('common_sms_providers');
   const appSettings: OtpBypassSetting[] = await getAllFromTable('common_app_settings');
   otpBypassSetting = appSettings.find(setting => setting.id === 'otp_bypass');
   if (IS_PRODUCTION && otpBypassSetting?.enabled) {
@@ -956,6 +1061,21 @@ async function audit(actorId: string, action: string, targetType: string, target
   const event: AuditEvent = { id: uuidv4(), actor_id: actorId, action, target_type: targetType, target_id: targetId, metadata, created_at: new Date().toISOString() };
   await saveToTable('common_audit_events', event);
   return event;
+}
+
+function activityActor(req: express.Request, phone?: string | null) {
+  const auth = getCurrentAuth(req);
+  if (auth) return auth.user.id;
+  const knownUser = phone ? users.find(user => user.phone === phone && !user.deleted_at) : undefined;
+  if (knownUser) return knownUser.id;
+  const fingerprint = getFingerprint(req) || requestGuestDevice(req)?.actor_id;
+  if (fingerprint) return `guest:${createHash('sha256').update(fingerprint).digest('hex').slice(0, 16)}`;
+  return `guest:${createHash('sha256').update(`${req.ip}|${req.get('user-agent') || ''}`).digest('hex').slice(0, 16)}`;
+}
+
+async function activityAudit(req: express.Request, action: string, targetType: string, targetId: string, metadata: Record<string, unknown> = {}, phone?: string | null) {
+  try { await audit(activityActor(req, phone), action, targetType, targetId, metadata); }
+  catch { console.error('Could not persist activity audit event'); }
 }
 
 async function notify(userId: string, type: string, title: string, body: string, href: string, requestId?: string) {
@@ -1080,21 +1200,23 @@ function invalidateCommunitySitemap() {
   communitySitemapCache = null;
 }
 
-async function markCommunityPostDeleted(post: CommunityPost) {
+async function markCommunityPostDeleted(post: CommunityPost, scrub = false) {
   const imageKey = post.image_key;
   // Remove the private binary before erasing its durable reference. If the
   // filesystem refuses the delete, the post remains retryable and account
   // deletion cannot claim success while silently retaining the image.
-  if (imageKey) await deleteCommunityImage(imageKey);
+  if (scrub && imageKey) await deleteCommunityImage(imageKey);
   return await saveCommunityPost({
     ...post,
     status: 'DELETED',
-    title: 'Deleted community post',
-    body_markdown: 'This community post was deleted by its author and is no longer available to the public.',
-    image_key: undefined,
-    image_alt: undefined,
-    image_width: undefined,
-    image_height: undefined,
+    ...(scrub ? {
+      title: 'Deleted community post',
+      body_markdown: 'This community post was deleted by its author and is no longer available to the public.',
+      image_key: undefined,
+      image_alt: undefined,
+      image_width: undefined,
+      image_height: undefined
+    } : {}),
     updated_at: new Date().toISOString()
   });
 }
@@ -1353,7 +1475,7 @@ async function loadContactReports(donorRefs: string[]) {
     if (batch.length < 500) break;
   }
   const verifiedActors = new Set(users.filter(user => user.is_verified && !user.deleted_at).map(user => user.id));
-  return reports.filter(report => report.kind !== 'CALL_OUTCOME' || report.actor_verified === true || (report.actor_verified === undefined && verifiedActors.has(report.actor_id)));
+  return reports.filter(report => report.kind !== 'CALL_OUTCOME' || verifiedContactEvidence(report, verifiedActors));
 }
 
 async function contactIssueSummaries(donorRefs: string[]) {
@@ -1755,12 +1877,20 @@ function requireStaffCapability(
 function adminUserAuditSnapshot(user: User) {
   return {
     id: user.id,
+    name: user.name,
+    phone: user.phone,
+    is_verified: user.is_verified,
     account_status: user.account_status || 'ACTIVE',
     staff_role: user.staff_role || null,
     suspension_reason: user.suspension_reason || null,
     suspended_at: user.suspended_at || null,
-    suspended_by: user.suspended_by || null
+    suspended_by: user.suspended_by || null,
+    deleted_at: user.deleted_at || null
   };
+}
+
+function auditSnapshotMatches(current: Record<string, unknown>, expected: Record<string, unknown>) {
+  return Object.entries(expected).every(([key, value]) => JSON.stringify(current[key] ?? null) === JSON.stringify(value ?? null));
 }
 
 async function issueSession(userId: string, req: express.Request) {
@@ -1838,6 +1968,45 @@ function requestGuestToken(req: express.Request) {
   return device && !guestDeviceExpired(device) ? token : '';
 }
 
+function requestGuestDevice(req: express.Request) {
+  const token = requestGuestToken(req);
+  return token ? guestDevices.get(guestTokenHash(token)) : undefined;
+}
+
+function guestAccessPayload(device: GuestDevice | undefined) {
+  return { ready: Boolean(device), request_limit: GUEST_REQUEST_LIMIT, contact_limit: GUEST_CONTACT_LIMIT,
+    requests_remaining: device?.user_id ? 0 : Math.max(0, GUEST_REQUEST_LIMIT - (device?.request_count || 0)), blood_help_access: {
+    active: bloodHelpActive(device), expires_at: device?.blood_help?.expires_at || null,
+    has_activity: Boolean(device?.blood_help)
+  } };
+}
+
+/** This capability is deliberately separate from getCurrentAuth. */
+function bloodHelpActor(req: express.Request) {
+  const auth = getCurrentAuth(req);
+  const sessionUser = users.find(user => user.id === sessionsByToken.get(getSessionToken(req))?.user_id);
+  if (!auth && sessionUser && (sessionUser.account_status === 'SUSPENDED' || sessionUser.deleted_at)) return null;
+  const device = requestGuestDevice(req);
+  if (auth) return { id: auth.user.id, verified: auth.user.is_verified === true,
+    canContact: auth.user.is_verified === true || bloodHelpActive(device), user: auth.user };
+  return device?.actor_id && device.blood_help
+    ? { id: device.actor_id, verified: false, canContact: bloodHelpActive(device), user: undefined }
+    : null;
+}
+
+function requestContactAllowed(request: BloodRequest, req: express.Request) {
+  return isRequestOwner(request, req) && requestIsLive(request) && Boolean(bloodHelpActor(req)?.canContact);
+}
+
+function requesterActorId(request: BloodRequest) {
+  return request.user_id || guestDevices.get(request.guest_token_hash || '')?.actor_id || '';
+}
+
+function isFollowUpRequester(followUp: DonationFollowUp, req: express.Request) {
+  const request = requests.find(item => item.id === followUp.request_id);
+  return Boolean(request && isRequestOwner(request, req) && bloodHelpActor(req));
+}
+
 async function adoptDeviceRequests(req: express.Request, user: User) {
   const token = requestGuestToken(req);
   if (!token) return;
@@ -1852,6 +2021,11 @@ async function adoptDeviceRequests(req: express.Request, user: User) {
       }
       const adopted = adoptGuestRequest(requests[index], token, user.id);
       if (!adopted) continue;
+      const device = requestGuestDevice(req);
+      if (device?.actor_id) {
+        const reports = await requestCallReports(adopted.id, device.actor_id);
+        if (reports.length) await adoptCallReports(reports.map(report => ({ ...report, actor_id: user.id, actor_verified: false })));
+      }
       await saveToTable('common_requests', adopted, [adopted.location.lng, adopted.location.lat]);
       requests[index] = adopted;
       for (const [table, rows] of [['common_responses', donorResponses], ['common_donation_followups', donationFollowUps]] as const) {
@@ -1896,12 +2070,13 @@ function publicRequestPayload(request: BloodRequest) {
   };
 }
 
-function requestOwnerPayload(request: BloodRequest) {
+function requestOwnerPayload(request: BloodRequest, req?: express.Request) {
   const { guest_token_hash: _hash, ...safe } = request;
   const owner = users.find(user => user.id === request.user_id);
   return { ...safe, ...publicRequestPayload(request), permitted_actions: {
     manage: true,
-    reveal: (request.ownership === 'GUEST' || Boolean(owner?.is_verified)) && requestIsLive(request)
+    contact_history: req ? Boolean(bloodHelpActor(req)) : false,
+    reveal: req ? requestContactAllowed(request, req) : requestIsLive(request) && (request.ownership === 'USER' ? Boolean(owner?.is_verified) : bloodHelpActive(guestDevices.get(request.guest_token_hash || '')))
   } };
 }
 
@@ -2048,7 +2223,7 @@ async function createDonationFollowUp(request: BloodRequest, reveal: CallReport,
   const followUp: DonationFollowUp = {
     id: uuidv4(),
     request_id: request.id,
-    requester_id: request.user_id,
+    requester_id: requesterActorId(request),
     donor_ref: reveal.donor_ref,
     donor_kind: reveal.donor_kind,
     ...(reference?.kind === 'REGISTERED' ? { donor_user_id: reference.id } : {}),
@@ -2161,7 +2336,7 @@ async function recordDonationOutcome(followUp: DonationFollowUp, role: 'DONOR' |
 }
 
 async function processDonationFollowUps() {
-  const provider = getFollowUpSmsProvider();
+  const provider = activeFollowUpSmsProvider();
   const now = Date.now();
   for (const followUp of donationFollowUps) {
     if (followUp.delivery.job_id && followUp.delivery.status === 'QUEUED' && provider?.getStatus) {
@@ -2191,16 +2366,23 @@ async function processDonationFollowUps() {
       );
       followUp.delivery = {
         status: delivery.status.toUpperCase() as DonationFollowUp['delivery']['status'],
-        provider: provider.name,
+        provider: delivery.providerId || provider.name,
         job_id: delivery.jobId,
         attempts: followUp.delivery.attempts,
         updated_at: new Date().toISOString()
       };
       followUp.next_attempt_at = undefined;
-    } catch {
+      await audit('system', 'SMS_DELIVERY_SUCCEEDED', 'DONATION_FOLLOW_UP', followUp.id, {
+        provider: followUp.delivery.provider, delivery_status: delivery.status, attempt: followUp.delivery.attempts
+      }).catch(() => console.error('Could not persist SMS delivery audit event'));
+    } catch (error) {
       followUp.delivery.status = 'FAILED';
       followUp.delivery.last_error = 'Delivery failed';
       followUp.next_attempt_at = new Date(Date.now() + followUp.delivery.attempts * 30 * 60_000).toISOString();
+      await audit('system', 'SMS_DELIVERY_FAILED', 'DONATION_FOLLOW_UP', followUp.id, {
+        provider: provider.name, attempt: followUp.delivery.attempts,
+        reason: error instanceof SmsProviderError && error.outageReason ? error.outageReason : 'Provider rejected the request'
+      }).catch(() => console.error('Could not persist SMS delivery audit event'));
     }
     followUp.updated_at = new Date().toISOString();
     await saveToTable('common_donation_followups', followUp);
@@ -2209,16 +2391,53 @@ async function processDonationFollowUps() {
 
 // API Routes
 
-app.get('/api/config/public', (_req, res) => {
+const androidApkPath = path.resolve(process.env.ANDROID_APK_PATH?.trim() || '/data/releases/drop-android.apk');
+
+function configuredAndroidAppUrl() {
+  const value = process.env.ANDROID_APP_URL?.trim();
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+async function androidDownloadUrl() {
+  const external = configuredAndroidAppUrl();
+  if (external) return external;
+  try {
+    await access(androidApkPath, fsConstants.R_OK);
+    return '/downloads/drop-android.apk';
+  } catch {
+    return '';
+  }
+}
+
+app.get('/downloads/drop-android.apk', asyncRoute(async (_req, res) => {
+  try { await access(androidApkPath, fsConstants.R_OK); }
+  catch { return res.status(404).json({ error: 'Android app is not available yet' }); }
+  res.set({
+    'Cache-Control': 'public, max-age=300, must-revalidate',
+    'Content-Type': 'application/vnd.android.package-archive',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  res.download(androidApkPath, 'Drop.apk');
+}));
+
+app.get('/api/config/public', asyncRoute(async (_req, res) => {
+  const android_download_url = await androidDownloadUrl();
   res.json({
-    sms_configured: isSmsConfigured(),
-    follow_up_sms_configured: isFollowUpSmsConfigured(),
+    sms_configured: activeSmsConfigured(),
+    follow_up_sms_configured: activeFollowUpSmsConfigured(),
+    ...(android_download_url ? { android_download_url } : {}),
     otp_bypass_enabled: isOtpBypassEnabled(),
     donation_interval_days: DONATION_INTERVAL_DAYS,
     availability_ttl_days: AVAILABILITY_TTL_DAYS,
     match_radius_km: MATCH_RADIUS_KM
   });
-});
+}));
 
 app.get('/api/donors/search', async (req, res) => {
   const bloodGroup = req.query.blood_group;
@@ -2350,8 +2569,8 @@ app.get('/health', asyncRoute(async (_req, res) => {
 }));
 app.get('/ready', asyncRoute(async (_req, res) => {
   const staticAssets = await currentStaticAssetHealth();
-  const smsReady = !IS_PRODUCTION || isSmsConfigured();
-  const followUpReady = !IS_PRODUCTION || (isFollowUpSmsConfigured() && (process.env.FOLLOW_UP_LINK_SECRET?.trim().length || 0) >= 32);
+  const smsReady = !IS_PRODUCTION || activeSmsConfigured();
+  const followUpReady = !IS_PRODUCTION || (activeFollowUpSmsConfigured() && (process.env.FOLLOW_UP_LINK_SECRET?.trim().length || 0) >= 32);
   const otpPolicyReady = !IS_PRODUCTION || otpBypassSetting?.enabled !== true;
   const metricsReady = !IS_PRODUCTION || metricsToken.length >= 32;
   const ready = isReady && staticAssets.status !== 'failed' && smsReady && followUpReady && otpPolicyReady && metricsReady;
@@ -2536,7 +2755,9 @@ app.post('/api/me/donations/:id/share-draft', asyncRoute(async (req, res) => {
       ...validation.value,
       updated_at: new Date().toISOString()
     });
-    await audit(auth.user.id, 'DONATION_STORY_DRAFT_UPDATED', 'POST', updated.id, { donation_id: record.id });
+    await audit(auth.user.id, 'DONATION_STORY_DRAFT_UPDATED', 'POST', updated.id, { donation_id: record.id,
+      before: { status: existing.status, type: existing.type, title: existing.title, body_markdown: existing.body_markdown, image_key: existing.image_key, image_alt: existing.image_alt },
+      after: { status: updated.status, type: updated.type, title: updated.title, body_markdown: updated.body_markdown, image_key: updated.image_key, image_alt: updated.image_alt } });
     return res.json(ownerCommunityPost(updated));
   }
 
@@ -2552,7 +2773,8 @@ app.post('/api/me/donations/:id/share-draft', asyncRoute(async (req, res) => {
   });
   await audit(auth.user.id, 'DONATION_STORY_DRAFTED', 'POST', post.id, {
     donation_id: record.id,
-    included: { text: includeText, date: includeDate, organization: includeOrganization, total: includeTotal }
+    included: { text: includeText, date: includeDate, organization: includeOrganization, total: includeTotal }, before: null,
+    after: { status: post.status, type: post.type, title: post.title, body_markdown: post.body_markdown, image_key: post.image_key, image_alt: post.image_alt }
   });
   res.status(201).json(ownerCommunityPost(post));
 }));
@@ -2575,7 +2797,8 @@ app.post('/api/community', asyncRoute(async (req, res) => {
     created_at: now,
     updated_at: now
   });
-  await audit(auth.user.id, 'COMMUNITY_POST_DRAFTED', 'POST', post.id, { type: post.type });
+  await audit(auth.user.id, 'COMMUNITY_POST_DRAFTED', 'POST', post.id, { type: post.type, before: null,
+    after: { status: post.status, type: post.type, title: post.title, body_markdown: post.body_markdown, image_key: post.image_key, image_alt: post.image_alt } });
   res.status(201).json(ownerCommunityPost(post));
 }));
 
@@ -2624,6 +2847,10 @@ app.post(
       image_height: stored.height,
       updated_at: new Date().toISOString()
     });
+    await audit((getCurrentAuth(req)!.user.id), 'COMMUNITY_POST_UPDATED', 'POST', updated.id, {
+      before: { status: post.status, type: post.type, title: post.title, body_markdown: post.body_markdown, image_key: post.image_key, image_alt: post.image_alt },
+      after: { status: updated.status, type: updated.type, title: updated.title, body_markdown: updated.body_markdown, image_key: updated.image_key, image_alt: updated.image_alt }
+    });
     res.json(ownerCommunityPost(updated));
   } catch (error) {
     await deleteCommunityImage(stored.key).catch(() => undefined);
@@ -2651,7 +2878,9 @@ app.post('/api/community/:id/publish', asyncRoute(async (req, res) => {
     updated_at: now
   });
   invalidateCommunitySitemap();
-  await audit(auth.user.id, 'COMMUNITY_POST_PUBLISHED', 'POST', post.id, { type: post.type, slug: published.slug });
+  await audit(auth.user.id, 'COMMUNITY_POST_PUBLISHED', 'POST', post.id, { type: post.type, slug: published.slug,
+    before: { status: post.status, type: post.type, title: post.title, body_markdown: post.body_markdown, image_key: post.image_key, image_alt: post.image_alt },
+    after: { status: published.status, type: published.type, title: published.title, body_markdown: published.body_markdown, image_key: published.image_key, image_alt: published.image_alt } });
   res.json(publicCommunityDetail(published));
 }));
 
@@ -2662,9 +2891,12 @@ app.delete('/api/community/:id', asyncRoute(async (req, res) => {
   if (!post || post.author_id !== auth.user.id || post.status === 'DELETED') {
     return res.status(404).json({ error: 'Community post not found' });
   }
-  await markCommunityPostDeleted(post);
+  const deleted = await markCommunityPostDeleted(post);
   if (post.status === 'PUBLISHED') invalidateCommunitySitemap();
-  await audit(auth.user.id, 'COMMUNITY_POST_DELETED', 'POST', post.id);
+  await audit(auth.user.id, 'COMMUNITY_POST_DELETED', 'POST', post.id, {
+    before: { status: post.status, type: post.type, title: post.title, body_markdown: post.body_markdown, image_key: post.image_key, image_alt: post.image_alt },
+    after: { status: deleted.status, type: deleted.type, title: deleted.title, body_markdown: deleted.body_markdown, image_key: deleted.image_key, image_alt: deleted.image_alt }
+  });
   res.json({ success: true });
 }));
 
@@ -2700,7 +2932,7 @@ app.get('/media/community/:key', asyncRoute(async (req, res) => {
  */
 async function cancelOtpChallengeDelivery(challenge: OtpChallenge, reason: 'expired' | 'replaced' | 'delivery_failed') {
   if (challenge.invalidated_at) return;
-  const provider = getSmsProvider();
+  const provider = activeSmsProvider();
   if (challenge.delivery_job_id && challenge.delivery_status === 'queued' && provider?.cancel) {
     try {
       await provider.cancel(challenge.delivery_job_id);
@@ -2721,9 +2953,11 @@ async function refreshOtpDelivery(challenge: OtpChallenge) {
   if (challenge.invalidated_at || !challenge.delivery_job_id || ['sent', 'delivered', 'failed', 'canceled'].includes(challenge.delivery_status || '')) {
     return challenge;
   }
-  const provider = getSmsProvider();
-  if (!provider?.getStatus || provider.name !== challenge.delivery_provider) return challenge;
-  const status = await provider.getStatus(challenge.delivery_job_id);
+  const provider = activeSmsProvider();
+  if (!provider?.getStatus) return challenge;
+  const delivery: SmsDelivery = provider.getDelivery ? await provider.getDelivery(challenge.delivery_job_id) : { status: await provider.getStatus(challenge.delivery_job_id) };
+  const status = delivery.status;
+  if (delivery.outageReason) await recordOtpOutage(challenge, new SmsProviderError('Sender unavailable', delivery.outageReason));
   if (status !== challenge.delivery_status) {
     challenge.delivery_status = status;
     challenge.delivery_updated_at = new Date().toISOString();
@@ -2731,6 +2965,13 @@ async function refreshOtpDelivery(challenge: OtpChallenge) {
     await saveToTable('common_otps', challenge);
   }
   return challenge;
+}
+
+async function recordOtpOutage(challenge: OtpChallenge, error: unknown) {
+  if (!(error instanceof SmsProviderError) || !error.outageReason || challenge.outage_at || !challenge.guest_token_hash) return;
+  const updated = { ...challenge, outage_reason: error.outageReason, outage_at: new Date().toISOString() };
+  await saveToTable('common_otps', updated);
+  Object.assign(challenge, updated);
 }
 
 async function expireOtpChallenges() {
@@ -2745,15 +2986,21 @@ async function expireOtpChallenges() {
 async function issueOtpChallenge(
   phone: string,
   purpose: OtpChallenge['purpose'],
-  provider: NonNullable<ReturnType<typeof getSmsProvider>>
+  provider: ReturnType<typeof activeSmsProvider>,
+  deviceHash?: string,
+  req?: express.Request
 ) {
   const recent = otpChallenges.find(challenge =>
     challenge.phone === phone && challenge.purpose === purpose &&
     !challenge.invalidated_at &&
     new Date(challenge.expires_at).getTime() > Date.now() &&
-    Date.now() - new Date(challenge.created_at).getTime() < 60_000
+    otpResendRetrySeconds(challenge.created_at) > 0
   );
-  if (recent) return { error: 'Wait before requesting another code', status: 429 } as const;
+  if (recent) return {
+    error: 'Wait before requesting another code',
+    status: 429,
+    retryAfterSeconds: otpResendRetrySeconds(recent.created_at)
+  } as const;
 
   const superseded = otpChallenges.filter(challenge =>
     challenge.phone === phone && challenge.purpose === purpose &&
@@ -2770,7 +3017,8 @@ async function issueOtpChallenge(
     created_at: new Date(now).toISOString(),
     expires_at: new Date(now + OTP_TTL_MS).toISOString(),
     attempts: 0,
-    delivery_provider: provider.name,
+    guest_token_hash: deviceHash,
+    delivery_provider: provider?.name || 'unconfigured',
     delivery_status: 'queued',
     delivery_updated_at: new Date(now).toISOString()
   };
@@ -2790,19 +3038,25 @@ async function issueOtpChallenge(
 
   try {
     await saveToTable('common_otps', challenge);
+    if (req) await activityAudit(req, 'OTP_REQUESTED', 'OTP_CHALLENGE', challenge.id, { purpose, phone: maskedPhone(phone) }, phone);
   } catch {
     await invalidate();
     return { error: 'Phone verification is temporarily unavailable', status: 503 } as const;
   }
 
   try {
+    if (!provider) throw new SmsProviderError('Phone verification is not configured', 'PROVIDER_CONFIGURATION');
     const delivery = await provider.sendOtp(phone, code, `drop-otp:${challenge.id}`);
     challenge.delivery_job_id = delivery.jobId;
+    challenge.delivery_provider = delivery.providerId || provider.name;
     challenge.delivery_status = delivery.status;
     challenge.delivery_updated_at = new Date().toISOString();
     await saveToTable('common_otps', challenge);
-  } catch {
-    if (challenge.delivery_job_id && challenge.delivery_status === 'queued' && provider.cancel) {
+    if (req) await activityAudit(req, 'OTP_DELIVERY_SUCCEEDED', 'OTP_CHALLENGE', challenge.id, {
+      purpose, phone: maskedPhone(phone), provider: challenge.delivery_provider, delivery_status: delivery.status
+    }, phone);
+  } catch (error) {
+    if (challenge.delivery_job_id && challenge.delivery_status === 'queued' && provider?.cancel) {
       try {
         await provider.cancel(challenge.delivery_job_id);
       } catch {
@@ -2811,24 +3065,31 @@ async function issueOtpChallenge(
       }
     }
     await invalidate();
+    await recordOtpOutage(challenge, error);
+    if (req) await activityAudit(req, 'OTP_DELIVERY_FAILED', 'OTP_CHALLENGE', challenge.id, {
+      purpose, phone: maskedPhone(phone), provider: challenge.delivery_provider,
+      reason: error instanceof SmsProviderError && error.outageReason ? error.outageReason : 'Provider rejected the request'
+    }, phone);
     return {
       error: 'Verification code delivery failed; please try again',
-      status: 502
+      status: 502,
+      challenge
     } as const;
   }
 
   return { challenge } as const;
 }
 
-function otpDeliveryPayload(challenge: OtpChallenge) {
+function otpDeliveryPayload(challenge: OtpChallenge, req?: express.Request) {
   return {
     challenge_id: challenge.id,
     delivery_status: challenge.delivery_status || 'queued',
-    expires_at: challenge.expires_at
+    expires_at: challenge.expires_at,
+    ...(req ? { blood_help_eligible: eligibleOutage(challenge, requestGuestDevice(req)?.id || '') } : {})
   };
 }
 
-app.post('/api/auth/otp/request', authLimiter, asyncRoute(async (req, res) => {
+app.post('/api/auth/otp/request', asyncRoute(async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const purpose = req.body?.purpose;
   if (!phone || !isOneOf(purpose, OTP_PURPOSES)) {
@@ -2851,8 +3112,7 @@ app.post('/api/auth/otp/request', authLimiter, asyncRoute(async (req, res) => {
       return res.status(503).json({ error: 'Test verification is temporarily unavailable' });
     }
   }
-  const provider = getSmsProvider();
-  if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
+  const provider = activeSmsProvider();
   // Password recovery deliberately sends the same challenge and returns the
   // same shape whether or not an account exists. Account existence is checked
   // only after the caller proves control of the number.
@@ -2861,9 +3121,13 @@ app.post('/api/auth/otp/request', authLimiter, asyncRoute(async (req, res) => {
   // entered the code sent to that number - so they learn about their own phone
   // and nobody else's.
 
-  const issued = await issueOtpChallenge(phone, purpose, provider);
-  if ('error' in issued) return res.status(issued.status).json({ error: issued.error });
-  res.json({ success: true, provider: provider.name, ...otpDeliveryPayload(issued.challenge) });
+  const issued = await issueOtpChallenge(phone, purpose, provider, requestGuestDevice(req)?.id, req);
+  if ('error' in issued) return res.status(issued.status).json({
+    error: issued.error,
+    ...('challenge' in issued && issued.challenge ? otpDeliveryPayload(issued.challenge, req) : {}),
+    ...('retryAfterSeconds' in issued ? { retry_after_seconds: issued.retryAfterSeconds } : {})
+  });
+  res.json({ success: true, provider: provider?.name, ...otpDeliveryPayload(issued.challenge, req) });
 }));
 
 // Delivery polling is a read-only lookup already protected by the global API
@@ -2883,15 +3147,16 @@ app.get('/api/auth/otp/:challengeId/status', asyncRoute(async (req, res) => {
   } else if (!challenge.invalidated_at) {
     try {
       await refreshOtpDelivery(challenge);
-    } catch {
+    } catch (error) {
       // Keep the last safe delivery state. Provider details and transient
       // outages are intentionally not exposed by this enumeration-safe route.
+      await recordOtpOutage(challenge, error);
     }
   }
-  res.json(otpDeliveryPayload(challenge));
+  res.json(otpDeliveryPayload(challenge, req));
 }));
 
-app.post('/api/auth/otp/verify', authLimiter, asyncRoute(async (req, res) => {
+app.post('/api/auth/otp/verify', asyncRoute(async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const purpose = req.body?.purpose;
   const code = cleanString(req.body?.code, 6);
@@ -2903,7 +3168,14 @@ app.post('/api/auth/otp/verify', authLimiter, asyncRoute(async (req, res) => {
     !['failed', 'canceled'].includes(item.delivery_status || '') &&
     new Date(item.expires_at).getTime() > Date.now()
   );
-  if (!challenge || challenge.attempts >= 5) return res.status(400).json({ error: 'Code is invalid or expired' });
+  if (!challenge) {
+    await activityAudit(req, 'OTP_VERIFICATION_FAILED', 'OTP_CHALLENGE', `phone:${createHash('sha256').update(phone).digest('hex').slice(0, 16)}`, { purpose, phone: maskedPhone(phone), reason: 'No active challenge' }, phone);
+    return res.status(400).json({ error: 'Code is invalid or expired' });
+  }
+  if (challenge.attempts > 5) {
+    await activityAudit(req, 'OTP_VERIFICATION_FAILED', 'OTP_CHALLENGE', challenge.id, { purpose, phone: maskedPhone(phone), reason: 'Attempt limit reached' }, phone);
+    return res.status(429).json({ error: 'Too many wrong codes. Request a new code.' });
+  }
   try {
     await refreshOtpDelivery(challenge);
   } catch {
@@ -2912,15 +3184,22 @@ app.post('/api/auth/otp/verify', authLimiter, asyncRoute(async (req, res) => {
   if (challenge.invalidated_at || ['failed', 'canceled'].includes(challenge.delivery_status || '')) {
     return res.status(400).json({ error: 'Code is invalid or expired' });
   }
-  challenge.attempts += 1;
   if (!(await bcrypt.compare(code, challenge.code_hash))) {
+    challenge.attempts += 1;
     await saveToTable('common_otps', challenge);
-    return res.status(400).json({ error: 'Code is invalid or expired' });
+    await activityAudit(req, 'OTP_VERIFICATION_FAILED', 'OTP_CHALLENGE', challenge.id, { purpose, phone: maskedPhone(phone), attempts: challenge.attempts, reason: 'Incorrect code' }, phone);
+    const status = otpWrongCodeStatus(challenge.attempts);
+    return res.status(status).json({
+      error: status === 429
+        ? 'Too many wrong codes. Request a new code.'
+        : 'Code is invalid or expired'
+    });
   }
   challenge.verified_at = new Date().toISOString();
   challenge.verification_token = uuidv4();
   challenge.verification_expires_at = new Date(Date.now() + OTP_VERIFICATION_TTL_MS).toISOString();
   await saveToTable('common_otps', challenge);
+  await activityAudit(req, 'OTP_VERIFIED', 'OTP_CHALLENGE', challenge.id, { purpose, phone: maskedPhone(phone) }, phone);
 
   // Only now, having proven control of the number, is the caller told whether
   // it already has an account - so the blood request flow can branch between
@@ -2938,7 +3217,7 @@ app.post('/api/auth/otp/verify', authLimiter, asyncRoute(async (req, res) => {
  * arranging blood for a relative is not stopped by a password they set months
  * ago and cannot recall.
  */
-app.post('/api/auth/otp/login', authLimiter, asyncRoute((req, res) => accountWrites.run(async () => {
+app.post('/api/auth/otp/login', asyncRoute((req, res) => accountWrites.run(async () => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const bodyFingerprint = normalizeFingerprint(req.body?.fingerprint);
   const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
@@ -2948,8 +3227,14 @@ app.post('/api/auth/otp/login', authLimiter, asyncRoute((req, res) => accountWri
   if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before signing in' });
 
   const user = users.find(item => item.phone === phone && !item.deleted_at);
-  if (!user) return res.status(404).json({ error: 'No account exists for this number' });
-  if (user.account_status === 'SUSPENDED') return res.status(403).json({ error: 'This account is suspended' });
+  if (!user) {
+    await activityAudit(req, 'OTP_LOGIN_FAILED', 'USER', `phone:${createHash('sha256').update(phone).digest('hex').slice(0, 16)}`, { phone: maskedPhone(phone), reason: 'Account unavailable' });
+    return res.status(404).json({ error: 'No account exists for this number' });
+  }
+  if (user.account_status === 'SUSPENDED') {
+    await activityAudit(req, 'OTP_LOGIN_FAILED', 'USER', user.id, { phone: maskedPhone(phone), reason: 'Account suspended' });
+    return res.status(403).json({ error: 'This account is suspended' });
+  }
 
   if (challenge) await consumeChallenge(challenge);
   if (!user.is_verified) {
@@ -2960,11 +3245,12 @@ app.post('/api/auth/otp/login', authLimiter, asyncRoute((req, res) => accountWri
   if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
 
   const token = await issueSession(user.id, req);
+  await audit(user.id, 'OTP_LOGIN_SUCCEEDED', 'USER', user.id, { phone: maskedPhone(phone) });
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
   res.json({ user: sanitizeUser(user) });
 })));
 
-app.post('/api/auth/login', authLimiter, asyncRoute((req, res) => accountWrites.run(async () => {
+app.post('/api/auth/login', passwordLoginLimiter, asyncRoute((req, res) => accountWrites.run(async () => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const password = cleanString(req.body?.password, 128);
   // Only honor a fingerprint the same client also presents as its own header;
@@ -2976,18 +3262,21 @@ app.post('/api/auth/login', authLimiter, asyncRoute((req, res) => accountWrites.
   let user = users.find(u => u.phone === phone);
 
   if (!user || !user.password) {
+    await activityAudit(req, 'LOGIN_FAILED', 'USER', `phone:${createHash('sha256').update(phone).digest('hex').slice(0, 16)}`, { phone: maskedPhone(phone), reason: 'Invalid credentials' });
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
   const isBcryptHash = user.password.startsWith('$2');
   if (isBcryptHash) {
     if (!(await bcrypt.compare(password, user.password))) {
+      await activityAudit(req, 'LOGIN_FAILED', 'USER', user.id, { phone: maskedPhone(phone), reason: 'Invalid credentials' });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
   } else {
     // Legacy record with a plaintext password: verify directly, then upgrade
     // the stored value to a bcrypt hash.
     if (user.password !== password) {
+      await activityAudit(req, 'LOGIN_FAILED', 'USER', user.id, { phone: maskedPhone(phone), reason: 'Invalid credentials' });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     user.password = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -2997,11 +3286,12 @@ app.post('/api/auth/login', authLimiter, asyncRoute((req, res) => accountWrites.
   if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
 
   const token = await issueSession(user.id, req);
+  await audit(user.id, 'LOGIN_SUCCEEDED', 'USER', user.id, { phone: maskedPhone(phone) });
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
   res.json({ user: sanitizeUser(user) });
 })));
 
-app.post('/api/auth/register', authLimiter, asyncRoute((req, res) => accountWrites.run(async () => {
+app.post('/api/auth/register', asyncRoute((req, res) => accountWrites.run(async () => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const name = cleanString(req.body?.name, 100);
   const password = cleanString(req.body?.password, 128);
@@ -3103,17 +3393,20 @@ app.post('/api/auth/register', authLimiter, asyncRoute((req, res) => accountWrit
 
   const token = await issueSession(user.id, req);
   if (challenge) await consumeChallenge(challenge);
+  await audit(user.id, 'ACCOUNT_REGISTERED', 'USER', user.id, { phone: maskedPhone(user.phone), donor_profile: Boolean(user.donor_profile) });
   res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
   res.json({ user: sanitizeUser(user) });
 })));
 
 app.post('/api/auth/logout', async (req, res) => {
+  const auth = getCurrentAuth(req);
   await revokeSession(req);
+  if (auth) await removePush(auth.user.id, undefined, auth.session.id).catch(() => undefined);
   res.clearCookie(SESSION_COOKIE, { path: '/' });
   res.json({ success: true });
 });
 
-app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
+app.post('/api/auth/reset-password', async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   const newPassword = cleanString(req.body?.new_password, 128);
   if (!phone || !newPassword || newPassword.length < 8) return validationError(res, 'Valid phone and password of at least 8 characters are required');
@@ -3164,12 +3457,9 @@ app.get('/api/me/contact-reports', asyncRoute(async (req, res) => {
   });
 }));
 
-app.post('/api/me/contact-reports/reverify-phone', authLimiter, asyncRoute(async (req, res) => {
+app.post(['/api/me/contact-reports/confirm-phone', '/api/me/contact-reports/reverify-phone'], asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  const challenge = verifiedChallenge(auth.user.phone, 'CHANGE_PHONE', req.body?.verification_token);
-  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify your current phone before clearing contact warnings' });
-  if (challenge) await consumeChallenge(challenge);
   auth.user.is_verified = true;
   auth.user.phone_verified_at = new Date().toISOString();
   await saveToTable('common_users', auth.user);
@@ -3234,11 +3524,15 @@ app.patch('/api/me', async (req, res) => {
     if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify the new phone before saving it' });
     if (challenge) await consumeChallenge(challenge);
   }
+  const beforeProfile = { name: users[userIndex].name, phone: users[userIndex].phone, is_verified: users[userIndex].is_verified,
+    phone_verified_at: users[userIndex].phone_verified_at || null };
   users[userIndex] = {
     ...users[userIndex], name, phone,
     ...(phoneChanged ? { is_verified: true, phone_verified_at: new Date().toISOString() } : {})
   };
   await saveToTable('common_users', users[userIndex]);
+  await audit(auth.user.id, 'PROFILE_UPDATED', 'USER', auth.user.id, { fields: [hasName ? 'name' : '', hasPhone ? 'phone' : ''].filter(Boolean), before: beforeProfile,
+    after: { name: users[userIndex].name, phone: users[userIndex].phone, is_verified: users[userIndex].is_verified, phone_verified_at: users[userIndex].phone_verified_at || null } });
   if (phoneChanged && users[userIndex].donor_profile) {
     await resolveRegisteredContactIssues(users[userIndex], ['WRONG_NUMBER', 'UNREACHABLE'], 'PHONE_CHANGED_AND_VERIFIED');
   }
@@ -3257,17 +3551,9 @@ app.post('/api/me/change-password', async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const currentPassword = cleanString(req.body?.current_password, 128);
   const newPassword = cleanString(req.body?.new_password, 128);
-  if (!currentPassword || !newPassword) return validationError(res, 'Current and new passwords are required');
+  if (!newPassword) return validationError(res, 'A new password is required');
   if (newPassword.length < 8) return validationError(res, 'New password must be at least 8 characters');
-  if (!auth.user.password) return res.status(400).json({ error: 'Password login is not available for this account' });
-
-  const matches = auth.user.password.startsWith('$2')
-    ? await bcrypt.compare(currentPassword, auth.user.password)
-    : currentPassword === auth.user.password;
-  if (!matches) return res.status(400).json({ error: 'Current password is incorrect' });
-
   auth.user.password = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
   await saveToTable('common_users', auth.user);
   res.json({ success: true });
@@ -3301,6 +3587,7 @@ app.post('/api/me/logout-all', async (req, res) => {
   for (const session of sessions.filter(item => item.user_id === auth.user.id && !item.revoked_at)) {
     session.revoked_at = now; await saveToTable('common_sessions', session);
   }
+  await removePush(auth.user.id);
   await audit(auth.user.id, 'ALL_SESSIONS_REVOKED', 'USER', auth.user.id);
   res.clearCookie(SESSION_COOKIE, { path: '/' });
   res.json({ success: true });
@@ -3340,8 +3627,6 @@ app.get('/api/me/export', asyncRoute(async (req, res) => {
 app.delete('/api/me', asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  const password = cleanString(req.body?.password, 128);
-  if (!password || !auth.user.password || !(await bcrypt.compare(password, auth.user.password))) return res.status(403).json({ error: 'Current password is required' });
   const now = new Date().toISOString();
   for (const request of requests.filter(item => item.user_id === auth.user.id)) {
     if (['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)) request.status = 'CANCELLED';
@@ -3359,7 +3644,7 @@ app.delete('/api/me', asyncRoute(async (req, res) => {
   }
   const communityPosts = await queryAllCommunityPostsByOwner(auth.user.id, ['DRAFT', 'PUBLISHED', 'HIDDEN']);
   for (const post of communityPosts) {
-    await markCommunityPostDeleted(post);
+    await markCommunityPostDeleted(post, true);
     if (post.status === 'PUBLISHED') invalidateCommunitySitemap();
   }
   await removeDonorFromAllPartitions(auth.user.id);
@@ -3494,6 +3779,8 @@ app.post('/api/me/donor-profile', async (req, res) => {
       ...donorPreferences.value
     };
     await saveToTable('common_users', users[userIndex]);
+    await audit(auth.user.id, 'DONOR_PROFILE_UPDATED', 'USER', auth.user.id, { blood_group, availability_status, district: location.area_name, upazila: users[userIndex].donor_profile?.upazila || null,
+      before: { donor_profile: existingProfile || null }, after: { donor_profile: users[userIndex].donor_profile } });
     const resolvedCategories: ContactIssueCategory[] = [];
     if (availability_status === 'AVAILABLE') resolvedCategories.push('DECLINED');
     if (donationChanged) resolvedCategories.push('RECENTLY_DONATED');
@@ -3692,10 +3979,12 @@ app.post('/api/search/requests', requestWriteRoute(async (req, res) => {
   if ('error' in parsed) return validationError(res, parsed.error);
 
   const recent = duplicateActiveRequest(parsed.value);
-  if (recent && isRequestOwner(recent, req)) return res.json({ request: requestOwnerPayload(recent), reused: true });
+  if (recent && isRequestOwner(recent, req)) return res.json({ request: requestOwnerPayload(recent, req), reused: true });
   if (recent) return res.status(409).json({ error: 'An active request already exists for these details', code: 'DUPLICATE_ACTIVE_REQUEST' });
   const device = !auth ? guestDevices.get(guestTokenHash(deviceToken))! : undefined;
-  if (device && !guestCanPublish(device)) return res.status(428).json({ error: 'Continue with your account to create more requests', code: 'ACCOUNT_REQUIRED', reason: 'GUEST_REQUEST_LIMIT' });
+  if (device && !bloodHelpActive(device) && !guestCanPublish(device)) {
+    return res.status(428).json({ error: 'Continue with your account to create more requests', code: 'ACCOUNT_REQUIRED', reason: 'GUEST_REQUEST_LIMIT' });
+  }
 
   const now = new Date().toISOString();
   const request: BloodRequest = {
@@ -3719,7 +4008,9 @@ app.post('/api/search/requests', requestWriteRoute(async (req, res) => {
   if (device) { device.request_count++; await saveToTable('common_guest_devices', device); }
   await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
   requests.push(request);
-  res.status(201).json({ request: requestOwnerPayload(request), reused: false });
+  await audit(auth?.user.id || activityActor(req), 'REQUEST_CREATED', 'REQUEST', request.id, { ownership: request.ownership, blood_group: request.blood_group, district: request.location.area_name, upazila: request.upazila || null, before: null,
+    after: { status: request.status, admin_deleted_at: null } });
+  res.status(201).json({ request: requestOwnerPayload(request, req), reused: false });
 }));
 
 // A reveal is a targeted lookup, not browsing, so it gets its own budget. The
@@ -3758,10 +4049,8 @@ async function actorCallReports(actorId: string) {
  * bulk lookup oracle for the whole imported directory.
  */
 app.post('/api/requests/:id/reveals', revealLimiter, requestWriteRoute(async (req, res) => {
-  const auth = getCurrentAuth(req);
-  const actorId = contactActorId(req);
-  if (!actorId) return res.status(401).json({ error: 'Start a request before copying phone numbers' });
-  if (auth && !auth.user.is_verified) return res.status(428).json({ error: 'Verify your account to continue', code: 'ACCOUNT_REQUIRED' });
+  const actor = bloodHelpActor(req);
+  if (!actor) return res.status(401).json({ error: 'Log in to see contact details' });
 
   const request = requests.find(item => item.id === req.params.id);
   if (!request) return res.status(404).json({ error: 'Request not found' });
@@ -3780,10 +4069,14 @@ app.post('/api/requests/:id/reveals', revealLimiter, requestWriteRoute(async (re
   // One open call at a time. Navigating away without answering does not skip
   // the question, and the check covers every request owned by this account.
   const [reports, actorReports] = await Promise.all([
-    requestCallReports(request.id, actorId),
-    actorCallReports(actorId)
+    requestCallReports(request.id, actor.id),
+    actorCallReports(actor.id)
   ]);
-  if (!auth && !guestCanReveal(donorRef, reports)) return res.status(428).json({ error: 'Continue with your account to copy more phone numbers for this request', code: 'ACCOUNT_REQUIRED', reason: 'GUEST_CONTACT_LIMIT' });
+  const previouslyRevealed = reports.some(report => report.kind === 'REVEAL' && report.donor_ref === donorRef);
+  if (!actor.canContact && !previouslyRevealed) return res.status(403).json({ error: 'Verify your phone or renew temporary blood-help access before contacting another donor', code: 'BLOOD_HELP_ACCESS_REQUIRED' });
+  if (!actor.user && !guestCanReveal(donorRef, reports)) {
+    return res.status(428).json({ error: 'Continue with your account to copy more phone numbers for this request', code: 'ACCOUNT_REQUIRED', reason: 'GUEST_CONTACT_LIMIT' });
+  }
   const pending = pendingLiveRequestReveal(actorReports);
   if (pending && (pending.request_id !== request.id || pending.donor_ref !== donorRef)) {
     return res.status(409).json({
@@ -3801,8 +4094,33 @@ app.post('/api/requests/:id/reveals', revealLimiter, requestWriteRoute(async (re
     report.request_id === request.id && report.donor_ref === donorRef
   );
 
-  const matches = await findRequestDonors({ bloodGroup: request.blood_group as BloodGroup, district: request.location.area_name, upazila: request.upazila, requesterUserId: auth?.user.id, excludeRequester: true, donorRef, pageSize: 1 });
-  const card = matches.items[0];
+  const compatibleGroups = COMPATIBLE_DONORS[request.blood_group as BloodGroup] || [request.blood_group];
+  const upazilas = getUpazilaVariants(request.location.area_name, request.upazila);
+  let card: DonorCard | undefined;
+  if (reference.kind === 'REGISTERED') {
+    const donor = users.find(user => user.id === reference.id);
+    if (donor && registeredMatchesRequestSearch(donor, {
+      compatibleGroups,
+      district: request.location.area_name,
+      upazilas,
+      requesterUserId: actor.user?.id,
+      excludeRequester: true
+    }, actor.user)) {
+      card = registeredDonorCard(donor, request.blood_group, {
+        district: request.location.area_name,
+        upazilas
+      });
+    }
+  } else {
+    const donor = await getImportedDonor(reference.id);
+    if (donor && importedMatchesRequestSearch(donor, {
+      compatibleGroups,
+      district: request.location.area_name,
+      upazilas
+    })) {
+      card = importedDonorCard(donor, request.blood_group);
+    }
+  }
   if (!card) return res.status(409).json({ error: 'That donor is no longer among this request\'s matches' });
 
   let phone = '';
@@ -3826,9 +4144,10 @@ app.post('/api/requests/:id/reveals', revealLimiter, requestWriteRoute(async (re
     id: uuidv4(),
     kind: 'REVEAL',
     request_id: request.id,
-    actor_id: actorId,
+    actor_id: actor.id,
     donor_ref: donorRef,
     donor_kind: card.donor_kind,
+    actor_verified: actor.verified,
     created_at: new Date().toISOString()
   };
   if (!openForDonor) await addCallReports([reveal]);
@@ -3838,7 +4157,7 @@ app.post('/api/requests/:id/reveals', revealLimiter, requestWriteRoute(async (re
   // silently truncate the moderation trail. The complete per-reveal history
   // lives in common_call_reports, which is queried on demand.
   if (!reports.some(report => report.kind === 'REVEAL')) {
-    await audit(actorId, 'REQUEST_CONTACTS_REVEALED', 'REQUEST', request.id, {
+    await audit(actor.id, 'REQUEST_CONTACTS_REVEALED', 'REQUEST', request.id, {
       blood_group: request.blood_group,
       district: request.location.area_name,
       upazila: request.upazila
@@ -3860,14 +4179,13 @@ app.post('/api/requests/:id/reveals', revealLimiter, requestWriteRoute(async (re
 
 /** The reveal the requester still owes an answer for, if any. */
 app.get('/api/requests/:id/reveals/pending', async (req, res) => {
-  const auth = getCurrentAuth(req);
-  const actorId = contactActorId(req);
+  const actor = bloodHelpActor(req);
   const request = requests.find(item => item.id === req.params.id);
-  if (!actorId) return res.status(401).json({ error: 'Unauthorized' });
+  if (!actor) return res.status(401).json({ error: 'Unauthorized' });
   if (!request) return res.status(404).json({ error: 'Request not found' });
   if (!isRequestOwner(request, req)) return res.status(403).json({ error: 'Only the requester can see these contacts' });
 
-  const pending = pendingLiveRequestReveal(await requestCallReports(request.id, actorId));
+  const pending = pendingLiveRequestReveal(await requestCallReports(request.id, actor.id));
   res.json({
     pending: pending
       ? { reveal_id: pending.id, donor_ref: pending.donor_ref, created_at: pending.created_at }
@@ -3876,12 +4194,12 @@ app.get('/api/requests/:id/reveals/pending', async (req, res) => {
 });
 
 /** The one call outcome this account must submit before continuing. */
-app.get('/api/me/reveals/pending', async (req, res) => {
-  const auth = getCurrentAuth(req);
-  const actorId = contactActorId(req);
-  if (!actorId) return res.status(401).json({ error: 'Unauthorized' });
+app.get(['/api/me/reveals/pending', '/api/guest/reveals/pending'], async (req, res) => {
+  const actor = bloodHelpActor(req);
+  if (!actor) return res.status(401).json({ error: 'Unauthorized' });
 
-  const pending = pendingLiveRequestReveal(await actorCallReports(actorId));
+  const ownedIds = new Set(requests.filter(request => isRequestOwner(request, req)).map(request => request.id));
+  const pending = pendingLiveRequestReveal((await actorCallReports(actor.id)).filter(report => ownedIds.has(report.request_id)));
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({
     pending: pending
@@ -3907,11 +4225,9 @@ app.get('/api/me/reveals/pending', async (req, res) => {
  * temporarily suppress search.
  */
 app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) => {
-  const auth = getCurrentAuth(req);
-  const actorId = contactActorId(req);
+  const actor = bloodHelpActor(req);
   const request = requests.find(item => item.id === req.params.id);
-  if (!actorId) return res.status(401).json({ error: 'Unauthorized' });
-  if (auth && !auth.user.is_verified) return res.status(403).json({ error: 'Verified account required' });
+  if (!actor) return res.status(401).json({ error: 'Unauthorized' });
   if (!request) return res.status(404).json({ error: 'Request not found' });
   if (!isRequestOwner(request, req)) return res.status(403).json({ error: 'Only the requester can report a call' });
 
@@ -3924,7 +4240,7 @@ app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) =>
   const revealId = cleanString(req.body?.reveal_id, 80);
   if (!revealId) return validationError(res, 'A reveal reference is required');
 
-  const reports = await requestCallReports(request.id, actorId);
+  const reports = await requestCallReports(request.id, actor.id);
   const reveal = reports.find(report => report.kind === 'REVEAL' && report.id === revealId);
   if (!reveal) return res.status(404).json({ error: 'That call was not started from this request' });
   const previous = reports.filter(report => report.kind === 'CALL_OUTCOME' && report.reveal_id === revealId)
@@ -3941,10 +4257,10 @@ app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) =>
     id: uuidv4(),
     kind: 'CALL_OUTCOME',
     request_id: request.id,
-    actor_id: actorId,
+    actor_id: actor.id,
     donor_ref: reveal.donor_ref,
     donor_kind: reveal.donor_kind,
-    actor_verified: Boolean(auth?.user.is_verified),
+    actor_verified: reveal.actor_verified === false ? false : actor.verified,
     reveal_id: revealId,
     ...(supersedesId ? { supersedes_report_id: supersedesId } : {}),
     outcome: parsed.value.outcome,
@@ -3977,7 +4293,7 @@ app.post('/api/requests/:id/call-reports', requestWriteRoute(async (req, res) =>
   }
 
   const followUp = parsed.value.outcome === 'WILL_DONATE'
-    ? await createDonationFollowUp(request, reveal, Boolean(auth?.user.is_verified) && req.body.sms_consent === true)
+    ? await createDonationFollowUp(request, reveal, Boolean(actor.user?.is_verified) && req.body.sms_consent === true)
     : undefined;
   res.status(201).json({ report_id: report.id, follow_up: followUp });
 }));
@@ -4005,12 +4321,12 @@ function donationFollowUpPayload(followUp: DonationFollowUp, role: 'DONOR' | 'RE
 }
 
 app.get('/api/requests/:id/contacted-donors', asyncRoute(async (req, res) => {
-  const auth = getCurrentAuth(req);
+  const actor = bloodHelpActor(req);
   const request = requests.find(item => item.id === req.params.id);
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!actor) return res.status(401).json({ error: 'Unauthorized' });
   if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can view contacted donors' });
-  const reports = await requestCallReports(request.id, auth.user.id);
+  if (!isRequestOwner(request, req)) return res.status(403).json({ error: 'Only the requester can view contacted donors' });
+  const reports = await requestCallReports(request.id, actor.id);
   const reveals = reports.filter(item => item.kind === 'REVEAL')
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const items: ContactedDonorSummary[] = [];
@@ -4038,6 +4354,7 @@ app.get('/api/requests/:id/contacted-donors', asyncRoute(async (req, res) => {
       availability_status: registered?.donor_profile?.availability_status,
       latest_call_outcome: latestOutcome?.outcome,
       agreed: Boolean(followUp),
+      follow_up_id: followUp?.id,
       reminder_state: followUp ? (followUp.sms_consent ? followUp.delivery.status : 'IN_APP_ONLY') : 'NOT_SCHEDULED',
       donor_outcome: followUp?.donor_outcome,
       requester_outcome: followUp?.requester_outcome,
@@ -4055,7 +4372,7 @@ app.post('/api/donation-follow-ups/open', asyncRoute(async (req, res) => {
   if (!followUp) return res.status(404).json({ error: 'This follow-up link is invalid or expired' });
   const auth = getCurrentAuth(req);
   const target = await followUpTarget(followUp);
-  const role = auth?.user.id === followUp.requester_id
+  const role = isFollowUpRequester(followUp, req)
     ? 'REQUESTER'
     : auth && target?.user?.id === auth.user.id
       ? 'DONOR'
@@ -4065,7 +4382,7 @@ app.post('/api/donation-follow-ups/open', asyncRoute(async (req, res) => {
   res.json({ requires_verification: true, phone_masked: maskPhone(target?.phone || ''), donor_kind: followUp.donor_kind });
 }));
 
-app.post('/api/donation-follow-ups/verify', authLimiter, asyncRoute(async (req, res) => {
+app.post('/api/donation-follow-ups/verify', asyncRoute(async (req, res) => {
   const followUp = followUpFromToken(req.body?.token);
   if (!followUp) return res.status(404).json({ error: 'This follow-up link is invalid or expired' });
   const phone = normalizeBangladeshPhone(req.body?.phone);
@@ -4090,12 +4407,12 @@ app.post('/api/donation-follow-ups/verify', authLimiter, asyncRoute(async (req, 
 app.post('/api/donation-follow-ups/:id/outcome', asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   const followUp = donationFollowUps.find(item => item.id === req.params.id);
-  if (!auth) return res.status(401).json({ error: 'Log in or verify the donor phone first' });
+  if (!auth && !bloodHelpActor(req)) return res.status(401).json({ error: 'Log in or verify the donor phone first' });
   if (!followUp) return res.status(404).json({ error: 'Follow-up not found' });
   const outcome = req.body?.outcome;
   if (!isOneOf(outcome, DONATION_OUTCOMES)) return validationError(res, 'Choose donated, not donated, or remind later');
   const target = await followUpTarget(followUp);
-  const role = auth.user.id === followUp.requester_id ? 'REQUESTER' : target?.user?.id === auth.user.id ? 'DONOR' : null;
+  const role = isFollowUpRequester(followUp, req) ? 'REQUESTER' : auth && target?.user?.id === auth.user.id ? 'DONOR' : null;
   if (!role) return res.status(403).json({ error: 'This follow-up belongs to the donor and requester' });
   let donatedOn: string | undefined;
   if (outcome === 'DONATED' && role === 'DONOR') {
@@ -4334,22 +4651,22 @@ async function inviteDonorToRequest(request: BloodRequest, donorId: string) {
 
   const now = new Date().toISOString();
   const response: DonorResponse = {
-    id: uuidv4(), request_id: request.id, donor_id: donorId, requester_id: request.user_id,
+    id: uuidv4(), request_id: request.id, donor_id: donorId, requester_id: requesterActorId(request),
     status: 'INVITED', units: 1, created_at: now, updated_at: now
   };
   donorResponses.push(response);
   await saveToTable('common_responses', response);
-  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group} ${request.blood_component?.replaceAll('_', ' ').toLowerCase()} is needed at ${request.hospital_name || request.upazila}.`, `/profile/responses`, request.id);
+  await notify(donorId, 'DONOR_INVITATION', `Blood request near ${request.location.area_name}`, `${request.blood_group}${request.blood_component && request.blood_component !== 'NOT_SURE' ? ` ${request.blood_component.replaceAll('_', ' ').toLowerCase()}` : ' blood'} is needed at ${request.hospital_name && request.hospital_name !== 'Collection facility' ? request.hospital_name : request.upazila || request.location.area_name}.`, `/profile/responses`, request.id);
   return response;
 }
 
-app.post('/api/requests/:id/invitations', async (req, res) => {
-  const auth = getCurrentAuth(req);
+app.post('/api/requests/:id/invitations', requestWriteRoute(async (req, res) => {
+  const actor = bloodHelpActor(req);
   const request = requests.find(item => item.id === req.params.id);
   const donorId = cleanString(req.body?.donor_id, 80);
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!actor) return res.status(401).json({ error: 'Unauthorized' });
   if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (request.user_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can invite donors' });
+  if (!requestContactAllowed(request, req)) return res.status(403).json({ error: 'Only a requester with donor-contact access can invite donors' });
   if (!['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status)) return res.status(409).json({ error: 'This request is not accepting responses' });
   if (!donorId) return validationError(res, 'Donor is required');
   if (donorResponses.some(response => response.request_id === request.id && response.donor_id === donorId && !['DECLINED', 'CANCELLED', 'NO_SHOW'].includes(response.status))) {
@@ -4358,8 +4675,8 @@ app.post('/api/requests/:id/invitations', async (req, res) => {
   const matches = await findDonorMatches(request.location, request.blood_group, request.user_id, false);
   if (!matches.some(match => match.user_id === donorId)) return res.status(409).json({ error: 'Donor is no longer an eligible match' });
   const response = await inviteDonorToRequest(request, donorId);
-  res.status(201).json(responsePayload(response, auth.user.id));
-});
+  res.status(201).json(responsePayload(response, actor.id));
+}));
 
 app.get('/api/me/invitations', async (req, res) => {
   const auth = getCurrentAuth(req);
@@ -4417,12 +4734,13 @@ app.patch('/api/responses/:id', async (req, res) => {
   res.json(responsePayload(response, auth.user.id));
 });
 
-app.post('/api/responses/:id/confirm-donation', async (req, res) => {
-  const auth = getCurrentAuth(req);
+app.post('/api/responses/:id/confirm-donation', requestWriteRoute(async (req, res) => {
+  const actor = bloodHelpActor(req);
   const response = donorResponses.find(item => item.id === req.params.id);
-  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  if (!actor) return res.status(401).json({ error: 'Unauthorized' });
   if (!response) return res.status(404).json({ error: 'Response not found' });
-  if (response.requester_id !== auth.user.id) return res.status(403).json({ error: 'Only the requester can confirm receipt' });
+  const ownedRequest = requests.find(item => item.id === response.request_id);
+  if (!ownedRequest || !isRequestOwner(ownedRequest, req) || response.requester_id !== actor.id) return res.status(403).json({ error: 'Only the requester can confirm receipt' });
   if (!response.donor_confirmed_at) return res.status(409).json({ error: 'The donor must report the donation first' });
   if (!response.requester_confirmed_at) {
     const request = requests.find(item => item.id === response.request_id);
@@ -4438,14 +4756,44 @@ app.post('/api/responses/:id/confirm-donation', async (req, res) => {
     const recorded = await recordDonationOutcome(followUp, 'REQUESTER', 'DONATED');
     if ('error' in recorded && !followUp.requester_outcome) return res.status(409).json({ error: recorded.error });
   }
-  res.json(responsePayload(response, auth.user.id));
+  res.json(responsePayload(response, actor.id));
+}));
+
+app.get('/api/me/push', (req, res) => {
+  if (!getCurrentAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
+  res.json({ configured: pushConfigured() });
 });
+app.post('/api/me/push/devices', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  if (token.length < 20 || token.length > 4096 || /\s/.test(token) || typeof req.body?.enabled !== 'boolean') return validationError(res, 'Valid token and enabled setting are required');
+  await registerPush(auth.user.id, auth.session.id, token, req.body.enabled);
+  res.json({ success: true });
+}));
+app.delete('/api/me/push/devices', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  await removePush(auth.user.id, typeof req.body?.token === 'string' ? req.body.token : undefined, auth.session.id);
+  res.json({ success: true });
+}));
 
 app.get('/api/me/notifications', async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
   res.json(notifications.filter(item => item.user_id === auth.user.id).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 100));
 });
+
+app.patch('/api/me/notifications/read-all', asyncRoute(async (req, res) => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+  for (const item of notifications.filter(item => item.user_id === auth.user.id && !item.read_at)) {
+    const updated = { ...item, read_at: new Date().toISOString() };
+    await saveToTable('common_notifications', updated);
+    Object.assign(item, updated);
+  }
+  res.json({ success: true });
+}));
 
 app.patch('/api/me/notifications/:id/read', async (req, res) => {
   const auth = getCurrentAuth(req);
@@ -4584,8 +4932,8 @@ app.get('/api/admin/overview', async (req, res) => {
       readiness: isReady ? 'ready' : 'starting',
       environment: IS_PRODUCTION ? 'production' : 'development',
       uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000),
-      sms_configured: isSmsConfigured(),
-      follow_up_sms_configured: isFollowUpSmsConfigured(),
+      sms_configured: activeSmsConfigured(),
+      follow_up_sms_configured: activeFollowUpSmsConfigured(),
       otp_bypass_enabled: isOtpBypassEnabled(),
       storage: 'lancedb',
       donation_interval_days: DONATION_INTERVAL_DAYS,
@@ -4624,11 +4972,127 @@ app.patch('/api/admin/settings/otp-bypass', async (req, res) => {
   res.json({ otp_bypass_enabled: next.enabled, updated_at: next.updated_at });
 });
 
+app.get('/api/admin/sms-providers', (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_SMS');
+  if (!auth) return;
+  res.json([...smsProviders].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)).map(publicSmsProvider));
+});
+
+app.post('/api/admin/sms-providers', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_SMS');
+  if (!auth) return;
+  const name = cleanString(req.body?.name, 100);
+  const apiToken = cleanString(req.body?.api_token, 2_000);
+  const reason = cleanString(req.body?.reason, 500);
+  if (!name || !apiToken || !reason) return validationError(res, 'Name, API token, and reason are required');
+  if (!smsSettingsSecret() || smsSettingsSecret().length < 32) return res.status(503).json({ error: 'SMS credential encryption is not configured' });
+  if (smsProviders.filter(item => !item.deleted_at).length >= 20) return res.status(409).json({ error: 'At most 20 SMS providers can be active' });
+  let baseUrl: string;
+  try { baseUrl = await validatePublicSmsBaseUrl(String(req.body?.base_url || '')); }
+  catch (error) { return validationError(res, (error as Error).message); }
+  const priority = parsePositiveInteger(req.body?.priority, 100) || Math.max(0, ...smsProviders.map(item => item.priority)) + 1;
+  const now = new Date().toISOString();
+  const provider: StoredSmsProvider = {
+    id: uuidv4(), name, base_url: baseUrl, api_token_encrypted: encryptSetting(apiToken, smsSettingsSecret()), priority,
+    enabled: req.body?.enabled !== false, created_at: now, updated_at: now, updated_by: auth.user.id
+  };
+  smsProviders.push(provider); await saveToTable('common_sms_providers', provider);
+  await audit(auth.user.id, 'SMS_PROVIDER_CREATED', 'SMS_PROVIDER', provider.id, { reason, name, base_url: baseUrl, priority, enabled: provider.enabled });
+  res.status(201).json(publicSmsProvider(provider));
+}));
+
+app.put('/api/admin/sms-providers/rankings', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_SMS');
+  if (!auth) return;
+  const ids = Array.isArray(req.body?.provider_ids) ? req.body.provider_ids.filter((id: unknown): id is string => typeof id === 'string') : [];
+  const activeIds = smsProviders.filter(item => !item.deleted_at).map(item => item.id);
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason || ids.length !== activeIds.length || new Set(ids).size !== ids.length || activeIds.some(id => !ids.includes(id))) {
+    return validationError(res, 'Provide every active provider once and a reason');
+  }
+  const before = activeIds.map(id => ({ id, priority: smsProviders.find(item => item.id === id)!.priority }));
+  const now = new Date().toISOString();
+  for (const [index, id] of ids.entries()) {
+    const provider = smsProviders.find(item => item.id === id)!;
+    provider.priority = index + 1; provider.updated_at = now; provider.updated_by = auth.user.id;
+    await saveToTable('common_sms_providers', provider);
+  }
+  await audit(auth.user.id, 'SMS_PROVIDER_RANKED', 'SMS_PROVIDER_SET', 'messavo', { reason, before, after: ids.map((id, index) => ({ id, priority: index + 1 })) });
+  res.json([...smsProviders].filter(item => !item.deleted_at).sort((a, b) => a.priority - b.priority).map(publicSmsProvider));
+}));
+
+app.patch('/api/admin/sms-providers/:id', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_SMS');
+  if (!auth) return;
+  const provider = smsProviders.find(item => item.id === req.params.id);
+  if (!provider || provider.deleted_at) return res.status(404).json({ error: 'SMS provider not found' });
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason) return validationError(res, 'A reason is required');
+  const before = publicSmsProvider(provider);
+  if (req.body?.name !== undefined) {
+    const name = cleanString(req.body.name, 100); if (!name) return validationError(res, 'Valid provider name is required'); provider.name = name;
+  }
+  if (req.body?.base_url !== undefined) {
+    try { provider.base_url = await validatePublicSmsBaseUrl(String(req.body.base_url)); }
+    catch (error) { return validationError(res, (error as Error).message); }
+  }
+  if (req.body?.api_token !== undefined) {
+    const token = cleanString(req.body.api_token, 2_000);
+    if (!token) return validationError(res, 'Valid API token is required');
+    if (!smsSettingsSecret() || smsSettingsSecret().length < 32) return res.status(503).json({ error: 'SMS credential encryption is not configured' });
+    provider.api_token_encrypted = encryptSetting(token, smsSettingsSecret());
+  }
+  if (req.body?.priority !== undefined) {
+    const priority = parsePositiveInteger(req.body.priority, 100); if (!priority) return validationError(res, 'Priority must be between 1 and 100'); provider.priority = priority;
+  }
+  if (req.body?.enabled !== undefined) {
+    if (typeof req.body.enabled !== 'boolean') return validationError(res, 'Enabled must be true or false'); provider.enabled = req.body.enabled;
+  }
+  provider.updated_at = new Date().toISOString(); provider.updated_by = auth.user.id;
+  await saveToTable('common_sms_providers', provider);
+  await audit(auth.user.id, 'SMS_PROVIDER_UPDATED', 'SMS_PROVIDER', provider.id, { reason, before, after: publicSmsProvider(provider), api_token_changed: req.body?.api_token !== undefined });
+  res.json(publicSmsProvider(provider));
+}));
+
+app.delete('/api/admin/sms-providers/:id', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_SMS');
+  if (!auth) return;
+  const provider = smsProviders.find(item => item.id === req.params.id);
+  if (!provider) return res.status(404).json({ error: 'SMS provider not found' });
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason) return validationError(res, 'A reason is required');
+  if (!provider.deleted_at) {
+    provider.deleted_at = new Date().toISOString(); provider.enabled = false; provider.updated_at = provider.deleted_at; provider.updated_by = auth.user.id;
+    await saveToTable('common_sms_providers', provider);
+    await audit(auth.user.id, 'SMS_PROVIDER_DELETED', 'SMS_PROVIDER', provider.id, { reason, provider: publicSmsProvider(provider) });
+  }
+  res.json(publicSmsProvider(provider));
+}));
+
+app.post('/api/admin/sms-providers/:id/restore', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_SMS');
+  if (!auth) return;
+  const provider = smsProviders.find(item => item.id === req.params.id);
+  if (!provider) return res.status(404).json({ error: 'SMS provider not found' });
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason) return validationError(res, 'A reason is required');
+  provider.deleted_at = undefined; provider.enabled = true; provider.updated_at = new Date().toISOString(); provider.updated_by = auth.user.id;
+  await saveToTable('common_sms_providers', provider);
+  await audit(auth.user.id, 'SMS_PROVIDER_RESTORED', 'SMS_PROVIDER', provider.id, { reason, provider: publicSmsProvider(provider) });
+  res.json(publicSmsProvider(provider));
+}));
+
 app.get('/api/admin/users', (req, res) => {
   const auth = requireStaffCapability(req, res, 'VIEW_USERS');
   if (!auth) return;
   const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
-  res.json(users.filter(user => !search || user.name.toLowerCase().includes(search) || user.phone.includes(search)).slice(0, 200).map(sanitizeUser));
+  const status = typeof req.query.status === 'string' ? req.query.status : '';
+  const includeDeleted = req.query.include_deleted === 'true';
+  res.json(users.filter(user =>
+    (includeDeleted || !user.deleted_at) &&
+    (!status || (user.account_status || 'ACTIVE') === status) &&
+    (!search || user.name.toLowerCase().includes(search) || user.phone.includes(search))
+  ).slice(0, 200).map(sanitizeUser));
 });
 
 app.patch('/api/admin/users/:id', async (req, res) => {
@@ -4636,6 +5100,7 @@ app.patch('/api/admin/users/:id', async (req, res) => {
   if (!auth) return;
   const target = users.find(user => user.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
+  const previousDonorProfile = target.donor_profile;
 
   const accountStatus = req.body?.account_status;
   const reason = optionalCleanString(req.body?.reason, 500);
@@ -4645,6 +5110,43 @@ app.patch('/api/admin/users/:id', async (req, res) => {
   const nextStaffRole = requestedStaffRole === null || requestedStaffRole === ''
     ? undefined
     : requestedStaffRole;
+  const nameProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'name');
+  const phoneProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'phone');
+  const verifiedProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'is_verified');
+  const donorProfileProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'donor_profile');
+  const nextName = nameProvided ? cleanString(req.body?.name, 100) : target.name;
+  const nextPhone = phoneProvided ? normalizeBangladeshPhone(req.body?.phone) : target.phone;
+  const nextVerified = verifiedProvided ? req.body?.is_verified : target.is_verified;
+  let nextDonorProfile = target.donor_profile;
+  if (donorProfileProvided) {
+    if (!isPlainObject(req.body?.donor_profile)) return validationError(res, 'Donor profile changes must be an object');
+    const changes = req.body.donor_profile;
+    const location = changes.location !== undefined
+      ? parseLocation(changes.location)
+      : typeof changes.district === 'string'
+        ? getLocationByName(changes.district)
+        : target.donor_profile?.location;
+    const bloodGroup = changes.blood_group ?? target.donor_profile?.blood_group;
+    const availabilityStatus = changes.availability_status ?? target.donor_profile?.availability_status ?? 'NOT_AVAILABLE';
+    if (!location || !isOneOf(bloodGroup, BLOOD_GROUPS) || !isOneOf(availabilityStatus, AVAILABILITY_STATUSES)) {
+      return validationError(res, 'Donor profile requires a valid blood group, district, and availability');
+    }
+    const upazila = changes.upazila !== undefined ? parseUpazila(location.area_name, changes.upazila) : target.donor_profile?.upazila;
+    const age = changes.age !== undefined ? parseOptionalInteger(changes.age, 16, 70) : target.donor_profile?.age;
+    const weight = changes.weight_kg !== undefined ? parseOptionalInteger(changes.weight_kg, 30, 200) : target.donor_profile?.weight_kg;
+    const availabilityReason = changes.availability_reason !== undefined ? parseAvailabilityReason(changes.availability_reason) : target.donor_profile?.availability_reason;
+    const medicalConditions = changes.medical_conditions !== undefined ? parseMedicalConditions(changes.medical_conditions) : target.donor_profile?.medical_conditions;
+    if (upazila === null || age === null || weight === null || availabilityReason === null || medicalConditions === null) {
+      return validationError(res, 'Donor profile changes are invalid');
+    }
+    nextDonorProfile = {
+      ...(target.donor_profile || {} as DonorProfile), blood_group: bloodGroup, location, upazila: upazila || undefined,
+      availability_status: availabilityStatus,
+      availability_reason: availabilityStatus === 'AVAILABLE' ? undefined : availabilityReason,
+      age, weight_kg: weight, medical_conditions: medicalConditions,
+      availability_confirmed_at: availabilityStatus === 'AVAILABLE' ? new Date().toISOString() : target.donor_profile?.availability_confirmed_at
+    };
+  }
 
   if (accountStatus !== undefined && !isOneOf(accountStatus, ['ACTIVE', 'SUSPENDED'] as const)) {
     return validationError(res, 'Valid account status is required');
@@ -4654,13 +5156,24 @@ app.patch('/api/admin/users/:id', async (req, res) => {
   if (staffRoleProvided && nextStaffRole !== undefined && !isStaffRole(nextStaffRole)) {
     return validationError(res, 'Valid staff role is required');
   }
+  if (!nextName || !nextPhone) return validationError(res, 'Valid name and Bangladesh phone are required');
+  if (verifiedProvided && typeof nextVerified !== 'boolean') return validationError(res, 'Verified must be true or false');
+  const resolvedVerified = typeof nextVerified === 'boolean' ? nextVerified : target.is_verified;
+  if (phoneProvided && users.some(user => user.id !== target.id && user.phone === nextPhone && !user.deleted_at)) {
+    return res.status(409).json({ error: 'Phone already registered' });
+  }
 
   const currentStatus = target.account_status || 'ACTIVE';
   const statusChanged = accountStatus !== undefined && accountStatus !== currentStatus;
   const suspensionReasonChanged = req.body?.suspension_reason !== undefined && suspensionReason !== target.suspension_reason;
   const staffRoleChanged = staffRoleProvided && nextStaffRole !== target.staff_role;
-  if (!statusChanged && !suspensionReasonChanged && !staffRoleChanged) {
+  const credentialsChanged = nextName !== target.name || nextPhone !== target.phone || resolvedVerified !== target.is_verified;
+  const donorProfileChanged = donorProfileProvided && JSON.stringify(nextDonorProfile) !== JSON.stringify(target.donor_profile);
+  if (!statusChanged && !suspensionReasonChanged && !staffRoleChanged && !credentialsChanged && !donorProfileChanged) {
     return res.json(sanitizeUser(target));
+  }
+  if ((credentialsChanged || donorProfileChanged) && !canEditMember(auth.user, target)) {
+    return res.status(403).json({ error: 'You cannot edit this member' });
   }
 
   if (statusChanged && !canManageMember(auth.user, target)) {
@@ -4692,7 +5205,7 @@ app.patch('/api/admin/users/:id', async (req, res) => {
   ) {
     return res.status(409).json({ error: 'The last active superadmin cannot be suspended' });
   }
-  if ((statusChanged || staffRoleChanged || suspensionReasonChanged) && !reason) {
+  if ((statusChanged || staffRoleChanged || suspensionReasonChanged || credentialsChanged || donorProfileChanged) && !reason) {
     return validationError(res, 'A reason is required for account and staff changes');
   }
 
@@ -4720,8 +5233,19 @@ app.patch('/api/admin/users/:id', async (req, res) => {
     target.suspension_reason = suspensionReason;
   }
   if (staffRoleChanged) target.staff_role = nextStaffRole;
+  target.name = nextName;
+  target.phone = nextPhone;
+  target.is_verified = resolvedVerified;
+  target.donor_profile = nextDonorProfile;
+  if (phoneProvided && nextPhone !== before.phone) target.phone_verified_at = resolvedVerified ? now : undefined;
 
   await saveToTable('common_users', target);
+  if (donorProfileChanged) {
+    await removeDonorFromAllPartitions(target.id);
+    if (target.donor_profile?.availability_status === 'AVAILABLE' && target.account_status !== 'SUSPENDED' && !target.deleted_at && target.is_verified) {
+      await syncDonorToPartition(target);
+    }
+  }
   if (statusChanged && target.account_status === 'SUSPENDED') {
     for (const session of sessions.filter(item => item.user_id === target.id && !item.revoked_at)) {
       session.revoked_at = now;
@@ -4733,12 +5257,56 @@ app.patch('/api/admin/users/:id', async (req, res) => {
 
   await audit(auth.user.id, 'USER_ADMIN_UPDATED', 'USER', target.id, {
     reason,
-    before,
-    after: adminUserAuditSnapshot(target),
+    before: { ...before, ...(donorProfileChanged ? { donor_profile: previousDonorProfile || null } : {}) },
+    after: { ...adminUserAuditSnapshot(target), ...(donorProfileChanged ? { donor_profile: target.donor_profile || null } : {}) },
+    donor_profile_updated: donorProfileChanged,
     revoked_sessions: revokedSessions
   });
   res.json(sanitizeUser(target));
 });
+
+app.delete('/api/admin/users/:id', asyncRoute(async (req, res) => accountWrites.run(async () => {
+  const auth = requireStaffCapability(req, res, 'EDIT_USERS');
+  if (!auth) return;
+  const target = users.find(user => user.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.deleted_at) return res.json(sanitizeUser(target));
+  if (!canEditMember(auth.user, target)) return res.status(403).json({ error: 'You cannot delete this member' });
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason) return validationError(res, 'A reason is required to delete an account');
+  const activeSuperadmins = users.filter(user => user.staff_role === 'SUPERADMIN' && user.account_status !== 'SUSPENDED' && !user.deleted_at).length;
+  if (target.staff_role === 'SUPERADMIN' && activeSuperadmins <= 1) return res.status(409).json({ error: 'The last active superadmin cannot be deleted' });
+  const before = adminUserAuditSnapshot(target);
+  const now = new Date().toISOString();
+  target.deleted_at = now; target.account_status = 'SUSPENDED'; target.suspension_reason = reason;
+  target.suspended_at = now; target.suspended_by = auth.user.id;
+  let revokedSessions = 0;
+  for (const session of sessions.filter(item => item.user_id === target.id && !item.revoked_at)) {
+    session.revoked_at = now; await saveToTable('common_sessions', session); revokedSessions += 1;
+  }
+  await removeDonorFromAllPartitions(target.id);
+  await saveToTable('common_users', target);
+  await audit(auth.user.id, 'USER_ADMIN_DELETED', 'USER', target.id, { reason, before, after: adminUserAuditSnapshot(target), revoked_sessions: revokedSessions });
+  res.json(sanitizeUser(target));
+})));
+
+app.post('/api/admin/users/:id/restore', asyncRoute(async (req, res) => accountWrites.run(async () => {
+  const auth = requireStaffCapability(req, res, 'EDIT_USERS');
+  if (!auth) return;
+  const target = users.find(user => user.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (!target.deleted_at) return res.json(sanitizeUser(target));
+  if (!canEditMember(auth.user, target)) return res.status(403).json({ error: 'You cannot restore this member' });
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason) return validationError(res, 'A reason is required to restore an account');
+  const before = adminUserAuditSnapshot(target);
+  target.deleted_at = undefined; target.account_status = 'ACTIVE'; target.suspension_reason = undefined;
+  target.suspended_at = undefined; target.suspended_by = undefined;
+  await saveToTable('common_users', target);
+  if (target.donor_profile?.availability_status === 'AVAILABLE') await syncDonorToPartition(target);
+  await audit(auth.user.id, 'USER_ADMIN_RESTORED', 'USER', target.id, { reason, before, after: adminUserAuditSnapshot(target) });
+  res.json(sanitizeUser(target));
+})));
 
 app.post('/api/admin/users/:id/revoke-sessions', async (req, res) => {
   const auth = requireStaffCapability(req, res, 'REVOKE_SESSIONS');
@@ -4769,25 +5337,95 @@ app.get('/api/admin/requests', (req, res) => {
   const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
   if (!auth) return;
   const status = typeof req.query.status === 'string' ? req.query.status : '';
-  res.json(requests.filter(request => (request.ownership !== 'GUEST' || Date.parse(request.expires_at) > Date.now()) && (!status || request.status === status)).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 200));
+  res.json(requests.filter(request => !status || request.status === status).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 200));
 });
 
 app.patch('/api/admin/requests/:id', requestWriteRoute(async (req, res) => {
   const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
   if (!auth) return;
   const request = requests.find(item => item.id === req.params.id);
-  const status = req.body?.status;
-  const note = optionalCleanString(req.body?.note, 500);
+  const action = isOneOf(req.body?.action, ['UPDATE', 'DELETE', 'RESTORE'] as const) ? req.body.action : 'LEGACY';
+  const changes = isPlainObject(req.body?.changes) ? req.body.changes : {};
+  const status = action === 'UPDATE' ? (changes.status ?? request?.status) : req.body?.status;
+  const note = optionalCleanString(req.body?.reason ?? req.body?.note, 500);
   if (!request) return res.status(404).json({ error: 'Request not found' });
-  if (!isOneOf(status, ['ACTIVE', 'REJECTED', 'CANCELLED'] as const)) return validationError(res, 'Valid moderation status is required');
-  if (status === 'ACTIVE' && Date.parse(request.expires_at) <= Date.now()) return res.status(409).json({ error: 'Expired requests cannot be restored' });
-  request.status = status;
-  if (status === 'ACTIVE') request.closure_reason = undefined;
-  request.timeline = [...(request.timeline || []), { id: uuidv4(), type: `MODERATION_${status}`, actor_id: auth.user.id, created_at: new Date().toISOString(), note }];
+  if (action !== 'LEGACY' && !note) return validationError(res, 'A reason is required');
+  const before = {
+    status: request.status, blood_group: request.blood_group, blood_component: request.blood_component,
+    units_required: request.units_required, hospital_name: request.hospital_name, hospital_address: request.hospital_address,
+    ward: request.ward, request_reason_details: request.request_reason_details,
+    admin_deleted_at: request.admin_deleted_at, admin_previous_status: request.admin_previous_status
+  };
+  if (action === 'DELETE') {
+    request.admin_previous_status = request.status; request.status = 'REJECTED'; request.admin_deleted_at = new Date().toISOString();
+    request.admin_deleted_by = auth.user.id; request.admin_delete_reason = note;
+  } else if (action === 'RESTORE') {
+    if (!request.admin_deleted_at) return res.status(409).json({ error: 'Request is not deleted' });
+    const previous = request.admin_previous_status || 'CANCELLED';
+    request.status = ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(previous) && Date.parse(request.expires_at) <= Date.now() ? 'EXPIRED' : previous;
+    request.admin_deleted_at = undefined; request.admin_deleted_by = undefined; request.admin_delete_reason = undefined; request.admin_previous_status = undefined;
+  } else {
+    if (!isOneOf(status, ['ACTIVE', 'REJECTED', 'CANCELLED', 'FULFILLED', 'EXPIRED'] as const)) return validationError(res, 'Valid moderation status is required');
+    if (status === 'ACTIVE' && Date.parse(request.expires_at) <= Date.now()) return res.status(409).json({ error: 'Expired requests cannot be restored' });
+    request.status = status;
+    if (status === 'ACTIVE') request.closure_reason = undefined;
+    if (action === 'UPDATE') {
+      if (changes.blood_group !== undefined) {
+        if (!isOneOf(changes.blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required'); request.blood_group = changes.blood_group;
+      }
+      if (changes.blood_component !== undefined) {
+        if (!isOneOf(changes.blood_component, BLOOD_COMPONENTS)) return validationError(res, 'Valid blood component is required'); request.blood_component = changes.blood_component;
+      }
+      if (changes.units_required !== undefined) {
+        const units = parsePositiveInteger(changes.units_required, 20); if (!units) return validationError(res, 'Units must be between 1 and 20'); request.units_required = units;
+      }
+      if (changes.hospital_name !== undefined) {
+        const value = optionalCleanString(changes.hospital_name, 160); if (changes.hospital_name && !value) return validationError(res, 'Valid hospital name is required'); request.hospital_name = value;
+      }
+      if (changes.hospital_address !== undefined) {
+        const value = optionalCleanString(changes.hospital_address, 240); if (changes.hospital_address && !value) return validationError(res, 'Valid hospital address is required'); request.hospital_address = value;
+      }
+      if (changes.ward !== undefined) {
+        const value = optionalCleanString(changes.ward, 100); if (changes.ward && !value) return validationError(res, 'Valid ward is required'); request.ward = value;
+      }
+      if (changes.request_reason_details !== undefined) {
+        const value = optionalCleanString(changes.request_reason_details, 160); if (changes.request_reason_details && !value) return validationError(res, 'Valid request reason details are required'); request.request_reason_details = value;
+      }
+    }
+  }
+  request.timeline = [...(request.timeline || []), { id: uuidv4(), type: `ADMIN_${action === 'LEGACY' ? request.status : action}`, actor_id: auth.user.id, created_at: new Date().toISOString(), note }];
   await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
-  await audit(auth.user.id, 'REQUEST_MODERATED', 'REQUEST', request.id, { status, note });
-  await notify(request.user_id, 'REQUEST_MODERATION', `Request ${status.toLowerCase()}`, note || 'An operator reviewed your request.', `/request/${request.id}`);
+  await audit(auth.user.id, action === 'LEGACY' ? 'REQUEST_MODERATED' : 'REQUEST_ADMIN_UPDATED', 'REQUEST', request.id, { reason: note, action, before, after: {
+    status: request.status, blood_group: request.blood_group, blood_component: request.blood_component, units_required: request.units_required,
+    hospital_name: request.hospital_name, hospital_address: request.hospital_address, ward: request.ward,
+    request_reason_details: request.request_reason_details, admin_deleted_at: request.admin_deleted_at, admin_previous_status: request.admin_previous_status
+  } });
+  if (request.user_id) await notify(request.user_id, 'REQUEST_MODERATION', 'A request was reviewed', note || 'An operator reviewed your request.', `/request/${request.id}`);
   res.json(request);
+}));
+
+app.patch('/api/admin/requests/:requestId/comments/:commentId', requestWriteRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
+  if (!auth) return;
+  const request = requests.find(item => item.id === req.params.requestId);
+  const comment = request?.comments?.find(item => item.id === req.params.commentId);
+  if (!request || !comment) return res.status(404).json({ error: 'Comment not found' });
+  const action = req.body?.action;
+  const reason = cleanString(req.body?.reason, 500);
+  if (!isOneOf(action, ['UPDATE', 'DELETE', 'RESTORE'] as const) || !reason) return validationError(res, 'Action and reason are required');
+  const before = { text: comment.text, user_name: comment.user_name, moderation_status: comment.moderation_status || 'VISIBLE', deleted_at: comment.deleted_at || null };
+  if (action === 'UPDATE') {
+    const text = cleanString(req.body?.text, 1_000); if (!text) return validationError(res, 'Comment text is required'); comment.text = text;
+  } else if (action === 'DELETE') {
+    comment.moderation_status = 'HIDDEN'; comment.deleted_at = comment.deleted_at || new Date().toISOString();
+  } else {
+    comment.moderation_status = 'VISIBLE'; comment.deleted_at = undefined;
+  }
+  comment.moderation_reason = reason; comment.moderated_at = new Date().toISOString(); comment.moderated_by = auth.user.id;
+  await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+  await audit(auth.user.id, 'COMMENT_ADMIN_UPDATED', 'COMMENT', comment.id, { reason, action, request_id: request.id, before,
+    after: { text: comment.text, user_name: comment.user_name, moderation_status: comment.moderation_status, deleted_at: comment.deleted_at || null } });
+  res.json(comment);
 }));
 
 app.get('/api/admin/community', asyncRoute(async (req, res) => {
@@ -4818,7 +5456,7 @@ app.get('/api/admin/community/:id', asyncRoute(async (req, res) => {
   const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
   if (!auth) return;
   const post = await getCommunityPostById(req.params.id);
-  if (!post || post.status === 'DELETED') return res.status(404).json({ error: 'Community post not found' });
+  if (!post) return res.status(404).json({ error: 'Community post not found' });
   res.json(adminCommunityPost(post));
 }));
 
@@ -4826,32 +5464,59 @@ app.patch('/api/admin/community/:id', asyncRoute(async (req, res) => {
   const auth = requireStaffCapability(req, res, 'MODERATE_CONTENT');
   if (!auth) return;
   const post = await getCommunityPostById(req.params.id);
-  const status = req.body?.status;
+  const action = isOneOf(req.body?.action, ['UPDATE', 'DELETE', 'RESTORE'] as const) ? req.body.action : 'LEGACY';
+  const changes = isPlainObject(req.body?.changes) ? req.body.changes : {};
+  const status = action === 'DELETE' ? 'DELETED' : action === 'RESTORE' ? 'PUBLISHED' : req.body?.status;
   const reason = cleanString(req.body?.reason, 1_000);
-  if (!post || post.status === 'DELETED') return res.status(404).json({ error: 'Community post not found' });
-  if (!isOneOf(status, ['HIDDEN', 'PUBLISHED'] as const)) return validationError(res, 'Choose hide or restore');
+  if (!post) return res.status(404).json({ error: 'Community post not found' });
+  if (action === 'UPDATE') {
+    if (!Object.keys(changes).length) return validationError(res, 'Post changes are required');
+  } else if (!isOneOf(status, ['HIDDEN', 'PUBLISHED', 'DELETED'] as const)) return validationError(res, 'Choose hide, delete, or restore');
   if (!reason) return validationError(res, 'A moderation reason is required');
-  if (status === 'HIDDEN' && post.status !== 'PUBLISHED') {
+  if (action !== 'UPDATE' && status === 'HIDDEN' && post.status !== 'PUBLISHED') {
     return res.status(409).json({ error: 'Only a published post can be hidden' });
   }
-  if (status === 'PUBLISHED' && post.status !== 'HIDDEN') {
+  if (action === 'LEGACY' && status === 'PUBLISHED' && post.status !== 'HIDDEN') {
     return res.status(409).json({ error: 'Only a hidden post can be restored' });
   }
+  if (action === 'RESTORE' && !['HIDDEN', 'DELETED'].includes(post.status)) {
+    return res.status(409).json({ error: 'Only a hidden or deleted post can be restored' });
+  }
   const now = new Date().toISOString();
+  const before = { status: post.status, type: post.type, title: post.title, body_markdown: post.body_markdown,
+    image_key: post.image_key, image_alt: post.image_alt, admin_deleted_at: post.admin_deleted_at, admin_previous_status: post.admin_previous_status };
+  const edited = action === 'UPDATE' ? validateCommunityPostInput({
+    type: changes.type ?? post.type,
+    title: changes.title ?? post.title,
+    body_markdown: changes.body_markdown ?? post.body_markdown,
+    image_key: changes.image_key ?? post.image_key,
+    image_alt: changes.image_alt ?? post.image_alt,
+    image_width: changes.image_width ?? post.image_width,
+    image_height: changes.image_height ?? post.image_height
+  }) : null;
+  if (edited?.ok === false) return validationError(res, edited.errors.join('. '));
+  const allowedChanges = edited?.ok === true ? edited.value : {};
+  const nextStatus: CommunityPostStatus = action === 'UPDATE' ? post.status : status as CommunityPostStatus;
   const updated = await saveCommunityPost({
     ...post,
-    status,
+    ...allowedChanges,
+    status: nextStatus,
+    ...(action === 'DELETE' ? { admin_deleted_at: now, admin_previous_status: post.status } : {}),
+    ...(action === 'RESTORE' ? { admin_deleted_at: undefined, admin_previous_status: undefined } : {}),
     moderated_by: auth.user.id,
     moderated_at: now,
     moderation_reason: reason,
     updated_at: now
   });
   invalidateCommunitySitemap();
-  await audit(auth.user.id, `COMMUNITY_POST_${status}`, 'POST', post.id, { reason });
+  await audit(auth.user.id, action === 'LEGACY' ? `COMMUNITY_POST_${status}` : 'COMMUNITY_POST_ADMIN_UPDATED', 'POST', post.id, { reason, action,
+    before, after: { status: updated.status, type: updated.type, title: updated.title, body_markdown: updated.body_markdown,
+      image_key: updated.image_key, image_alt: updated.image_alt, admin_deleted_at: updated.admin_deleted_at,
+      admin_previous_status: updated.admin_previous_status } });
   await notify(
     post.author_id,
     'COMMUNITY_MODERATION',
-    status === 'HIDDEN' ? 'Community post hidden' : 'Community post restored',
+    updated.status === 'HIDDEN' ? 'Community post hidden' : updated.status === 'DELETED' ? 'Community post deleted' : action === 'UPDATE' ? 'Community post updated' : 'Community post restored',
     reason,
     post.slug ? `/community/${post.slug}` : '/community'
   );
@@ -4949,6 +5614,7 @@ app.get('/api/admin/call-reports', async (req, res) => {
 function safeAuditActorSummary(actorId: string) {
   if (actorId === 'system') return { type: 'System', label: 'System automation' };
   if (actorId === 'anonymous') return { type: 'Visitor', label: 'Anonymous visitor' };
+  if (actorId.startsWith('guest:')) return { type: 'Visitor', label: `Visitor ${actorId.slice(-6)}` };
   if (actorId === 'self-service') return { type: 'Self-service', label: 'Verified self-service flow' };
   const actor = users.find(user => user.id === actorId);
   if (!actor) return { type: 'Account', label: 'Account no longer available' };
@@ -4998,16 +5664,131 @@ app.get('/api/admin/audit', asyncRoute(async (req, res) => {
   const auth = requireStaffCapability(req, res, 'VIEW_AUDIT');
   if (!auth) return;
   const auditEvents: AuditEvent[] = await getAllFromTable('common_audit_events');
-  const recentEvents = auditEvents.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 500);
+  const userId = typeof req.query.user_id === 'string' ? req.query.user_id : '';
+  const activity = typeof req.query.activity === 'string' ? req.query.activity.toUpperCase() : '';
+  const targetType = typeof req.query.target_type === 'string' ? req.query.target_type.toUpperCase() : '';
+  const from = typeof req.query.from === 'string' ? Date.parse(req.query.from) : NaN;
+  const to = typeof req.query.to === 'string' ? Date.parse(req.query.to) : NaN;
+  const limit = Math.min(500, Math.max(1, Math.floor(Number(req.query.limit) || 200)));
+  const recentEvents = auditEvents.filter(event =>
+    (!userId || event.actor_id === userId || (event.target_type === 'USER' && event.target_id === userId)) &&
+    (!activity || event.action.includes(activity)) && (!targetType || event.target_type === targetType) &&
+    (!Number.isFinite(from) || Date.parse(event.created_at) >= from) && (!Number.isFinite(to) || Date.parse(event.created_at) <= to)
+  ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, limit);
   const postIds = [...new Set(recentEvents.filter(event => event.target_type === 'POST').map(event => event.target_id))];
   const postResults = await Promise.all(postIds.map(async id => [id, await getCommunityPostById(id)] as const));
   const postsById = new Map(postResults.filter((entry): entry is readonly [string, CommunityPost] => Boolean(entry[1])));
   res.json(recentEvents.map(event => ({
     ...event,
+    category: auditCategory(event.action),
+    summary: humanAuditSummary(event.action, event.metadata),
+    reversible: REVERSIBLE_AUDIT_ACTIONS.has(event.action),
+    undo_endpoint: REVERSIBLE_AUDIT_ACTIONS.has(event.action) ? `/api/admin/audit/${event.id}/undo` : null,
     actor_summary: safeAuditActorSummary(event.actor_id),
     target_summary: safeAuditTargetSummary(event, postsById)
   })));
 }));
+
+app.post('/api/admin/audit/:id/undo', asyncRoute((req, res) => accountWrites.run(() => requestWrites.run(async () => {
+  const auth = requireStaffCapability(req, res, 'VIEW_AUDIT');
+  if (!auth || !hasCapability(auth.user, 'EDIT_USERS') || !hasCapability(auth.user, 'MODERATE_CONTENT')) return;
+  const reason = cleanString(req.body?.reason, 500);
+  if (!reason) return validationError(res, 'A reason is required to undo an action');
+  const events: AuditEvent[] = await getAllFromTable('common_audit_events');
+  const event = events.find(item => item.id === req.params.id);
+  if (!event || !REVERSIBLE_AUDIT_ACTIONS.has(event.action)) {
+    return res.status(404).json({ error: 'Reversible audit action not found' });
+  }
+  if (events.some(item => item.action === 'ADMIN_ACTION_UNDONE' && item.metadata?.original_event_id === event.id)) {
+    return res.status(409).json({ error: 'This action has already been undone' });
+  }
+  if (events.some(item => (REVERSIBLE_AUDIT_ACTIONS.has(item.action) || item.action === 'ADMIN_ACTION_UNDONE') &&
+    item.target_type === event.target_type && item.target_id === event.target_id && Date.parse(item.created_at) > Date.parse(event.created_at))) {
+    return res.status(409).json({ error: 'Target changed after this audit event' });
+  }
+  const before = isPlainObject(event.metadata?.before) ? event.metadata!.before as Record<string, unknown> : null;
+  const expectedAfter = isPlainObject(event.metadata?.after) ? event.metadata!.after as Record<string, unknown> : null;
+  const creationAction = ['REQUEST_CREATED', 'COMMENT_CREATED', 'COMMUNITY_POST_DRAFTED', 'DONATION_STORY_DRAFTED'].includes(event.action);
+  if (!before && !creationAction) return res.status(409).json({ error: 'This action has no reversible snapshot' });
+  if (!expectedAfter) return res.status(409).json({ error: 'This action has no current-state snapshot' });
+
+  let result: unknown;
+  if (event.target_type === 'USER') {
+    const target = users.find(user => user.id === event.target_id);
+    if (!target || !canEditMember(auth.user, target)) return res.status(403).json({ error: 'You cannot undo this account change' });
+    if (!before) return res.status(409).json({ error: 'This action has no reversible snapshot' });
+    const currentSnapshot = event.action === 'DONOR_PROFILE_UPDATED' ? { donor_profile: target.donor_profile || null }
+      : event.action === 'PROFILE_UPDATED' ? { name: target.name, phone: target.phone, is_verified: target.is_verified, phone_verified_at: target.phone_verified_at || null }
+        : { ...adminUserAuditSnapshot(target), ...('donor_profile' in expectedAfter ? { donor_profile: target.donor_profile || null } : {}) };
+    if (!auditSnapshotMatches(currentSnapshot, expectedAfter)) return res.status(409).json({ error: 'Target changed after this audit event' });
+    const beforePhone = target.phone; const beforeStatus = target.account_status || 'ACTIVE'; const beforeRole = target.staff_role; const beforeDeleted = target.deleted_at;
+    if (event.action === 'DONOR_PROFILE_UPDATED') {
+      target.donor_profile = isPlainObject(before.donor_profile) ? before.donor_profile as DonorProfile : undefined;
+    } else if (event.action === 'PROFILE_UPDATED') {
+      const restoredPhone = String(before.phone || target.phone);
+      if (users.some(user => user.id !== target.id && user.phone === restoredPhone && !user.deleted_at)) return res.status(409).json({ error: 'Phone already registered' });
+      target.name = String(before.name || target.name); target.phone = String(before.phone || target.phone); target.is_verified = before.is_verified === true;
+      target.phone_verified_at = typeof before.phone_verified_at === 'string' ? before.phone_verified_at : undefined;
+    } else {
+      const activeSuperadmins = users.filter(user => user.staff_role === 'SUPERADMIN' && user.account_status !== 'SUSPENDED' && !user.deleted_at).length;
+      const restoredRole = isStaffRole(before.staff_role) ? before.staff_role : undefined;
+      if (restoredRole !== target.staff_role && (!hasCapability(auth.user, 'MANAGE_STAFF') || !canAssignStaffRole(auth.user, target, restoredRole, activeSuperadmins))) {
+        return res.status(403).json({ error: 'You cannot restore this staff role' });
+      }
+      const wouldDeactivateLastSuperadmin = target.staff_role === 'SUPERADMIN' && activeSuperadmins <= 1 &&
+        (restoredRole !== 'SUPERADMIN' || before.account_status === 'SUSPENDED' || typeof before.deleted_at === 'string');
+      if (wouldDeactivateLastSuperadmin) return res.status(409).json({ error: 'The last active superadmin cannot be changed' });
+      const restoredPhone = String(before.phone || target.phone);
+      if (users.some(user => user.id !== target.id && user.phone === restoredPhone && !user.deleted_at)) return res.status(409).json({ error: 'Phone already registered' });
+      target.name = String(before.name || target.name); target.phone = String(before.phone || target.phone);
+      target.is_verified = before.is_verified === true; target.account_status = before.account_status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
+      target.staff_role = restoredRole;
+      target.suspension_reason = typeof before.suspension_reason === 'string' ? before.suspension_reason : undefined;
+      target.suspended_at = typeof before.suspended_at === 'string' ? before.suspended_at : undefined;
+      target.suspended_by = typeof before.suspended_by === 'string' ? before.suspended_by : undefined;
+      target.deleted_at = typeof before.deleted_at === 'string' ? before.deleted_at : undefined;
+      if ('donor_profile' in before) target.donor_profile = isPlainObject(before.donor_profile) ? before.donor_profile as DonorProfile : undefined;
+    }
+    await saveToTable('common_users', target); await removeDonorFromAllPartitions(target.id);
+    if (beforePhone !== target.phone || beforeStatus !== (target.account_status || 'ACTIVE') || beforeRole !== target.staff_role || beforeDeleted !== target.deleted_at) {
+      const now = new Date().toISOString();
+      for (const session of sessions.filter(item => item.user_id === target.id && !item.revoked_at)) {
+        session.revoked_at = now; await saveToTable('common_sessions', session);
+      }
+    }
+    if (!target.deleted_at && target.account_status !== 'SUSPENDED' && target.is_verified && target.donor_profile?.availability_status === 'AVAILABLE') await syncDonorToPartition(target);
+    result = sanitizeUser(target);
+  } else if (event.target_type === 'REQUEST') {
+    const target = requests.find(item => item.id === event.target_id);
+    if (!target) return res.status(404).json({ error: 'Request not found' });
+    const currentSnapshot = Object.fromEntries(Object.keys(expectedAfter).map(key => [key, (target as unknown as Record<string, unknown>)[key] ?? null]));
+    if (!auditSnapshotMatches(currentSnapshot, expectedAfter)) return res.status(409).json({ error: 'Target changed after this audit event' });
+    if (event.action === 'REQUEST_CREATED') {
+      target.admin_previous_status = target.status; target.status = 'REJECTED'; target.admin_deleted_at = new Date().toISOString(); target.admin_deleted_by = auth.user.id;
+      target.admin_delete_reason = `Undo: ${reason}`;
+    } else Object.assign(target, before!);
+    await saveToTable('common_requests', target, [target.location.lng, target.location.lat]); result = target;
+  } else if (event.target_type === 'COMMENT') {
+    const requestId = typeof event.metadata?.request_id === 'string' ? event.metadata.request_id : '';
+    const request = requests.find(item => item.id === requestId);
+    const target = request?.comments?.find(item => item.id === event.target_id);
+    if (!request || !target) return res.status(404).json({ error: 'Comment not found' });
+    const currentSnapshot = Object.fromEntries(Object.keys(expectedAfter).map(key => [key, (target as unknown as Record<string, unknown>)[key] ?? null]));
+    if (!auditSnapshotMatches(currentSnapshot, expectedAfter)) return res.status(409).json({ error: 'Target changed after this audit event' });
+    if (event.action === 'COMMENT_CREATED') { target.moderation_status = 'HIDDEN'; target.deleted_at = new Date().toISOString(); }
+    else Object.assign(target, before!);
+    await saveToTable('common_requests', request, [request.location.lng, request.location.lat]); result = target;
+  } else if (event.target_type === 'POST') {
+    const target = await getCommunityPostById(event.target_id);
+    if (!target) return res.status(404).json({ error: 'Community post not found' });
+    const currentSnapshot = Object.fromEntries(Object.keys(expectedAfter).map(key => [key, (target as unknown as Record<string, unknown>)[key] ?? null]));
+    if (!auditSnapshotMatches(currentSnapshot, expectedAfter)) return res.status(409).json({ error: 'Target changed after this audit event' });
+    result = adminCommunityPost(await saveCommunityPost({ ...target, ...(before ? before as Partial<CommunityPost> : {}),
+      ...(['COMMUNITY_POST_DRAFTED', 'DONATION_STORY_DRAFTED'].includes(event.action) ? { status: 'DELETED' as const } : {}), updated_at: new Date().toISOString() })); invalidateCommunitySitemap();
+  } else return res.status(409).json({ error: 'This action cannot be undone' });
+  await audit(auth.user.id, 'ADMIN_ACTION_UNDONE', event.target_type, event.target_id, { reason, original_event_id: event.id, original_action: event.action });
+  res.json({ success: true, result });
+}))));
 
 app.get('/api/organizations', (_req, res) => {
   res.json(organizations.filter(item => item.status === 'VERIFIED').map(item => ({
@@ -5302,7 +6083,7 @@ async function writeVerifiedClaimProfile(
   else await removeDonorFromAllPartitions(user.id);
 }
 
-app.post('/api/claims/:slug/complete', authLimiter, asyncRoute(async (req, res) => {
+app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
   const donor = await loadClaimDonor(req.params.slug);
   if (!donor || donor.claim_status === 'CLAIMED') {
     return res.status(404).json({ error: 'Claim profile not found' });
@@ -5424,7 +6205,7 @@ app.get('/api/directory/:id', async (req, res) => {
  * answers the same way, exactly like password recovery, so this cannot be used
  * to test which numbers are in the directory.
  */
-app.post('/api/directory/removals/request', authLimiter, asyncRoute(async (req, res) => {
+app.post('/api/directory/removals/request', asyncRoute(async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
   if (isOtpBypassEnabled()) {
@@ -5442,15 +6223,15 @@ app.post('/api/directory/removals/request', authLimiter, asyncRoute(async (req, 
     }
   }
 
-  const provider = getSmsProvider();
+  const provider = activeSmsProvider();
   if (!provider) return res.status(503).json({ error: 'Phone verification is not configured' });
 
-  const issued = await issueOtpChallenge(phone, 'REMOVE_LISTING', provider);
+  const issued = await issueOtpChallenge(phone, 'REMOVE_LISTING', provider, undefined, req);
   if ('error' in issued) return res.status(issued.status).json({ error: issued.error });
   res.json({ success: true, provider: provider.name, ...otpDeliveryPayload(issued.challenge) });
 }));
 
-app.post('/api/directory/removals/confirm', authLimiter, async (req, res) => {
+app.post('/api/directory/removals/confirm', async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
 
@@ -5684,9 +6465,9 @@ app.get('/api/requests/:id', async (req, res) => {
 
   const requester = users.find(u => u.id === request.user_id);
   const requestOwner = isRequestOwner(request, req);
-  const viewerId = getCurrentAuth(req)?.user.id || '';
+  const viewerId = (requestOwner ? bloodHelpActor(req)?.id : getCurrentAuth(req)?.user.id) || '';
   const viewerResponses = donorResponses.filter(response =>
-    response.request_id === request.id && (response.requester_id === viewerId || response.donor_id === viewerId)
+    Boolean(viewerId) && response.request_id === request.id && (response.requester_id === viewerId || response.donor_id === viewerId)
   );
   const acceptedParticipant = viewerResponses.some(response => ['ACCEPTED', 'ARRIVED', 'DONATED'].includes(response.status));
   if (!requestOwner && !requestIsLive(request)) {
@@ -5714,7 +6495,8 @@ app.get('/api/requests/:id', async (req, res) => {
   const activePublicRequest = ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status);
   const exposeRequesterIdentity = shouldExposeRequesterIdentity(request.flow_version, requestOwner);
   const enrichedRequest = {
-    ...(requestOwner ? requestOwnerPayload(request) : publicRequestPayload(request)),
+    ...(requestOwner ? requestOwnerPayload(request, req) : publicRequestPayload(request)),
+    comments: publicComments(request.comments || [], getActorId(req), requestOwner || isOperator(getCurrentAuth(req)?.user)),
     ...(shouldExposeRequestContacts(request.status, privilegedViewer) ? { contacts: contacts || [] } : {}),
     ...((privilegedViewer || activePublicRequest) ? { patient_name } : {}),
     ...(privilegedViewer ? { patient_reference } : {}),
@@ -5727,7 +6509,8 @@ app.get('/api/requests/:id', async (req, res) => {
           contact_owner
         }
       : { requester_name: request.ownership === 'GUEST' ? 'Unverified requester' : 'Account holder' }),
-    permitted_actions: { manage: requestOwner, reveal: requestOwner && requestIsLive(request) && (!getCurrentAuth(req) || Boolean(getCurrentAuth(req)?.user.is_verified)) }
+    permitted_actions: { manage: requestOwner, reveal: requestContactAllowed(request, req),
+      contact_history: requestOwner && Boolean(bloodHelpActor(req)) }
   };
 
   const donorMatches = requestOwner ? await findRequestDonors({
@@ -5761,6 +6544,9 @@ app.patch('/api/requests/:id/details', requestWriteRoute(async (req, res) => {
     }
 
     const current = requests[requestIndex];
+    const before = { blood_group: current.blood_group, blood_component: current.blood_component, units_required: current.units_required,
+      hospital_name: current.hospital_name, hospital_address: current.hospital_address, ward: current.ward, needed_by: current.needed_by,
+      needed_date: current.needed_date, contacts: current.contacts, status: current.status };
     const merged = { ...current, ...req.body };
     const contact = req.body?.contacts?.[0] || current.contacts?.[0];
     const parsed = current.flow_version === 'SEARCH_V1'
@@ -5772,7 +6558,11 @@ app.patch('/api/requests/:id/details', requestWriteRoute(async (req, res) => {
       timeline: [...(current.timeline || []), { id: uuidv4(), type: 'DETAILS_UPDATED', actor_id: current.user_id || 'guest', created_at: new Date().toISOString() }] };
     await saveToTable('common_requests', updated, [updated.location.lng, updated.location.lat]);
     requests[requestIndex] = updated;
-    res.json(requestOwnerPayload(updated));
+    await audit(getCurrentAuth(req)?.user.id || activityActor(req), 'REQUEST_UPDATED', 'REQUEST', updated.id, { ownership: updated.ownership || 'USER', before,
+      after: { blood_group: updated.blood_group, blood_component: updated.blood_component, units_required: updated.units_required,
+        hospital_name: updated.hospital_name, hospital_address: updated.hospital_address, ward: updated.ward, needed_by: updated.needed_by,
+        needed_date: updated.needed_date, contacts: updated.contacts, status: updated.status } });
+    res.json(requestOwnerPayload(updated, req));
   } else {
     res.status(404).json({ error: 'Not found' });
   }
@@ -5787,7 +6577,9 @@ app.post('/api/requests/:id/close', requestWriteRoute(async (req, res) => {
   const closed: BloodRequest = { ...request, status: 'CANCELLED', closure_reason: reason };
   await saveToTable('common_requests', closed, [closed.location.lng, closed.location.lat]);
   requests[index] = closed;
-  res.json(requestOwnerPayload(closed));
+  await audit(getCurrentAuth(req)?.user.id || activityActor(req), 'REQUEST_CLOSED', 'REQUEST', closed.id, { reason,
+    before: { status: request.status, closure_reason: request.closure_reason || null }, after: { status: closed.status, closure_reason: closed.closure_reason } });
+  res.json(requestOwnerPayload(closed, req));
 }));
 
 app.post('/api/requests/:id/comments', requestWriteRoute(async (req, res) => {
@@ -5807,6 +6599,15 @@ app.post('/api/requests/:id/comments', requestWriteRoute(async (req, res) => {
   }
 
   if (!user && !fingerprint) return res.status(428).json({ error: 'Start a private guest session first' });
+  const request = requests[requestIndex];
+  if (!isRequestOwner(request, req) && !requestIsLive(request)) return res.status(404).json({ error: 'Request not found' });
+  const actor = user?.id || fingerprint || '';
+  const clientId = optionalCleanString(req.body?.client_id, 100);
+  const existing = clientId && actor ? request.comments?.find(item => item.user_id === actor && item.client_id === clientId) : undefined;
+  if (existing) return res.json(publicComments([existing], actor, false)[0]);
+  let parentId: string | undefined;
+  try { parentId = commentParent(request.comments || [], optionalCleanString(req.body?.parent_id, 100)); }
+  catch (error) { return validationError(res, (error as Error).message); }
   if (!user && !anonymous_name) return validationError(res, 'Anonymous name is required');
 
   // Rate Limiting for anonymous users
@@ -5834,15 +6635,24 @@ app.post('/api/requests/:id/comments', requestWriteRoute(async (req, res) => {
     user_id: user ? user.id : (fingerprint || 'anon'),
     user_name: user ? user.name : (anonymous_name || 'Anonymous'),
     text,
+    parent_id: parentId,
+    client_id: clientId,
     created_at: new Date().toISOString()
   };
   
-  requests[requestIndex].comments = [
-    ...(requests[requestIndex].comments || []),
-    newComment
-  ];
-  await saveToTable('common_requests', requests[requestIndex], [requests[requestIndex].location.lng, requests[requestIndex].location.lat]);
-  res.json(newComment);
+  const updated = { ...request, comments: [...(request.comments || []), newComment] };
+  await saveToTable('common_requests', updated, [request.location.lng, request.location.lat]);
+  requests[requestIndex] = updated;
+  await audit(actor || activityActor(req), 'COMMENT_CREATED', 'COMMENT', newComment.id, { request_id: request.id, parent_id: parentId || null, before: null,
+    after: { text: newComment.text, user_name: newComment.user_name, moderation_status: 'VISIBLE', deleted_at: null } });
+  const parent = request.comments?.find(item => item.id === req.body?.parent_id);
+  const recipients = new Set([request.user_id, parent?.user_id]);
+  for (const recipient of recipients) {
+    if (!recipient || recipient === actor || !users.some(item => item.id === recipient)) continue;
+    try { await notify(recipient, 'REQUEST_COMMENT', parentId ? 'New reply on a blood request' : 'New update on your blood request', 'Open the request to read the update.', `/request/${id}#comment-${newComment.id}`); }
+    catch { console.error('Could not create request comment notification'); }
+  }
+  res.json(publicComments([newComment], actor, false)[0]);
 }));
 
 app.delete('/api/requests/:id/comments/:commentId', requestWriteRoute(async (req, res) => {
@@ -5859,12 +6669,16 @@ app.delete('/api/requests/:id/comments/:commentId', requestWriteRoute(async (req
     return res.status(403).json({ error: 'Only the comment author, request owner, or moderator can delete it' });
   }
 
+  const deletedAt = new Date().toISOString();
   if (request.comments) {
-    request.comments = request.comments.filter(c => c.id !== commentId);
-    await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
+    const updated = { ...request, comments: request.comments.map(c => c.id === commentId ? { ...c, deleted_at: deletedAt } : c) };
+    await saveToTable('common_requests', updated, [request.location.lng, request.location.lat]);
+    requests[requests.findIndex(item => item.id === id)] = updated;
   }
 
-  await audit(userId || auth?.user.id || 'anonymous', 'COMMENT_DELETED', 'COMMENT', commentId, { request_id: id });
+  await audit(userId || auth?.user.id || activityActor(req), 'COMMENT_DELETED', 'COMMENT', commentId, { request_id: id,
+    before: { text: comment.text, user_name: comment.user_name, moderation_status: comment.moderation_status || 'VISIBLE', deleted_at: comment.deleted_at || null },
+    after: { text: comment.text, user_name: comment.user_name, moderation_status: comment.moderation_status || 'VISIBLE', deleted_at: deletedAt } });
 
   res.json({ success: true });
 }));
@@ -5934,6 +6748,10 @@ async function startServer() {
       console.error('anonymous contribution expiry failed', error);
     });
   }, 5 * 60_000);
+  const pushTimer = setInterval(() => {
+    void deliverPush(notifications, (id, userId) => sessions.some(session => session.id === id && session.user_id === userId && !session.revoked_at && Date.parse(session.expires_at) > Date.now()) && users.some(user => user.id === userId && !user.deleted_at && user.account_status !== 'SUSPENDED')).catch(() => console.error('Push processing unavailable'));
+  }, 30_000);
+  pushTimer.unref();
   const requestExpiryTimer = setInterval(() => {
     void enforceExpiredRequests().catch(error => console.error('Request expiry failed', error));
   }, 60_000);

@@ -31,6 +31,8 @@ export type CommunityPost = {
   moderated_by?: string;
   moderated_at?: string;
   moderation_reason?: string;
+  admin_deleted_at?: string;
+  admin_previous_status?: CommunityPostStatus;
   /** Private owner/audit linkage. Never included in public projections. */
   source_donation_id?: string;
 };
@@ -426,8 +428,6 @@ export async function saveCommunityPost(post: Omit<CommunityPost, 'excerpt'> & {
 
   if (existing && existing.author_id !== post.author_id) throw new Error('Post author cannot be changed');
   if (wasPublished && post.slug && post.slug !== existing?.slug) throw new Error('Published post slug cannot be changed');
-  if (wasPublished && post.status === 'DRAFT') throw new Error('A published post cannot return to draft status');
-  if (existing?.status === 'DELETED' && post.status !== 'DELETED') throw new Error('A deleted post cannot be restored');
 
   let publishedAt = existing?.published_at;
   let slug = existing?.slug;
@@ -448,6 +448,8 @@ export async function saveCommunityPost(post: Omit<CommunityPost, 'excerpt'> & {
     ...(post.moderated_by ? { moderated_by: post.moderated_by } : {}),
     ...(post.moderated_at ? { moderated_at: parseIsoDate(post.moderated_at, 'moderated_at') } : {}),
     ...(post.moderation_reason ? { moderation_reason: cleanText(post.moderation_reason, 1, 1000) || undefined } : {}),
+    ...(post.admin_deleted_at ? { admin_deleted_at: parseIsoDate(post.admin_deleted_at, 'admin_deleted_at') } : {}),
+    ...(post.admin_previous_status && isOneOf(post.admin_previous_status, COMMUNITY_POST_STATUSES) ? { admin_previous_status: post.admin_previous_status } : {}),
     ...(post.source_donation_id
       ? { source_donation_id: cleanText(post.source_donation_id, 1, 80) || undefined }
       : {})

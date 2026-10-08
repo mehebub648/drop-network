@@ -2,6 +2,7 @@ import GuidedForm from '../components/GuidedForm';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { ArrowLeft, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react';
+import BloodHelpNotice from '../components/BloodHelpNotice';
 import AuthShell from '../components/AuthShell';
 import OtpDeliveryStatus from '../components/OtpDeliveryStatus';
 import { api, type OtpDelivery } from '../lib/api';
@@ -55,6 +56,7 @@ export default function ForgotPasswordPage() {
       <div className="mb-7 flex items-center gap-3" aria-label={`Step ${step} of 3`}>
         {[1, 2, 3].map(value => <span key={value} className={`h-2 flex-1 rounded-full ${value <= step ? 'bg-primary' : 'bg-slate-100'}`} />)}
       </div>
+      <BloodHelpNotice />
       <GuidedForm onSubmit={submit} className="space-y-5">
         {step === 1 && (
           <label className="block">

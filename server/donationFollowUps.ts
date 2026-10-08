@@ -44,6 +44,7 @@ export type DonationFollowUp = {
 };
 
 export type ContactedDonorSummary = {
+  follow_up_id?: string;
   reveal_id: string;
   latest_report_id?: string;
   blood_group?: string;

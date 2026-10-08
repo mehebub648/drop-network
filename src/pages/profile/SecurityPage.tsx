@@ -4,7 +4,6 @@ import { KeyRound, LogOut, Monitor, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api';
 
 export default function SecurityPage() {
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -21,8 +20,7 @@ export default function SecurityPage() {
     setSaving(true);
     setMessage(null);
     try {
-      await api.changePassword(currentPassword, newPassword);
-      setCurrentPassword('');
+      await api.changePassword(newPassword);
       setNewPassword('');
       setConfirmPassword('');
       setMessage({ type: 'success', text: 'Password changed successfully.' });
@@ -43,10 +41,6 @@ export default function SecurityPage() {
         </div>
       </div>
       <GuidedForm onSubmit={submit} className="mt-7 space-y-5 max-w-xl">
-        <div>
-          <label htmlFor="current-password" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Current password</label>
-          <input id="current-password" type="password" autoComplete="current-password" required value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="security-password-input" />
-        </div>
         <div>
           <label htmlFor="new-password" className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">New password</label>
           <input id="new-password" type="password" autoComplete="new-password" minLength={8} required value={newPassword} onChange={event => setNewPassword(event.target.value)} className="security-password-input" />

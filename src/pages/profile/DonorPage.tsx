@@ -1,3 +1,4 @@
+import { useNavigate, useSearchParams } from 'react-router';
 import GuidedForm from '../../components/GuidedForm';
 import Select from '../../components/Select';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -37,6 +38,8 @@ function preferenceDraft(user: ProfilePageProps['user']): DonorPreferenceDraft {
 }
 
 export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [bloodGroup, setBloodGroup] = useState(user.donor_profile?.blood_group || 'O+');
   const [district, setDistrict] = useState(user.donor_profile?.location.area_name || 'Dhaka');
   const [upazila, setUpazila] = useState(user.donor_profile?.upazila || '');
@@ -109,6 +112,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
       }));
       await onUpdate();
       setMessage({ type: 'success', text: 'Donor profile updated.' });
+      if (searchParams.get('returnTo') === '/profile/donor-requests') navigate('/profile/donor-requests');
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message || 'Could not update donor profile.' });
     } finally {
@@ -147,11 +151,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
             <ChevronDown className="profile-section-chevron" aria-hidden="true" />
           </summary>
           <div className="profile-section-body profile-form-grid">
-            <label>Blood group
-              <Select id="donor-blood-group" value={bloodGroup} onChange={event => setBloodGroup(event.target.value)} className="input">
-                {BLOOD_GROUPS.map(group => <option key={group}>{group}</option>)}
-              </Select>
-            </label>
+            <fieldset><legend>Blood group</legend><div className="flex flex-wrap gap-2 mt-2">{BLOOD_GROUPS.map(group => <label key={group} className="flex items-center gap-2 rounded-xl border p-3"><input type="radio" name="donor-blood-group" value={group} checked={bloodGroup === group} onChange={() => setBloodGroup(group)} />{group}</label>)}</div></fieldset>
             <label>Home district
               <Select id="donor-district" value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input">
                 {BD_LOCATION_NAMES.map(name => <option key={name}>{name}</option>)}
@@ -236,11 +236,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
             <ChevronDown className="profile-section-chevron" aria-hidden="true" />
           </summary>
           <div className="profile-section-body profile-form-grid">
-            <label className="profile-grid-wide">Current status
-              <Select id="donor-status" value={status} onChange={event => setStatus(event.target.value as AvailabilityStatus)} className="input">
-                {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </Select>
-            </label>
+            <fieldset className="profile-grid-wide"><legend>Current status</legend><div className="flex flex-wrap gap-2 mt-2">{Object.entries(statusLabels).map(([value, label]) => <label key={value} className="flex items-center gap-2 rounded-xl border p-3"><input type="radio" name="donor-status" checked={status === value} onChange={() => setStatus(value as AvailabilityStatus)} />{label}</label>)}</div></fieldset>
             {status !== 'AVAILABLE' && (
               <label className="profile-grid-wide">Reason <em>Optional</em>
                 <textarea id="donor-availability-reason" maxLength={240} rows={3} value={availabilityReason} onChange={event => setAvailabilityReason(event.target.value)} className="input profile-textarea" placeholder="For example: recovering, traveling, or taking a break" />

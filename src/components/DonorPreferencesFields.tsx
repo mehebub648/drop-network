@@ -39,7 +39,7 @@ export default function DonorPreferencesFields({
   homeDistrict: string;
 }) {
   const [areaDistrict, setAreaDistrict] = useState(homeDistrict);
-  const [areaUpazila, setAreaUpazila] = useState('');
+  const [areaQuery, setAreaQuery] = useState('');
   const [facilityDistrict, setFacilityDistrict] = useState(homeDistrict);
   const [facilityQuery, setFacilityQuery] = useState('');
   const [facilities, setFacilities] = useState<RegisteredCollectionFacility[]>([]);
@@ -64,20 +64,13 @@ export default function DonorPreferencesFields({
 
   const facilityMatches = useMemo(() => {
     const query = normalized(facilityQuery);
-    if (!query) return [];
+
     return facilities
       .filter(facility => normalized(`${facility.name} ${facility.locality}`).includes(query))
-      .filter(facility => !value.preferredFacilities.some(selected => facility.registryCodes.includes(selected.registry_code)))
-      .sort((a, b) => a.name.localeCompare(b.name, 'en'))
-      .slice(0, 8);
-  }, [facilities, facilityQuery, value.preferredFacilities]);
 
-  const addArea = () => {
-    if (!areaDistrict || !areaUpazila || value.preferredAreas.length >= 10) return;
-    if (value.preferredAreas.some(area => area.district === areaDistrict && area.upazila === areaUpazila)) return;
-    onChange({ ...value, preferredAreas: [...value.preferredAreas, { district: areaDistrict, upazila: areaUpazila }] });
-    setAreaUpazila('');
-  };
+      .sort((a, b) => a.name.localeCompare(b.name, 'en'))
+      .slice(0, 50);
+  }, [facilities, facilityQuery, value.preferredFacilities]);
 
   const addFacility = (facility: RegisteredCollectionFacility) => {
     if (value.preferredFacilities.length >= 8) return;
@@ -90,7 +83,6 @@ export default function DonorPreferencesFields({
         locality: facility.locality
       }]
     });
-    setFacilityQuery('');
   };
 
   const updateWindow = (index: number, next: RecurringContactWindow) => {
@@ -103,18 +95,7 @@ export default function DonorPreferencesFields({
   return (
     <QuestionPages>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="sm:col-span-2">Travel willingness
-          <Select
-            value={value.travelWillingness}
-            onChange={event => onChange({ ...value, travelWillingness: event.target.value as TravelWillingness })}
-            className="input"
-          >
-            <option value="HOME_ONLY">Only my home upazila</option>
-            <option value="PREFERRED_AREAS">My home and preferred areas</option>
-            <option value="ANYWHERE_IN_DISTRICT">Anywhere in my home district</option>
-          </Select>
-          <small>This controls where your available profile can match a blood search.</small>
-        </label>
+        <fieldset className="sm:col-span-2"><legend>Travel willingness</legend><div className="flex flex-wrap gap-2 mt-2">{[['HOME_ONLY', 'Only my home upazila'], ['PREFERRED_AREAS', 'My home and preferred areas'], ['ANYWHERE_IN_DISTRICT', 'Anywhere in my home district']].map(([key, label]) => <label key={key} className="flex items-center gap-2 rounded-xl border p-3"><input type="radio" name="travel-willingness" checked={value.travelWillingness === key} onChange={() => onChange({ ...value, travelWillingness: key as TravelWillingness })} />{label}</label>)}</div><small>This controls where your available profile can match a blood search.</small></fieldset>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
@@ -123,15 +104,12 @@ export default function DonorPreferencesFields({
           <div><h3 className="font-extrabold text-slate-950">Preferred areas</h3><p className="text-sm leading-6 text-slate-600">Add up to 10 upazilas or thanas where donation is convenient.</p></div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-          <Select value={areaDistrict} onChange={event => { setAreaDistrict(event.target.value); setAreaUpazila(''); }} className="input" aria-label="Preferred area district">
+          <Select value={areaDistrict} onChange={event => { setAreaDistrict(event.target.value); setAreaQuery(''); }} className="input" aria-label="Preferred area district">
             {BD_LOCATION_NAMES.map(district => <option key={district}>{district}</option>)}
           </Select>
-          <Select value={areaUpazila} onChange={event => setAreaUpazila(event.target.value)} className="input" aria-label="Preferred upazila or thana">
-            <option value="">Choose upazila / thana</option>
-            {areaUpazilas.map(upazila => <option key={upazila.value} value={upazila.value}>{upazila.label}</option>)}
-          </Select>
-          <button type="button" disabled={!areaUpazila || value.preferredAreas.length >= 10} onClick={addArea} className="button button-secondary"><Plus className="h-4 w-4" aria-hidden="true" />Add</button>
+          <input value={areaQuery} onChange={event => setAreaQuery(event.target.value)} className="input" aria-label="Search preferred upazilas" placeholder="Search upazilas" />
         </div>
+        <div className="mt-3 max-h-60 overflow-y-auto">{areaUpazilas.filter(area => normalized(area.label).includes(normalized(areaQuery))).map(area => { const checked = value.preferredAreas.some(item => item.district === areaDistrict && item.upazila === area.value); return <label key={area.value} className="flex items-center gap-3 py-3"><input type="checkbox" checked={checked} disabled={!checked && value.preferredAreas.length >= 10} onChange={() => onChange({ ...value, preferredAreas: checked ? value.preferredAreas.filter(item => !(item.district === areaDistrict && item.upazila === area.value)) : [...value.preferredAreas, { district: areaDistrict, upazila: area.value }] })} />{area.label}</label>; })}</div>
         {value.preferredAreas.length > 0 && (
           <ul className="mt-3 flex flex-wrap gap-2">
             {value.preferredAreas.map(area => (
@@ -159,10 +137,7 @@ export default function DonorPreferencesFields({
           <ul className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
             {facilityMatches.map(facility => (
               <li key={facility.registryCode} className="border-b border-slate-100 last:border-0">
-                <button type="button" onClick={() => addFacility(facility)} className="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left hover:bg-rose-50">
-                  <span><strong className="block text-sm text-slate-900">{facility.name}</strong><span className="text-xs text-slate-500">{facility.locality || facility.district}</span></span>
-                  <Plus className="mt-1 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                </button>
+                <label className="flex items-start gap-3 px-3 py-3"><input type="checkbox" checked={value.preferredFacilities.some(item => facility.registryCodes.includes(item.registry_code))} disabled={value.preferredFacilities.length >= 8 && !value.preferredFacilities.some(item => facility.registryCodes.includes(item.registry_code))} onChange={event => event.target.checked ? addFacility(facility) : onChange({ ...value, preferredFacilities: value.preferredFacilities.filter(item => !facility.registryCodes.includes(item.registry_code)) })} /><span><strong className="block text-sm">{facility.name}</strong><span className="text-xs text-slate-500">{facility.locality || facility.district}</span></span></label>
               </li>
             ))}
           </ul>

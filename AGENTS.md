@@ -55,14 +55,15 @@
   `panel-91-108-104-57` MCP connection.
 - The application root is
   `/home/site-21000/htdocs/site-21000.91.108.104.57.mehebub.com`.
-- The rootless Compose app listens through `127.0.0.1:21000`; never use the
+- The rootless Compose app listens through `127.0.0.1:31000`; confirm the current
+  site-scoped ready Compose plan before deployment. Never use the
   host root Docker daemon or restart another website.
 - GitHub is the durable source of truth:
   `git@github.com:mehebub648/drop-network.git`, branch `main`. Production must
   remain a clean fast-forward-only checkout. Never make the durable code fix
   directly on the server.
 - Runtime data is not in Git. Preserve `data/lancedb`,
-  `data/media/community`, `.env`, and the private donor source files in
+  `data/media/community`, `data/releases`, `.env`, and the private donor source files in
   `data/scraped` across every deployment. Never commit donor source files or
   copy them into a public artifact.
 

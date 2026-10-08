@@ -7,6 +7,8 @@ import {
   BadgeCheck,
   BookOpenText,
   Building2,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   ClipboardList,
   Clock3,
@@ -14,12 +16,18 @@ import {
   HeartPulse,
   LayoutDashboard,
   LockKeyhole,
+  MessageSquare,
+  Pencil,
+  Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Server,
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
+  Smartphone,
+  Trash2,
   UserCheck,
   UserCog,
   Users,
@@ -28,6 +36,7 @@ import {
 } from 'lucide-react';
 import { api, type AdminCommunityPost, type CommunityPostStatus } from '../lib/api';
 import ModalPortal from '../components/ModalPortal';
+import { useSearchParams } from 'react-router';
 
 type Capability =
   | 'DASHBOARD'
@@ -39,6 +48,7 @@ type Capability =
   | 'MANAGE_SUPPORT'
   | 'MANAGE_ORGANIZATIONS'
   | 'VIEW_AUDIT'
+  | 'MANAGE_SMS'
   | 'MANAGE_STAFF'
   | 'MANAGE_SYSTEM';
 
@@ -70,7 +80,26 @@ type ContactReportData = {
   states: Record<string, { suspended: boolean; suspended_at?: string; suspension_count?: number }>;
 };
 
-type TabId = 'overview' | 'members' | 'requests' | 'community' | 'reports' | 'support' | 'organizations' | 'claims' | 'audit' | 'system';
+type TabId = 'overview' | 'members' | 'requests' | 'community' | 'reports' | 'support' | 'organizations' | 'claims' | 'audit' | 'messavo' | 'system';
+
+type SmsProvider = {
+  id: string;
+  name: string;
+  base_url: string;
+  priority: number;
+  enabled: boolean;
+  deleted_at?: string;
+  has_api_token: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type EditorState =
+  | { kind: 'member'; record: AdminRecord }
+  | { kind: 'request'; record: AdminRecord }
+  | { kind: 'post'; record: AdminCommunityPost }
+  | { kind: 'comment'; record: AdminRecord; requestId: string }
+  | { kind: 'provider'; record?: SmsProvider };
 
 type DialogState = {
   title: string;
@@ -84,8 +113,8 @@ type DialogState = {
 
 const roleCapabilities: Record<StaffRole, Capability[]> = {
   MODERATOR: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS'],
-  ADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT'],
-  SUPERADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_STAFF', 'MANAGE_SYSTEM']
+  ADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_SMS'],
+  SUPERADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_SMS', 'MANAGE_STAFF', 'MANAGE_SYSTEM']
 };
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capability?: Capability; countKey?: string }> = [
@@ -97,7 +126,8 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capa
   { id: 'support', label: 'Support', icon: ClipboardList, capability: 'MANAGE_SUPPORT', countKey: 'open_tickets' },
   { id: 'organizations', label: 'Partners', icon: Building2, capability: 'MANAGE_ORGANIZATIONS', countKey: 'pending_organizations' },
   { id: 'claims', label: 'Claims', icon: UserCheck, capability: 'MANAGE_ORGANIZATIONS', countKey: 'pending_directory_claims' },
-  { id: 'audit', label: 'Audit log', icon: LockKeyhole, capability: 'VIEW_AUDIT' },
+  { id: 'audit', label: 'Activity', icon: LockKeyhole, capability: 'VIEW_AUDIT' },
+  { id: 'messavo', label: 'Messavo SMS', icon: Smartphone, capability: 'MANAGE_SMS' },
   { id: 'system', label: 'System', icon: Server }
 ];
 
@@ -120,7 +150,10 @@ const countLabels: Record<string, string> = {
 };
 
 export default function AdminPage({ user, onOtpBypassChange }: { user: AdminViewer; onOtpBypassChange: (enabled: boolean) => void }) {
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('section') as TabId | null;
+  const auditUserFilter = searchParams.get('user') || '';
+  const [activeTab, setActiveTab] = useState<TabId>(requestedTab && tabs.some(tab => tab.id === requestedTab) ? requestedTab : 'overview');
   const [overview, setOverview] = useState<Overview | null>(null);
   const [members, setMembers] = useState<AdminRecord[]>([]);
   const [requests, setRequests] = useState<AdminRecord[]>([]);
@@ -128,6 +161,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   const [organizations, setOrganizations] = useState<AdminRecord[]>([]);
   const [claims, setClaims] = useState<AdminRecord[]>([]);
   const [auditEvents, setAuditEvents] = useState<AdminRecord[]>([]);
+  const [smsProviders, setSmsProviders] = useState<SmsProvider[]>([]);
   const [contactReports, setContactReports] = useState<ContactReportData>({ items: [], aggregations: {}, states: {} });
   const [userSearch, setUserSearch] = useState('');
   const [requestStatus, setRequestStatus] = useState('');
@@ -138,6 +172,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [editor, setEditor] = useState<EditorState | null>(null);
   const contentRef = useRef<HTMLElement>(null);
   const focusNewSectionRef = useRef(false);
 
@@ -162,12 +197,9 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   };
 
   const loadCommunityPosts = async (reportedPostIds: string[] = []) => {
-    const [published, hidden] = await Promise.all([
-      api.getAdminCommunityPosts({ status: 'PUBLISHED' }),
-      api.getAdminCommunityPosts({ status: 'HIDDEN' })
-    ]);
+    const allPosts = await api.getAdminCommunityPosts();
     const unique = new Map<string, AdminCommunityPost>();
-    [...published, ...hidden].forEach(post => unique.set(post.id, post));
+    allPosts.forEach(post => unique.set(post.id, post));
     const missingIds = [...new Set(reportedPostIds)].filter(id => id && !unique.has(id));
     const missingResults = await Promise.allSettled(missingIds.map(id => api.getAdminCommunityPost(id)));
     missingResults.forEach(result => {
@@ -198,7 +230,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
           .filter(Boolean);
         await loadCommunityPosts(reportedPostIds);
       } else if (tab === 'members') {
-        setMembers(await api.getAdminUsers(userSearch));
+        setMembers(await api.getAdminUsers(userSearch, { include_deleted: true }));
       } else if (tab === 'requests') {
         setRequests(await api.getAdminRequests());
       } else if (tab === 'community') {
@@ -209,7 +241,9 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
         const result = await api.getDirectoryClaims();
         setClaims(result.claims || []);
       } else if (tab === 'audit') {
-        setAuditEvents(await api.getAuditLog());
+        setAuditEvents(await api.getAuditLog({ limit: 250, ...(auditUserFilter ? { user_id: auditUserFilter } : {}) }));
+      } else if (tab === 'messavo') {
+        setSmsProviders(await api.getAdminSmsProviders());
       }
     } catch (caught: any) {
       setError(caught.message || 'Could not load this administration area.');
@@ -220,7 +254,13 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
 
   useEffect(() => {
     void loadTab(activeTab);
-  }, [activeTab]);
+  }, [activeTab, auditUserFilter]);
+
+  useEffect(() => {
+    const next = searchParams.get('section') as TabId | null;
+    if (next && tabs.some(tab => tab.id === next) && next !== activeTab) setActiveTab(next);
+    if (!next && activeTab !== 'overview') setActiveTab('overview');
+  }, [searchParams]);
 
   useEffect(() => {
     if (!focusNewSectionRef.current) return;
@@ -238,7 +278,10 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   const selectTab = (tab: TabId) => {
     if (tab === activeTab) return;
     focusNewSectionRef.current = true;
-    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'overview') next.delete('section');
+    else next.set('section', tab);
+    setSearchParams(next);
   };
 
   const refresh = () => loadTab(activeTab);
@@ -277,11 +320,57 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
     setLoading(true);
     setError('');
     try {
-      setMembers(await api.getAdminUsers(userSearch));
+      setMembers(await api.getAdminUsers(userSearch, { include_deleted: true }));
     } catch (caught: any) {
       setError(caught.message || 'Could not search members.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const moveProvider = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= smsProviders.length) return;
+    const reordered = [...smsProviders];
+    [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+    const moving = smsProviders[index];
+    moderationAction(
+      `Move ${moving.name} to priority ${nextIndex + 1}?`,
+      'Save priority order',
+      'default',
+      reason => api.rankAdminSmsProviders(reordered.filter(provider => !provider.deleted_at).map(provider => provider.id), reason),
+      'SMS fallback priority updated.'
+    );
+  };
+
+  const saveEditor = async (values: Record<string, unknown>) => {
+    if (!editor) return;
+    setBusy('editor');
+    setError('');
+    try {
+      if (editor.kind === 'member') {
+        await api.updateAdminUser(editor.record.id, values);
+      } else if (editor.kind === 'request') {
+        const { reason, ...changes } = values;
+        await api.moderateAdminRequest(editor.record.id, { action: 'UPDATE', changes, reason: String(reason || '') });
+      } else if (editor.kind === 'post') {
+        const { reason, ...changes } = values;
+        await api.mutateAdminCommunityPost(editor.record.id, { action: 'UPDATE', changes, reason: String(reason || '') });
+      } else if (editor.kind === 'comment') {
+        await api.moderateAdminComment(editor.requestId, editor.record.id, { action: 'UPDATE', text: String(values.text || ''), reason: String(values.reason || '') });
+      } else if (editor.record) {
+        await api.updateAdminSmsProvider(editor.record.id, values as any);
+      } else {
+        await api.createAdminSmsProvider(values as any);
+      }
+      setNotice(editor.kind === 'provider' ? 'SMS provider saved.' : 'Record updated.');
+      setEditor(null);
+      await refresh();
+    } catch (caught: any) {
+      setError(caught.message || 'The update could not be saved.');
+      throw caught;
+    } finally {
+      setBusy('');
     }
   };
 
@@ -290,9 +379,15 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   const communityById = new Map(communityPosts.map(post => [post.id, post]));
   const filteredAudit = auditEvents.filter(event => {
     const query = auditSearch.trim().toLowerCase();
-    return !query || [event.action, event.target_type, event.target_id, event.actor_id]
+    return !query || [event.summary, event.category, event.action, event.target_type, event.target_id, event.actor_id]
       .some(value => String(value || '').toLowerCase().includes(query));
   });
+  const undoneAuditEventIds = new Set(
+    auditEvents
+      .filter(event => event.action === 'ADMIN_ACTION_UNDONE')
+      .map(event => String(event.metadata?.original_event_id || ''))
+      .filter(Boolean)
+  );
 
   return (
     <div className="admin-shell">
@@ -320,7 +415,14 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
           <nav>
             {visibleTabs.map(tab => {
               const Icon = tab.icon;
-              const count = tab.countKey ? Number(overview?.counts?.[tab.countKey] || 0) : undefined;
+              const hasOverviewCount = Boolean(
+                tab.countKey
+                && overview
+                && Object.prototype.hasOwnProperty.call(overview.counts, tab.countKey)
+              );
+              const count = hasOverviewCount && tab.countKey
+                ? Number(overview!.counts[tab.countKey])
+                : undefined;
               return (
                 <button
                   key={tab.id}
@@ -385,7 +487,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                               <div>
                                 <div className="record-title-row">
                                   <h3>{member.name}</h3>
-                                  <StatusBadge value={member.account_status || 'ACTIVE'} />
+                                  <StatusBadge value={member.deleted_at ? 'DELETED' : member.account_status || 'ACTIVE'} />
                                   {member.staff_role && <StatusBadge value={member.staff_role} tone="purple" />}
                                   {member.is_verified && <span className="verified-label"><BadgeCheck className="h-3.5 w-3.5" /> Verified phone</span>}
                                 </div>
@@ -399,7 +501,20 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                               </div>
                             </div>
                             <div className="record-actions">
-                              {can('REVOKE_SESSIONS') && member.id !== user.id && (
+                              {can('VIEW_AUDIT') && (
+                                <button className="button button-secondary" onClick={() => {
+                                  const next = new URLSearchParams(searchParams);
+                                  next.set('section', 'audit');
+                                  next.set('user', member.id);
+                                  setSearchParams(next);
+                                }}>Activity</button>
+                              )}
+                              {can('EDIT_USERS') && canTouchTarget && !member.deleted_at && (
+                                <button className="button button-secondary" onClick={() => setEditor({ kind: 'member', record: member })}>
+                                  <Pencil className="h-3.5 w-3.5" /> Edit
+                                </button>
+                              )}
+                              {can('REVOKE_SESSIONS') && member.id !== user.id && !member.deleted_at && (
                                 <button
                                   className="button button-secondary"
                                   disabled={busy === `sessions-${member.id}`}
@@ -415,7 +530,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                   Revoke sessions
                                 </button>
                               )}
-                              {can('SUSPEND_MEMBER') && canTouchTarget && (
+                              {can('SUSPEND_MEMBER') && canTouchTarget && !member.deleted_at && (
                                 <button
                                   className={`button ${member.account_status === 'SUSPENDED' ? 'button-secondary' : 'button-danger'}`}
                                   disabled={busy === `status-${member.id}`}
@@ -445,7 +560,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                   {member.account_status === 'SUSPENDED' ? 'Reactivate' : 'Suspend'}
                                 </button>
                               )}
-                              {can('MANAGE_STAFF') && member.id !== user.id && (
+                              {can('MANAGE_STAFF') && member.id !== user.id && !member.deleted_at && (
                                 <StaffRoleControl
                                   value={member.staff_role || ''}
                                   disabled={busy === `role-${member.id}`}
@@ -466,6 +581,32 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                   })}
                                 />
                               )}
+                              {can('EDIT_USERS') && canTouchTarget && (member.deleted_at ? (
+                                <button
+                                  className="button button-secondary"
+                                  onClick={() => openAction({
+                                    title: `Restore ${member.name}?`,
+                                    description: 'The account will be available again. Existing sessions stay revoked until the member signs in.',
+                                    confirmLabel: 'Restore account',
+                                    reasonLabel: 'Reason for restoring',
+                                    reasonRequired: true,
+                                    onConfirm: reason => run(`restore-user-${member.id}`, () => api.restoreAdminUser(member.id, reason), 'Member restored.')
+                                  })}
+                                ><RotateCcw className="h-3.5 w-3.5" /> Restore</button>
+                              ) : (
+                                <button
+                                  className="button button-danger"
+                                  onClick={() => openAction({
+                                    title: `Delete ${member.name}?`,
+                                    description: 'This soft-deletes the account, revokes active sessions, and keeps the action reversible from this workspace.',
+                                    confirmLabel: 'Delete account',
+                                    tone: 'danger',
+                                    reasonLabel: 'Reason for deletion',
+                                    reasonRequired: true,
+                                    onConfirm: reason => run(`delete-user-${member.id}`, () => api.deleteAdminUser(member.id, reason), 'Member deleted.')
+                                  })}
+                                ><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+                              ))}
                             </div>
                           </article>
                         );
@@ -504,7 +645,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                             <div>
                               <div className="record-title-row">
                                 <h3>{request.hospital_name || 'Hospital not supplied'}</h3>
-                                <StatusBadge value={request.status} />
+                                <StatusBadge value={request.deleted_at ? 'DELETED' : request.status} />
                               </div>
                               <p>{humanize(request.blood_component || 'WHOLE_BLOOD')} · {request.location?.area_name || 'Unknown district'} · Needed {formatDateTime(request.needed_by)}</p>
                               <div className="record-facts">
@@ -512,17 +653,47 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                 <span>Created {formatDateTime(request.created_at)}</span>
                                 <span>Requester: {request.requester_name || request.user_id}</span>
                               </div>
+                              {Array.isArray(request.comments) && request.comments.length > 0 && (
+                                <details className="admin-comments">
+                                  <summary><MessageSquare className="h-4 w-4" /> {request.comments.length} comment{request.comments.length === 1 ? '' : 's'}</summary>
+                                  <div>
+                                    {request.comments.map((comment: AdminRecord) => (
+                                      <article key={comment.id} className="admin-comment-row">
+                                        <div>
+                                          <strong>{comment.deleted_at ? 'Deleted comment' : comment.user_name || 'Anonymous'}</strong>
+                                          <time>{formatDateTime(comment.created_at)}</time>
+                                          <p>{comment.deleted_at ? 'This comment is hidden and can be restored.' : comment.text}</p>
+                                        </div>
+                                        <div className="record-actions">
+                                          {!comment.deleted_at && <button className="button button-secondary" onClick={() => setEditor({ kind: 'comment', record: comment, requestId: request.id })}>Edit</button>}
+                                          <button
+                                            className={`button ${comment.deleted_at ? 'button-secondary' : 'button-danger'}`}
+                                            onClick={() => moderationAction(
+                                              comment.deleted_at ? 'Restore comment?' : 'Delete comment?',
+                                              comment.deleted_at ? 'Restore comment' : 'Delete comment',
+                                              comment.deleted_at ? 'default' : 'danger',
+                                              reason => api.moderateAdminComment(request.id, comment.id, { action: comment.deleted_at ? 'RESTORE' : 'DELETE', reason }),
+                                              comment.deleted_at ? 'Comment restored.' : 'Comment deleted.'
+                                            )}
+                                          >{comment.deleted_at ? 'Restore' : 'Delete'}</button>
+                                        </div>
+                                      </article>
+                                    ))}
+                                  </div>
+                                </details>
+                              )}
                             </div>
                           </div>
                           <div className="record-actions">
-                            {request.status !== 'ACTIVE' && (
+                            {!request.deleted_at && <button className="button button-secondary" onClick={() => setEditor({ kind: 'request', record: request })}><Pencil className="h-3.5 w-3.5" /> Edit</button>}
+                            {!request.deleted_at && request.status !== 'ACTIVE' && (
                               <ActionButton
                                 label="Approve"
                                 onClick={() => requestAction(request, 'ACTIVE')}
                                 disabled={busy === request.id}
                               />
                             )}
-                            {!['REJECTED', 'FULFILLED', 'CANCELLED'].includes(request.status) && (
+                            {!request.deleted_at && !['REJECTED', 'FULFILLED', 'CANCELLED'].includes(request.status) && (
                               <ActionButton
                                 label="Reject"
                                 danger
@@ -530,6 +701,16 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                 disabled={busy === request.id}
                               />
                             )}
+                            <button
+                              className={`button ${request.deleted_at ? 'button-secondary' : 'button-danger'}`}
+                              onClick={() => moderationAction(
+                                request.deleted_at ? 'Restore this blood request?' : 'Delete this blood request?',
+                                request.deleted_at ? 'Restore request' : 'Delete request',
+                                request.deleted_at ? 'default' : 'danger',
+                                reason => api.moderateAdminRequest(request.id, { action: request.deleted_at ? 'RESTORE' : 'DELETE', reason }),
+                                request.deleted_at ? 'Request restored.' : 'Request deleted.'
+                              )}
+                            >{request.deleted_at ? <><RotateCcw className="h-3.5 w-3.5" /> Restore</> : <><Trash2 className="h-3.5 w-3.5" /> Delete</>}</button>
                           </div>
                         </article>
                       ))}
@@ -571,15 +752,26 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                             <CommunityPostInspection post={post} />
                           </div>
                           <div className="record-actions">
-                            {post.status === 'PUBLISHED' && post.slug && (
+                            {post.status === 'PUBLISHED' && post.slug && !isDeletedPost(post) && (
                               <a className="button button-secondary" href={`/community/${post.slug}`} target="_blank" rel="noreferrer">Open public page</a>
                             )}
-                            <ActionButton
+                            {!isDeletedPost(post) && <button className="button button-secondary" onClick={() => setEditor({ kind: 'post', record: post })}><Pencil className="h-3.5 w-3.5" /> Edit</button>}
+                            {!isDeletedPost(post) && <ActionButton
                               label={post.status === 'HIDDEN' ? 'Restore' : 'Hide'}
                               danger={post.status !== 'HIDDEN'}
                               disabled={busy === `community-${post.id}`}
                               onClick={() => communityAction(post, post.status === 'HIDDEN' ? 'PUBLISHED' : 'HIDDEN')}
-                            />
+                            />}
+                            <button
+                              className={`button ${isDeletedPost(post) ? 'button-secondary' : 'button-danger'}`}
+                              onClick={() => moderationAction(
+                                isDeletedPost(post) ? `Restore “${post.title}”?` : `Delete “${post.title}”?`,
+                                isDeletedPost(post) ? 'Restore post' : 'Delete post',
+                                isDeletedPost(post) ? 'default' : 'danger',
+                                reason => api.mutateAdminCommunityPost(post.id, { action: isDeletedPost(post) ? 'RESTORE' : 'DELETE', reason }),
+                                isDeletedPost(post) ? 'Community post restored.' : 'Community post deleted.'
+                              )}
+                            >{isDeletedPost(post) ? 'Restore' : 'Delete'}</button>
                           </div>
                         </article>
                       ))}
@@ -764,8 +956,8 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                 <section>
                   <PanelHeader
                     eyebrow="Accountability"
-                    title="Immutable audit trail"
-                    description="Search recent privileged actions by actor, action, target type, or target identifier."
+                    title="Human-readable activity"
+                    description="Review member, guest, authentication, OTP, SMS, and staff activity without exposing technical application logs or secrets."
                   />
                   <div className="admin-filter-bar">
                     <label className="search-field">
@@ -773,6 +965,15 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                       <span className="sr-only">Filter audit log</span>
                       <input value={auditSearch} onChange={event => setAuditSearch(event.target.value)} placeholder="Filter audit events" />
                     </label>
+                    {auditUserFilter && (
+                      <button className="audit-user-filter" onClick={() => {
+                        const next = new URLSearchParams(searchParams);
+                        next.delete('user');
+                        setSearchParams(next);
+                      }} title="Clear member filter">
+                        Member activity <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     <span className="filter-count">{filteredAudit.length} event{filteredAudit.length === 1 ? '' : 's'}</span>
                   </div>
                   {loading ? <LoadingRows /> : filteredAudit.length === 0 ? (
@@ -783,11 +984,83 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                         <article key={event.id} className="audit-event">
                           <span className="audit-dot" aria-hidden="true" />
                           <div>
-                            <div className="record-title-row"><h3>{humanize(event.action)}</h3><StatusBadge value={event.target_type} tone="purple" /></div>
+                            <div className="record-title-row"><h3>{event.summary || humanize(event.action)}</h3><StatusBadge value={event.category || event.target_type} tone="purple" /></div>
                             <p><strong>{event.actor_summary?.label || 'Account no longer available'}</strong> ({event.actor_summary?.type || 'Account'}) · <strong>{event.target_summary?.label || 'Record no longer available'}</strong> ({event.target_summary?.type || humanize(event.target_type)})</p>
                             <time>{formatDateTime(event.created_at)}</time>
+                            {event.reversible && event.undo_endpoint && (
+                              <div className="mt-3">
+                                <button
+                                  className="button button-secondary"
+                                  disabled={undoneAuditEventIds.has(event.id)}
+                                  onClick={() => moderationAction(
+                                    'Undo this activity?',
+                                    'Undo activity',
+                                    'default',
+                                    reason => api.undoAuditEvent(event.id, reason),
+                                    'Activity undone.'
+                                  )}
+                                ><RotateCcw className="h-3.5 w-3.5" /> {undoneAuditEventIds.has(event.id) ? 'Undone' : 'Undo'}</button>
+                              </div>
+                            )}
                             <details className="technical-reference"><summary>Exact audit identifiers</summary><code>Actor: {event.actor_id}</code><code>Target: {event.target_id}</code></details>
                             {event.metadata && <details><summary>View change metadata</summary><pre>{JSON.stringify(event.metadata, null, 2)}</pre></details>}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {activeTab === 'messavo' && (
+                <section>
+                  <PanelHeader
+                    eyebrow="Delivery resilience"
+                    title="Messavo SMS priority"
+                    description="Keep multiple SMS connections in ranked order. Delivery starts with priority one and falls back only when that provider cannot send."
+                  />
+                  <div className="admin-section-actions">
+                    <div className="admin-guidance">
+                      <Smartphone className="h-6 w-6" />
+                      <div><strong>Tokens stay private</strong><p>Saved API tokens are never returned to this screen. Enter a new token only when creating or rotating a connection.</p></div>
+                    </div>
+                    <button className="button button-primary" onClick={() => setEditor({ kind: 'provider' })}><Plus className="h-4 w-4" /> Add provider</button>
+                  </div>
+                  {loading ? <LoadingRows /> : smsProviders.length === 0 ? (
+                    <EmptyState icon={Smartphone} title="No SMS providers configured" description="Add the primary Messavo connection, then add fallbacks as needed." />
+                  ) : (
+                    <div className="provider-list">
+                      {smsProviders.map((provider, index) => (
+                        <article key={provider.id} className={`provider-row ${provider.deleted_at || !provider.enabled ? 'is-muted' : ''}`}>
+                          <div className="provider-priority" aria-label={`Priority ${index + 1}`}>{index + 1}</div>
+                          <div className="provider-copy">
+                            <div className="record-title-row">
+                              <h3>{provider.name}</h3>
+                              <StatusBadge value={provider.deleted_at ? 'DELETED' : provider.enabled ? 'ENABLED' : 'DISABLED'} />
+                              {provider.has_api_token && <span className="verified-label"><LockKeyhole className="h-3.5 w-3.5" /> Token saved</span>}
+                            </div>
+                            <p>{provider.base_url} · Updated {formatDateTime(provider.updated_at)}</p>
+                          </div>
+                          <div className="provider-order-actions" aria-label={`Change priority for ${provider.name}`}>
+                            <button className="icon-button" disabled={index === 0 || Boolean(provider.deleted_at)} onClick={() => void moveProvider(index, -1)} aria-label="Move up"><ChevronUp className="h-4 w-4" /></button>
+                            <button className="icon-button" disabled={index === smsProviders.length - 1 || Boolean(provider.deleted_at)} onClick={() => void moveProvider(index, 1)} aria-label="Move down"><ChevronDown className="h-4 w-4" /></button>
+                          </div>
+                          <div className="record-actions">
+                            {!provider.deleted_at && <button className="button button-secondary" onClick={() => setEditor({ kind: 'provider', record: provider })}>Edit</button>}
+                            {!provider.deleted_at && <button className="button button-secondary" onClick={() => moderationAction(
+                              provider.enabled ? `Disable ${provider.name}?` : `Enable ${provider.name}?`,
+                              provider.enabled ? 'Disable provider' : 'Enable provider',
+                              'default',
+                              reason => api.updateAdminSmsProvider(provider.id, { enabled: !provider.enabled, reason }),
+                              `Provider ${provider.enabled ? 'disabled' : 'enabled'}.`
+                            )}>{provider.enabled ? 'Disable' : 'Enable'}</button>}
+                            <button className={`button ${provider.deleted_at ? 'button-secondary' : 'button-danger'}`} onClick={() => moderationAction(
+                              provider.deleted_at ? `Restore ${provider.name}?` : `Delete ${provider.name}?`,
+                              provider.deleted_at ? 'Restore provider' : 'Delete provider',
+                              provider.deleted_at ? 'default' : 'danger',
+                              reason => provider.deleted_at ? api.restoreAdminSmsProvider(provider.id, reason) : api.deleteAdminSmsProvider(provider.id, reason),
+                              provider.deleted_at ? 'Provider restored.' : 'Provider deleted.'
+                            )}>{provider.deleted_at ? 'Restore' : 'Delete'}</button>
                           </div>
                         </article>
                       ))}
@@ -878,8 +1151,34 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
           onDone={() => setDialog(null)}
         />
       )}
+      {editor && (
+        <AdminEditorDialog
+          state={editor}
+          busy={busy === 'editor'}
+          onClose={() => setEditor(null)}
+          onSave={saveEditor}
+        />
+      )}
     </div>
   );
+
+  function moderationAction(
+    title: string,
+    confirmLabel: string,
+    tone: 'default' | 'danger',
+    action: (reason: string) => Promise<unknown>,
+    successMessage: string
+  ) {
+    openAction({
+      title,
+      description: 'Add a short reason. The change and the acting administrator will be kept in the activity log.',
+      confirmLabel,
+      tone,
+      reasonLabel: 'Reason for this change',
+      reasonRequired: true,
+      onConfirm: reason => run(`moderation-${title}`, () => action(reason), successMessage)
+    });
+  }
 
   function requestAction(request: AdminRecord, status: 'ACTIVE' | 'REJECTED') {
     openAction({
@@ -1039,7 +1338,7 @@ function OverviewPanel({ overview, can, onNavigate }: {
           <div className="capability-list">
             {(overview.viewer?.capabilities || []).map(capability => <span key={capability}><CheckCircle2 className="h-3.5 w-3.5" />{humanize(capability)}</span>)}
           </div>
-          <p className="panel-footnote">Backend policy checks every action again. Hidden controls are convenience, not the security boundary.</p>
+          <p className="panel-footnote">Your staff role determines your access. A superadmin can update these permissions.</p>
         </div>
       </div>
     </section>
@@ -1142,6 +1441,156 @@ function LoadingRows() {
   );
 }
 
+function AdminEditorDialog({ state, busy, onClose, onSave }: {
+  state: EditorState;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (values: Record<string, unknown>) => Promise<void>;
+}) {
+  const source = (state.record || {}) as AdminRecord;
+  const [name, setName] = useState(String(source.name || ''));
+  const [phone, setPhone] = useState(String(source.phone || ''));
+  const [verified, setVerified] = useState(Boolean(source.is_verified));
+  const [accountStatus, setAccountStatus] = useState(String(source.account_status || 'ACTIVE'));
+  const donor = (source.donor_profile || {}) as AdminRecord;
+  const [memberBloodGroup, setMemberBloodGroup] = useState(String(donor.blood_group || ''));
+  const [district, setDistrict] = useState(String(donor.district || donor.location?.area_name || ''));
+  const [upazila, setUpazila] = useState(String(donor.upazila || ''));
+  const [availabilityStatus, setAvailabilityStatus] = useState(String(donor.availability_status || 'NOT_AVAILABLE'));
+  const [availabilityReason, setAvailabilityReason] = useState(String(donor.availability_reason || ''));
+  const [age, setAge] = useState(String(donor.age || ''));
+  const [weightKg, setWeightKg] = useState(String(donor.weight_kg || ''));
+  const [medicalConditions, setMedicalConditions] = useState(String(donor.medical_conditions || ''));
+  const [hospitalName, setHospitalName] = useState(String(source.hospital_name || ''));
+  const [bloodGroup, setBloodGroup] = useState(String(source.blood_group || ''));
+  const [editRequestStatus, setEditRequestStatus] = useState(String(source.status || 'ACTIVE'));
+  const [bloodComponent, setBloodComponent] = useState(String(source.blood_component || 'WHOLE_BLOOD'));
+  const [unitsRequired, setUnitsRequired] = useState(String(source.units_required || 1));
+  const [hospitalAddress, setHospitalAddress] = useState(String(source.hospital_address || ''));
+  const [ward, setWard] = useState(String(source.ward || ''));
+  const [requestReasonDetails, setRequestReasonDetails] = useState(String(source.request_reason_details || ''));
+  const [title, setTitle] = useState(String(source.title || ''));
+  const [excerpt, setExcerpt] = useState(String(source.excerpt || ''));
+  const [body, setBody] = useState(String(source.body_markdown || source.text || ''));
+  const [baseUrl, setBaseUrl] = useState(String(source.base_url || ''));
+  const [apiToken, setApiToken] = useState('');
+  const [enabled, setEnabled] = useState(source.enabled === undefined ? true : Boolean(source.enabled));
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+
+  const heading = state.kind === 'member' ? 'Edit member'
+    : state.kind === 'request' ? 'Edit blood request'
+      : state.kind === 'post' ? 'Edit community post'
+        : state.kind === 'comment' ? 'Edit comment'
+          : state.record ? 'Edit SMS provider' : 'Add SMS provider';
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (reason.trim().length < 3) {
+      setError('Add a clear reason of at least 3 characters.');
+      return;
+    }
+    let values: Record<string, unknown>;
+    if (state.kind === 'member') {
+      const donorProfile = memberBloodGroup ? {
+        blood_group: memberBloodGroup,
+        district: district.trim(),
+        upazila: upazila.trim(),
+        availability_status: availabilityStatus,
+        availability_reason: availabilityReason.trim(),
+        ...(age ? { age: Number(age) } : {}),
+        ...(weightKg ? { weight_kg: Number(weightKg) } : {}),
+        medical_conditions: medicalConditions.trim()
+      } : undefined;
+      values = { name: name.trim(), phone: phone.trim(), is_verified: verified, account_status: accountStatus, ...(donorProfile ? { donor_profile: donorProfile } : {}), reason: reason.trim() };
+    } else if (state.kind === 'request') {
+      values = {
+        status: editRequestStatus,
+        hospital_name: hospitalName.trim(), hospital_address: hospitalAddress.trim(), ward: ward.trim(),
+        blood_group: bloodGroup, blood_component: bloodComponent, units_required: Number(unitsRequired),
+        request_reason_details: requestReasonDetails.trim(), reason: reason.trim()
+      };
+    } else if (state.kind === 'post') {
+      values = { title: title.trim(), excerpt: excerpt.trim(), body_markdown: body.trim(), reason: reason.trim() };
+    } else if (state.kind === 'comment') {
+      values = { text: body.trim(), reason: reason.trim() };
+    } else {
+      values = { name: name.trim(), base_url: baseUrl.trim(), enabled, ...(apiToken.trim() ? { api_token: apiToken.trim() } : {}), reason: reason.trim() };
+    }
+    setError('');
+    try {
+      await onSave(values);
+    } catch (caught: any) {
+      setError(caught.message || 'The update could not be saved.');
+    }
+  };
+
+  return (
+    <ModalPortal onClose={busy ? undefined : onClose}>
+      <div className="dialog-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && !busy && onClose()}>
+        <form className="action-dialog admin-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-editor-title" onSubmit={submit}>
+          <button type="button" className="icon-button dialog-close" onClick={onClose} disabled={busy} aria-label="Close dialog"><X className="h-4 w-4" /></button>
+          <span className="dialog-icon"><Pencil className="h-6 w-6" /></span>
+          <h2 id="admin-editor-title">{heading}</h2>
+          <p>Update only the fields that should change. A reason is required and will appear in the activity log.</p>
+
+          <div className="admin-editor-fields">
+            {state.kind === 'member' && <>
+              <label><span>Name</span><input value={name} onChange={event => setName(event.target.value)} required maxLength={100} /></label>
+              <label><span>Phone</span><input value={phone} onChange={event => setPhone(event.target.value)} required inputMode="tel" maxLength={20} /></label>
+              <label><span>Account status</span><Select value={accountStatus} onChange={event => setAccountStatus(event.target.value)}><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option></Select></label>
+              <label className="admin-check"><input type="checkbox" checked={verified} onChange={event => setVerified(event.target.checked)} /><span>Phone verified</span></label>
+              <div className="admin-editor-subheading admin-field-wide"><strong>Donor profile</strong><span>Leave blood group blank if this member is not a donor.</span></div>
+              <label><span>Blood group</span><Select value={memberBloodGroup} onChange={event => setMemberBloodGroup(event.target.value)}><option value="">No donor profile</option>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(group => <option key={group}>{group}</option>)}</Select></label>
+              <label><span>Availability</span><Select value={availabilityStatus} disabled={!memberBloodGroup} onChange={event => setAvailabilityStatus(event.target.value)}>{['AVAILABLE', 'SICK', 'TRAVELING', 'NOT_AVAILABLE'].map(status => <option key={status} value={status}>{humanize(status)}</option>)}</Select></label>
+              <label><span>District</span><input value={district} disabled={!memberBloodGroup} onChange={event => setDistrict(event.target.value)} required={Boolean(memberBloodGroup)} maxLength={100} /></label>
+              <label><span>Upazila</span><input value={upazila} disabled={!memberBloodGroup} onChange={event => setUpazila(event.target.value)} maxLength={100} /></label>
+              <label><span>Age</span><input type="number" min="16" max="70" value={age} disabled={!memberBloodGroup} onChange={event => setAge(event.target.value)} /></label>
+              <label><span>Weight (kg)</span><input type="number" min="30" max="200" value={weightKg} disabled={!memberBloodGroup} onChange={event => setWeightKg(event.target.value)} /></label>
+              <label className="admin-field-wide"><span>Availability note</span><input value={availabilityReason} disabled={!memberBloodGroup} onChange={event => setAvailabilityReason(event.target.value)} maxLength={250} /></label>
+              <label className="admin-field-wide"><span>Medical conditions</span><textarea value={medicalConditions} disabled={!memberBloodGroup} onChange={event => setMedicalConditions(event.target.value)} rows={3} maxLength={1000} /></label>
+            </>}
+
+            {state.kind === 'request' && <>
+              <label className="admin-field-wide"><span>Hospital or collection facility</span><input value={hospitalName} onChange={event => setHospitalName(event.target.value)} required maxLength={160} /></label>
+              <label className="admin-field-wide"><span>Hospital address</span><input value={hospitalAddress} onChange={event => setHospitalAddress(event.target.value)} maxLength={240} /></label>
+              <label><span>Status</span><Select value={editRequestStatus} onChange={event => setEditRequestStatus(event.target.value)}>{['ACTIVE', 'REJECTED', 'CANCELLED', 'FULFILLED', 'EXPIRED'].map(status => <option key={status} value={status}>{humanize(status)}</option>)}</Select></label>
+              <label><span>Blood group</span><Select value={bloodGroup} onChange={event => setBloodGroup(event.target.value)}>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(group => <option key={group}>{group}</option>)}</Select></label>
+              <label><span>Blood component</span><Select value={bloodComponent} onChange={event => setBloodComponent(event.target.value)}>{['WHOLE_BLOOD', 'RED_CELLS', 'PLATELETS', 'PLASMA', 'NOT_SURE'].map(component => <option key={component} value={component}>{humanize(component)}</option>)}</Select></label>
+              <label><span>Units required</span><input type="number" min="1" max="20" value={unitsRequired} onChange={event => setUnitsRequired(event.target.value)} required /></label>
+              <label><span>Ward</span><input value={ward} onChange={event => setWard(event.target.value)} maxLength={100} /></label>
+              <label className="admin-field-wide"><span>Request details</span><textarea value={requestReasonDetails} onChange={event => setRequestReasonDetails(event.target.value)} rows={3} maxLength={160} /></label>
+            </>}
+
+            {state.kind === 'post' && <>
+              <label className="admin-field-wide"><span>Title</span><input value={title} onChange={event => setTitle(event.target.value)} required maxLength={160} /></label>
+              <label className="admin-field-wide"><span>Summary</span><textarea value={excerpt} onChange={event => setExcerpt(event.target.value)} rows={2} maxLength={300} /></label>
+              <label className="admin-field-wide"><span>Post content</span><textarea value={body} onChange={event => setBody(event.target.value)} rows={8} required /></label>
+            </>}
+
+            {state.kind === 'comment' && <label className="admin-field-wide"><span>Comment</span><textarea value={body} onChange={event => setBody(event.target.value)} rows={5} required maxLength={2000} /></label>}
+
+            {state.kind === 'provider' && <>
+              <label><span>Provider name</span><input value={name} onChange={event => setName(event.target.value)} required maxLength={100} placeholder="Primary Messavo" /></label>
+              <label className="admin-field-wide"><span>API base URL</span><input value={baseUrl} onChange={event => setBaseUrl(event.target.value)} type="url" required placeholder="https://…" /></label>
+              <label className="admin-field-wide"><span>{state.record?.has_api_token ? 'New API token (leave blank to keep current)' : 'API token'}</span><input value={apiToken} onChange={event => setApiToken(event.target.value)} type="password" required={!state.record?.has_api_token} autoComplete="new-password" /></label>
+              <label className="admin-check"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} /><span>Enabled for delivery</span></label>
+            </>}
+
+            <label className="admin-field-wide"><span>Reason for this change *</span><textarea value={reason} onChange={event => setReason(event.target.value)} rows={3} maxLength={500} required placeholder="Explain what changed and why" /></label>
+          </div>
+
+          {error && <div role="alert" className="dialog-error">{error}</div>}
+          <div className="dialog-actions">
+            <button type="button" className="button button-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="button button-primary" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+          </div>
+        </form>
+      </div>
+    </ModalPortal>
+  );
+}
+
 function ActionDialog({ state, busy, onClose, onDone }: {
   state: DialogState;
   busy: boolean;
@@ -1200,6 +1649,10 @@ function initials(name: string) {
 
 function humanize(value: unknown) {
   return String(value || 'Unknown').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function isDeletedPost(post: AdminCommunityPost) {
+  return post.status === 'DELETED';
 }
 
 function formatDate(value: unknown) {

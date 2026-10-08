@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   UserRoundSearch
 } from 'lucide-react';
+import BloodHelpNotice, { useBloodHelpAccess } from '../components/BloodHelpNotice';
 import { api, type SearchDonorCard } from '../lib/api';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
 import DonorResultCard from '../components/search/DonorResultCard';
@@ -27,9 +28,6 @@ import { announcePendingCall } from '../lib/callOutcome';
 import { BLOOD_GROUPS } from '../lib/blood';
 
 type SearchResponse = {
-  items?: SearchDonorCard[];
-  local_total?: number;
-  includes_district?: boolean;
   order_seed: string;
   registered: SearchDonorCard[];
   directory: SearchDonorCard[];
@@ -101,6 +99,7 @@ export default function DonorSearchPage({
   const collectionFacility = searchParams.get('collection_facility') || '';
   const collectionFacilityCode = searchParams.get('collection_facility_code') || '';
   const orderSeed = searchParams.get('order_seed') || '';
+  const bloodHelp = useBloodHelpAccess();
   const userId = user?.id || '';
   const hasQuery = Boolean(bloodGroup && district && upazila);
   const contextComplete = Boolean(draft.request_id || draft.requester_role);
@@ -195,7 +194,6 @@ export default function DonorSearchPage({
       updateDraft({ ...current, request_id: requestId });
     }
     const reveal = await api.revealDonorPhone(requestId!, donor.donor_ref);
-    try { await navigator.clipboard.writeText(reveal.phone); } catch { /* The contact dialog offers a manual copy action. */ }
     announcePendingCall({ requestId: requestId!, reveal });
   }, [updateDraft]);
 
@@ -207,8 +205,8 @@ export default function DonorSearchPage({
       return;
     }
     setSelected(donor);
-    if (!draft.request_id) {
-      setRequireAccount(false);
+    if ((!user?.is_verified && !bloodHelp.active) || !draft.request_id) {
+      setRequireAccount(Boolean(draft.request_id && !user?.is_verified && !bloodHelp.active));
       setGateOpen(true);
       return;
     }
@@ -216,8 +214,8 @@ export default function DonorSearchPage({
     try {
       await openCall(donor);
     } catch (cause: any) {
-      if (cause?.status === 428) { setRequireAccount(true); setGateOpen(true); return; }
       setError(cause?.message || 'We could not open that contact.');
+      if (cause?.status === 428 || cause?.data?.code === 'BLOOD_HELP_ACCESS_REQUIRED') { setRequireAccount(true); setGateOpen(true); }
       if (cause?.status === 409 && cause?.data?.pending_reveal_id) {
         announcePendingCall();
       }
@@ -252,10 +250,11 @@ export default function DonorSearchPage({
     setSearchParams(next);
   };
 
-  const donors = results ? (results.items || [...results.registered, ...results.directory]) : [];
+  const donors = results ? [...results.registered, ...results.directory] : [];
 
   return (
     <div className="space-y-6 pb-8 sm:space-y-8">
+      <BloodHelpNotice />
       <section className="page-hero block px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
         <div className="page-hero-grid" aria-hidden="true" />
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-rose-200/40 blur-3xl" />
@@ -392,9 +391,7 @@ export default function DonorSearchPage({
           ) : (
             <>
               <div className="donor-result-list divide-y divide-slate-200 border-y border-slate-200">
-                {donors.map((donor, index) => (
-                  <div key={donor.donor_ref}>
-                  {donor.is_district_fallback && !donors[index - 1]?.is_district_fallback && <h2 className="border-t pt-5 text-lg font-bold">Other upazilas in {district}</h2>}
+                {donors.map(donor => (
                   <DonorResultCard
                     key={donor.donor_ref}
                     donor={donor}
@@ -402,7 +399,6 @@ export default function DonorSearchPage({
                     onSelect={selectDonor}
                     busy={busyRef === donor.donor_ref}
                   />
-                  </div>
                 ))}
               </div>
               {results && results.pagination.total_pages > 1 && (

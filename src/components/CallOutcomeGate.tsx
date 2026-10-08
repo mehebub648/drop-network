@@ -1,3 +1,4 @@
+import { useBloodHelpAccess } from './BloodHelpNotice';
 import GuidedForm from './GuidedForm';
 import Select from './Select';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
@@ -46,6 +47,8 @@ const FAR_DETAILS = [
 ];
 
 export default function CallOutcomeGate({ user }: { user: any }) {
+  const bloodHelp = useBloodHelpAccess();
+  const actorKey = user?.id || (bloodHelp.has_activity ? 'guest-device' : '');
   const { pathname } = useLocation();
   const [checking, setChecking] = useState(false);
   const [pending, setPending] = useState<PendingReveal | null>(null);
@@ -79,6 +82,13 @@ export default function CallOutcomeGate({ user }: { user: any }) {
   }, []);
 
   const loadPending = useCallback(async (showLoading = false) => {
+    if (!actorKey) {
+      setChecking(false);
+      setPending(null);
+      setReveal(null);
+      setCheckError('');
+      return;
+    }
     if (showLoading) setChecking(true);
     try {
       const response = await api.getPendingCallOutcome();
@@ -116,17 +126,17 @@ export default function CallOutcomeGate({ user }: { user: any }) {
     } finally {
       setChecking(false);
     }
-  }, [clearForm, user?.id]);
+  }, [clearForm, actorKey]);
 
   useEffect(() => {
-    const userId = user?.id ? String(user.id) : '';
+    const userId = actorKey ? String(actorKey) : '';
     const firstCheck = Boolean(userId && checkedUserRef.current !== userId);
     checkedUserRef.current = userId;
     void loadPending(firstCheck);
-  }, [user?.id, pathname, loadPending]);
+  }, [actorKey, pathname, loadPending]);
 
   useEffect(() => {
-
+    if (!actorKey) return;
     const onChanged = (event: Event) => {
       const changed = (event as CustomEvent<PendingCallChangedDetail | undefined>).detail;
       if (!changed) return void loadPending();
@@ -167,10 +177,10 @@ export default function CallOutcomeGate({ user }: { user: any }) {
       window.removeEventListener('pageshow', onVisible);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [clearForm, loadPending, user?.id]);
+  }, [clearForm, loadPending, actorKey]);
 
-  const needsInitialCheck = Boolean(user?.id && checkedUserRef.current !== String(user.id));
-  const blocked = Boolean((user?.id && (needsInitialCheck || checking || checkError)) || pending);
+  const needsInitialCheck = Boolean(actorKey && checkedUserRef.current !== String(actorKey));
+  const blocked = Boolean(actorKey && (needsInitialCheck || checking || checkError || pending));
 
   useEffect(() => {
     if (!blocked) return;

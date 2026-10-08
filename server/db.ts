@@ -663,6 +663,16 @@ export type CallReportQuery = {
   offset?: number;
 };
 
+/** Account adoption replaces indexed ownership and its document together. */
+export async function adoptCallReports(reports: Array<{ id: string; kind: string; request_id: string; actor_id: string; donor_ref: string }>) {
+  if (!reports.length) return;
+  const table = await ensureCallReportTable();
+  await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll().execute(reports.map(report => ({
+    vector: [0, 0], id: report.id, kind: report.kind, request_id: report.request_id,
+    actor_id: report.actor_id, donor_ref: report.donor_ref, doc: JSON.stringify(report)
+  })));
+}
+
 /** Exported for tests; callers should use the query helpers below. */
 export function buildCallReportFilter(query: CallReportQuery) {
   const clauses: string[] = [];
@@ -697,7 +707,7 @@ export async function countCallReports(query: CallReportQuery = {}) {
 
 export async function saveToTable(name: string, obj: any, vector: number[] = [0,0]) {
   const table = await ensureTable(name);
-  if (name === 'common_requests') {
+  if (['common_requests', 'common_guest_devices', 'common_otps'].includes(name)) {
     await table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll()
       .execute([{ vector, id: obj.id, doc: JSON.stringify(obj) }]);
     return;

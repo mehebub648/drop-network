@@ -49,3 +49,29 @@ no horizontal overflow, failed requests, console errors, broken keyboard focus,
 or unresolved P0–P2 visual defect. Any failure stops or rolls back the release.
 
 final result: release-gated
+
+## 0.0.160 / Android 1.0.38 launch candidate
+
+- The desktop website and native app share warm neutral surfaces, restrained rose
+  actions, clearer navigation, consistent controls and simpler spacing.
+- Isolated rootless Compose validation passed: TypeScript, 170 unit tests, eight
+  administrative integration groups, emergency-access regression and production
+  image build. Full and runtime dependency audits reported zero vulnerabilities.
+- A real browser checked the compiled isolated preview: blood-group handoff,
+  member edit and undo, per-member audit, SMS controls, admin deep links, refresh,
+  Back/Forward, and the 390-pixel mobile download cover. Privacy and listing removal
+  remain available on mobile. Captures: `artifacts/launch-v0.0.160/`.
+- Flutter analysis and 42 focused tests passed. Signed 1.0.38+39 APK and AAB were
+  verified, with the existing signing certificate retained. Native fixture captures
+  include 390-pixel home/request/account surfaces and 320-pixel home at 200% text.
+- Local Docker Desktop was not started. Production was not changed; the isolated
+  preview is not canonical hosted release evidence. Physical-device checks, real
+  SMS failover and Play publication remain separate launch acceptance steps.
+
+- The release was integrated with published main `655829d` before deployment.
+  The combined image build, TypeScript, all 171 unit tests, eight admin integration
+  groups and emergency-access integration passed. The latter explicitly checks
+  the published three-request guest limit before granting outage access.
+- Android source commit `ddead88` matches the signed 1.0.38+39 build. An installed
+  emulator upgrade and cold launch passed. Private Firebase authentication and
+  an FCM validation-only request passed without delivering a notification.

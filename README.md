@@ -6,7 +6,37 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.158`
+Current version: `0.0.160`
+
+The native Android app is the primary mobile experience. Desktop browsers use
+the website; mobile browsers show an app-download cover. Privacy, terms, safety,
+support and listing removal remain accessible on every device. A signed APK in
+`data/releases/drop-android.apk` is served at `/downloads/drop-android.apk`;
+`ANDROID_APP_URL` can instead point to a real HTTPS store/download destination.
+
+The operations workspace at `/admin` includes account and donor-profile editing,
+suspension, reversible administrative deletion, request/post/comment moderation,
+member and visitor activity history, and ranked Messavo providers. Privileged
+changes require a reason. Audit history stays immutable; eligible changes can be
+undone only while their saved state still matches. SMS messages already sent and
+revoked sign-in sessions cannot be recalled.
+
+Set a stable, private `SETTINGS_ENCRYPTION_KEY` of at least 32 random characters
+before adding Messavo API credentials in operations. Credentials are encrypted
+in persistent storage and omitted from admin responses and audit history. Lower
+priority numbers are attempted first; fallback follows definitive provider
+rejections and preserves the actual sending provider for receipts/cancellation.
+
+During a confirmed SMS-service or sending-phone outage, the affected browser or
+Android installation can receive 24 hours of blood-help access. It can publish
+requests and contact matching donors using the existing consent and call-feedback
+flow. This does not create an account or verify a phone. Password recovery, OTP
+login, phone changes and listing claims retain their normal verification.
+
+Access is stored against the existing private device credential. Repeated polling
+does not extend it; renewal requires a new confirmed outage. Existing requests and
+contact history retain their normal ownership/deadlines after the pass expires.
+Later sign-in adopts this activity while preserving its unverified feedback status.
 
 View your app in AI Studio: https://ai.studio/apps/a785fd25-9203-4a0a-badf-b124c492f4ee
 
@@ -100,8 +130,12 @@ Refresh the district facility files from the public DGHS registry with:
   Production automatically disables a persisted bypass and refuses attempts to
   enable it. `/ready` also stays unavailable until SMS and metrics protection
   are configured.
+- Home shows a pink blood-group card with B+ selected by default, four action
+  shortcuts, and the two most recently published active requests. Male patients
+  cannot select pregnancy/childbirth; facility is entered only in search and
+  remains optional through publication.
 - Donor search starts on `/` with blood group only, then continues on
-  `/directory` with district, upazila, collection facility, and requester role.
+  `/directory` with district, upazila, optional collection facility, and requester role.
   The selected blood group and saved draft carry across that route handoff, so
   the interface shows each question once without restarting the flow.
   Phone-verified, opted-in donors are ranked first and explicitly labelled before
@@ -125,10 +159,11 @@ Refresh the district facility files from the public DGHS registry with:
   at most three districts, three blood groups, and nine unique searches per
   Dhaka day; paging an unchanged search does not consume another unique search,
   while the standard API rate limit still applies.
-- Public and member pages use task-first responsive layouts. Mobile account
-  sections open from an accessible bottom sheet instead of a horizontal rail,
-  task routes omit the promotional footer. The Android companion uses native
-  Flutter workflows and the shared backend security gates, without WebViews.
+- Public and member pages use consistent desktop layouts; task routes omit the
+  promotional footer. Mobile browser product routes show the Android download
+  cover. Privacy, support, safety, terms and listing removal remain accessible
+  without a pending-call dialog. The Android app uses native Flutter workflows
+  and the shared backend security gates, without WebViews.
 - Registered donors can self-report an exact last-donation date, an approximate
   number of days, months, or years ago, or that they have never donated, plus a
   lifetime donation count. Search cards show that bounded summary when present;
@@ -181,14 +216,11 @@ Refresh the district facility files from the public DGHS registry with:
   proximity-ranked emergency section. `/health` and `/ready` verify the critical static files plus the
   hashed JavaScript/CSS referenced by the production shell, while
   bearer-protected Prometheus-format `/metrics` supports monitoring.
-- The responsive interface uses a doodle-led cartoon system on a clean white
-  canvas, with white surfaces, soft neutral boundaries, deep-red actions,
-  semantic availability/success green, rounded typography, lightweight line
-  art, and optimized editorial illustrations. One shared 92rem content rail
-  plus consistent cards, controls, status UI, focus behavior, and reduced-motion
-  support keeps search, request, contact, account, community, partner,
-  information, and staff journeys visually connected from 320px mobile through
-  large desktop layouts.
+- The desktop interface uses a warm neutral canvas, white surfaces, restrained
+  rose actions, clear typography and consistent spacing. Shared cards, controls,
+  focus states and reduced-motion support connect search, requests, accounts,
+  community, information and administration. The native app uses the same visual
+  direction with mobile navigation, accessible fields and scrollable layouts.
 - Verified hospitals, blood banks, and NGOs can be reviewed by operators,
   listed in the public partner directory, and publish donation campaigns.
 - `/community` publishes member donation stories and Markdown-formatted health
@@ -260,7 +292,7 @@ add a source.
 
 After every recorded phone reveal, the requester reports whether the donor will
 donate, asked for a later call, did not answer, was unreachable, had the wrong
-number, declined with a structured reason, or was not called. Search cards show
+number, declined with an optional structured reason, or was not called. Search cards show
 non-accusatory counts from distinct verified requesters beginning with the first
 report; notes and identities remain private. Three distinct wrong-number or
 unreachable reports in 90 days temporarily suppress that donor from search.
@@ -274,3 +306,7 @@ only and staff suspension/restoration actions are audited.
 - Type check: `docker compose --profile development run --rm app-dev npm run lint`
 - Unit tests: `docker compose --profile development run --rm app-dev npm test`
 - Bundle: `docker compose --profile development run --rm app-dev npm run build`
+
+Android push is optional and remains disabled until a private Firebase sender file is
+configured. See `docs/ARCHITECTURE.md` for setup; `data/push` must remain private.
+This version also improves donor controls, home loading, threaded comments and notification actions.

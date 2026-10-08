@@ -1,6 +1,33 @@
 # Drop Network Architecture
 
-Current application version: `0.0.158`
+Current application version: `0.0.160`
+
+### Desktop website, native mobile and operations (0.0.160)
+
+- The existing Express API remains the functional browser/native backend.
+  `MobileAppCover` gates mobile browser product routes while desktop website
+  routes remain available. Privacy, terms, safety, support and listing removal
+  are device-independent. Native API clients are unaffected.
+- `GET /downloads/drop-android.apk` serves the signed artifact configured by
+  `ANDROID_APK_PATH`. Compose mounts `data/releases` read-only. Public config
+  exposes a download only when an artifact exists or a real HTTPS
+  `ANDROID_APP_URL` is configured; APK binaries remain outside Git.
+- `/admin?section=...` keeps operations navigation in the URL. Accounts and
+  donor profiles can be edited, suspended, deactivated and restored under the
+  existing staff hierarchy. Requests, posts and comments support administrative
+  editing, removal and restoration. Revoked sessions remain revoked on restore.
+- Audit projections include readable summaries/categories and member/visitor,
+  target, time and activity filters. Core authentication and SMS outcomes never
+  record codes, passwords, tokens or message bodies. Saved before/after state
+  supports permitted undo with conflict detection; audit records remain append-only.
+- `common_sms_providers` stores ranked, enabled Messavo endpoints and encrypted
+  credentials. `SETTINGS_ENCRYPTION_KEY` protects them with authenticated
+  encryption; it must remain stable with private datastore backups. Provider
+  projections never contain credentials. SMS configuration requires an admin
+  or superadmin capability.
+  Fallback proceeds only after definitive rejection, with provider-bound receipt
+  and cancellation handling. Environment-configured transport remains the
+  compatibility fallback when no managed provider is active.
 
 ## Overview
 
@@ -66,6 +93,58 @@ extraction is an optional later scaling step rather than a client-parity gate.
 ## Frontend
 
 ### Guest-first ownership and deadlines
+
+#### SMS-outage blood-help access (0.0.159)
+
+`common_guest_devices` now retains an opaque guest actor ID and optional
+`blood_help` grant (challenge, issued-at, expiry). OTP documents privately bind
+their initiating guest-token hash and confirmed outage evidence. Old documents
+without these fields remain ordinary guests. These JSON additions need no table
+schema migration; guest and OTP writes use merge/upsert rather than delete/add.
+
+`GET /guest/session` returns `blood_help_access` with `active`, `expires_at`, and
+`has_activity`. OTP request/error/status payloads optionally return
+`blood_help_eligible`; they never issue a verification token for an outage.
+`POST /guest/emergency-access` redeems the device-bound challenge within ten
+minutes of its first outage evidence. Redemption is serialized and persisted,
+idempotent for that challenge, and never extends an existing active pass. A new
+failure is required to renew expired access. All routes also accept `/api/v1`.
+
+The SMS adapter preserves provider error reasons. Transport failures, 5xx,
+provider credential/configuration problems and explicit sender/SIM failures can
+qualify. Recipient errors, generic failure/cancellation, rate limits, wrong codes,
+and client connectivity cannot. Queued or sent status alone is not evidence.
+Send requests have a 25-second bound, longer than Messavo's 15-second presence
+probe; Android allows 45 seconds for the OTP request. Delivery polling reads
+sender failure reasons without treating the code as verified.
+
+The separate blood-help actor authorizes only owned-request posting and donor
+coordination. No fabricated `User`, login session or verified phone is created.
+Search matching, consent, global limits and one pending call across owned
+requests still apply. Contact/feedback/follow-up routes use request ownership,
+and request details expose server-calculated `reveal` and `contact_history`
+permissions. Expired passes cannot reveal a new donor or bypass guest posting
+limits; existing contacts and pending feedback remain available until the
+request's normal deadline. New contacts require a verified account or live pass.
+
+Invitations and follow-ups retain the private guest actor as requester. Real
+sign-in adopts the owned requests and associated indexed call reports,
+invitations and follow-ups. Explicit `actor_verified: false` is preserved even
+after adoption and corrections, and is excluded from verified warning counts
+and automatic donor suspension. Account recovery, phone changes, listing claims,
+donor-side identity proof and staff capabilities remain separate.
+
+Web and Android restore the server's pass state and offer “Continue finding
+blood” without completing the account form. A recovery form retains its code
+requirement and offers a separate path to donor search. Losing the device secret
+loses this guest access; an account phone or challenge ID alone cannot restore it.
+
+Focused provider/pass tests and `scripts/emergencyAccess.integration.ts` cover
+the new boundaries. The integration script requires `DROP_ISOLATED_QA=1` in a
+network-isolated Compose container, seeds only disposable records, and runs a
+fake SMS provider on loopback. Local backend/browser validation remains pending
+under the Docker Desktop policy; Android's 19 focused tests passed. This release
+has not been deployed.
 
 `POST /guest/session` issues a server-generated random device secret. Only its
 SHA-256 hash is stored in `common_guest_devices` and the guest request grant.
@@ -185,7 +264,9 @@ Entry points:
   compatibility or place names. `src/lib/blood.ts` still owns the frontend-only
   helpers: urgency derivation and the donor eligibility calculation.
 - `server/requestReasons.ts` owns the bounded, searchable transfusion-indication
-  taxonomy used by both request validation and the frontend picker.
+  taxonomy used by both request validation and the frontend picker. Male patients
+  cannot select CHILDBIRTH; changing gender clears that saved selection.
+  Collection facility is optional and reused from search without another field.
 - `src/index.css` defines the responsive, card-free doodle system: a warm paper
   canvas, open sections separated by ruled lines and whitespace, lightweight
   decorative marks, editorial illustrations, a shared 92rem content rail,
@@ -196,7 +277,9 @@ Entry points:
 
 Routes:
 
-- `/` is the task-first entry to donor search and asks only for the blood group.
+- `/` uses a pink search card, B+ default selection, four shortcuts and two
+  recent live requests, with Home/Requests/Donors/Profile mobile navigation.
+  It is the task-first entry to donor search and asks only for the blood group.
   Submitting that choice opens `/directory` at the location question, with the
   selected group and saved draft preserved so the route change continues rather
   than restarts the flow. Requests and donor-profile actions remain compact
@@ -424,6 +507,10 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   consuming the smaller authentication-attempt budget. Failed, cancelled, and
   expired deliveries invalidate the challenge;
   replaced and expired queued Messavo jobs are cancelled when possible.
+  A resend inside the one-minute cooldown returns `429` with the remaining
+  cooldown. Wrong codes return a validation error for the first five attempts;
+  the sixth and later wrong attempts on that challenge return `429`. A newly
+  issued challenge starts with a fresh wrong-code count.
 - `SIGN_IN` exists for the blood request flow, where someone gives a phone
   number without first saying whether they have an account. It is the only
   purpose that works either way, and verification returns `account_exists` -
@@ -473,7 +560,7 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   within six hours returns the request already in flight rather than a 409:
   re-searching after a dead-end call is not a mistake to error at.
 - `POST /api/requests/:id/reveals` unmasks one donor's number. It requires a
-  verified session, ownership of an active request, and - the check that matters
+  verified session or active device blood-help pass, ownership of an active request, and - the check that matters
   - that the donor is still in that request's freshly recomputed results.
   Without that, one published request would be a bulk lookup oracle for the
   whole imported directory. It also refuses while any earlier reveal by the
@@ -481,19 +568,25 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   separate-request loophole in "answer before calling someone else". The route
   is rate-limited separately at 60 per 15 minutes.
 - `GET /api/me/reveals/pending` returns the oldest unanswered reveal across all
-  live requests owned by the authenticated account. Closed or expired requests do not block new calls. `CallOutcomeGate` uses it to
+  live requests owned by the authenticated account. Closed, expired, and deleted
+  requests do not block new calls; their call history is preserved. `CallOutcomeGate` uses it to
   restore the blocking dialog after navigation, reload, focus, and cross-tab
   changes without putting the revealed phone number into the URL.
 - `POST /api/requests/:id/call-reports` records what happened on the call.
   Corrections pass `supersedes_report_id` for the latest report on that reveal.
-  Stale corrections are rejected; history is retained and superseded feedback
-  is excluded from contact-warning counts. Contacted summaries provide masked
-  profile details and the latest reveal/report references for native actions.
+  The server rejects stale revisions, retains history, and excludes superseded
+  feedback from contact-warning counts. Contacted-donor summaries include the
+  latest reveal/report references and masked profile details for native actions.
   A single report never changes a donor's own record. Public summaries count a
   verified requester once per donor/category and begin at one; owner/staff
   resolutions make older evidence stale without deleting it. Three distinct
   wrong-number or unreachable reporters within 90 days temporarily suppress a
   donor from search.
+- `POST /api/me/contact-reports/confirm-phone` lets an authenticated member
+  confirm that the phone already attached to the active session is still
+  current, clearing stale wrong-number and unreachable warnings without another
+  credential or OTP prompt. The older `reverify-phone` path remains a compatible
+  alias.
 - `GET /api/me/donor-requests` and `POST /api/requests/:id/donor-reports` are
   the donor's half: requests their group can answer in their upazila, with the
   requester's number masked until they say they can help. A donor's report about
@@ -506,13 +599,14 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
 - `GET /api/me` returns the authenticated user.
 - `PATCH /api/me` validates and updates the authenticated user's name and
   phone, rejects duplicate phone numbers, and refreshes donor partitions.
-- `POST /api/me/change-password` verifies the current password and stores a
-  bcrypt hash of the new password (minimum 8 characters).
+- `POST /api/me/change-password` uses the authenticated session and stores a
+  bcrypt hash of the new password (minimum 8 characters) without asking for
+  the current phone or password again.
 - `GET/DELETE /api/me/sessions` and `POST /api/me/logout-all` expose and revoke
   device sessions without disclosing opaque tokens.
 - `GET /api/me/export` returns the member's account, requests, responses,
   notifications, reports, and authored community posts. `DELETE /api/me`
-  requires the current password, removes donor/private patient data and
+  requires the authenticated session and an interface confirmation, removes donor/private patient data and
   authored post content/images, cancels active requests, revokes sessions, and
   anonymizes records retained for coordination and safety auditing.
 - `GET /api/me/requests` returns requests owned by the current user.
@@ -557,18 +651,12 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   it; the author can preview an attached draft image through their own session.
 - Public and protected `/api/organizations` routes support directory listing,
   applications, operator review, role assignment, and campaign publication.
-- `GET /api/stats` returns public network counts for the landing page:
-  `donors` (the headline: registered donor profiles plus unclaimed imported
-  listings), its `directory_donors` and `registered_donors` components,
-  available donors, and active/fulfilled requests. Claimed listings are counted
-  once, as registered profiles. If the imported table cannot be read, `donors`
-  and `directory_donors` are `null` and the landing page renders a dash rather
-  than a count that omits the directory. The landing page labels the headline
-  as searchable listings, shows the public-source/member breakdown, and does
-  not present availability or fulfilment counts as comparable network totals.
+- `GET /api/stats` returns public network counts, including registered and
+  imported donor totals. Unreadable imported totals remain null.
 - `GET /api/requests` lists active, non-expired public blood requests without
   requester phone or contact details. Results are oldest first and returned in
-  20-request pages. Sparse filtered pages separate proximity-ranked fallbacks
+  20-request pages by default; `sort=recent` selects newest-first order for the
+  home page before pagination. Sparse filtered pages separate proximity-ranked fallbacks
   into `other_items`; pagination includes `exact_total` for the primary count.
 - `GET /api/requests/:id` publishes the chosen coordination contacts while a
   request is active or partially fulfilled, then removes them from public
@@ -737,7 +825,7 @@ account:
   There is no browsable donor directory; records are returned only by scoped
   search or an opaque ownership link.
 - That reveal is the one place a scraped number is served in full, and it is
-  narrow on purpose: a verified account, an active request the caller owns, a
+  narrow on purpose: verified or temporary blood-help access, an active request the caller owns, a
   donor still in that request's own district and upazila, no unreported previous
   call, and a per-route rate limit. Each reveal is written to
   `common_call_reports`; the first one on a request also writes a
@@ -929,9 +1017,10 @@ Operational endpoints and jobs:
 - New anonymous comments use the server-issued guest identity.
   It does not authorize request access or account adoption. Guest device access
   is bearer-secret access: clearing local storage loses management rights, and
-  a stolen device secret grants bounded anonymous access, never account access.
-- Rate limits (auth, general API, anonymous comments) are in memory, per
-  process, and reset on restart.
+  a stolen device secret grants management of its unexpired guest posts and any still-active blood-help pass. It does not grant account access.
+- General API, password-login, guest-session, and anonymous-comment limits are
+  in memory, per process, and reset on restart. OTP resends and wrong-code
+  attempts use the persisted challenge timestamps and counters described above.
 - User and request data are held in a server-memory write-through cache that
   mirrors LanceDB; the cache is per-process and rebuilt from the datastore on
   startup, so this still assumes a single instance.
@@ -949,3 +1038,39 @@ When changing behavior or structure:
 3. Update other affected documentation.
 4. Bump the app version everywhere it appears.
 5. Add a new changelog file in `changelog/` named `v<old-version>-<new-version>-changelog.md`.
+
+Call reports accept DECLINED without a reason; supplied structured reasons retain their existing detail validation. Native pending-contact recovery reuses the authorized reveal endpoint before reporting and then continues the selected donor action.
+
+## Request updates and Android push (0.0.158)
+
+Request detail responses explicitly project public comments for every authorized viewer;
+public feeds retain counts only. Comment creation accepts optional `parent_id` and
+`client_id`, flattens replies to one level, and deduplicates retries per actor/request.
+Deleted or moderated comments retain a public placeholder, with internal actor metadata
+excluded. Existing comments need no migration. Existing deletion authorization is preserved.
+
+`PATCH /api/me/notifications/read-all` updates only the current account. Android registers
+FCM devices through `POST /api/me/push/devices` (`token`, `enabled`); `DELETE` removes
+registrations for the current session. `GET /api/me/push` reports server configuration.
+All endpoints also use the existing `/api/v1` prefix. Registrations and delivery records
+use additive `common_push_devices` and `common_push_deliveries` LanceDB tables.
+
+The persisted inbox supplies a 30-second push worker. Unread notifications created after
+registration, within the last day, are delivered only to active user sessions. Retries
+are bounded to five attempts; invalid tokens are disabled. Notification IDs deduplicate
+records and Android display tags. A network failure after FCM acceptance may retry the
+same tag; exactly-once network delivery is not promised. Lock-screen content is generic.
+
+Configure `FIREBASE_SERVICE_ACCOUNT_FILE=/run/drop-push/service-account.json` only after
+placing the private Firebase messaging sender credential in `data/push/service-account.json`.
+Compose mounts this directory read-only. Keep the setting blank to leave push disabled.
+No private configuration, credentials or FCM tokens may enter Git or public artifacts.
+Firebase uses project `drop-network-bbd35` and a dedicated Cloud Messaging API sender.
+Back up affected tables before a later authorized deployment. Android opt-in, revoked
+permission, background/cold-start delivery and account switching require device acceptance.
+
+Setup validation on 2026-09-09: the dedicated sender authenticated successfully and FCM
+accepted a `validate_only` request (HTTP 200); no notification was delivered. The sender
+credential is stored locally in ignored `data/push/service-account.json` with restricted
+Windows access. Production environment configuration was not changed. This verifies
+Firebase setup only, not the backend worker or Android delivery.

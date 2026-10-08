@@ -10,12 +10,15 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-}
       LANCEDB_PATH: /data/lancedb
       COMMUNITY_MEDIA_PATH: /data/media/community
+      ANDROID_APK_PATH: /data/releases/drop-android.apk
+      ANDROID_APP_URL: ${ANDROID_APP_URL:-}
       SMS_PROVIDER: ${SMS_PROVIDER:-}
       SMS_API_BASE_URL: ${SMS_API_BASE_URL:-}
       SMS_API_TOKEN: ${SMS_API_TOKEN:-}
       SMS_FOLLOWUP_API_TOKEN: ${SMS_FOLLOWUP_API_TOKEN:-}
       SMS_FOLLOWUP_API_BASE_URL: ${SMS_FOLLOWUP_API_BASE_URL:-}
       FOLLOW_UP_LINK_SECRET: ${FOLLOW_UP_LINK_SECRET:-}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}
       SMS_HTTP_TOKEN: ${SMS_HTTP_TOKEN:-}
       DONATION_INTERVAL_DAYS: ${DONATION_INTERVAL_DAYS:-120}
@@ -23,6 +26,7 @@ services:
       MATCH_RADIUS_KM: ${MATCH_RADIUS_KM:-250}
       ADMIN_PHONE: ${ADMIN_PHONE:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      FIREBASE_SERVICE_ACCOUNT_FILE: ${FIREBASE_SERVICE_ACCOUNT_FILE:-}
     ports:
       - "${PORT:-3000}:3000"
     volumes:
@@ -30,6 +34,8 @@ services:
       # you can back up, copy, or inspect directly on the host.
       - ./data/lancedb:/data/lancedb
       - ./data/media/community:/data/media/community
+      - ./data/releases:/data/releases:ro
+      - ./data/push:/run/drop-push:ro
     healthcheck:
       test:
         - CMD
@@ -55,12 +61,15 @@ services:
       APP_URL: ${APP_URL:-http://localhost:3001}
       LANCEDB_PATH: /data/lancedb
       COMMUNITY_MEDIA_PATH: /data/media/community
+      ANDROID_APK_PATH: /data/releases/drop-android.apk
+      ANDROID_APP_URL: ${ANDROID_APP_URL:-}
       SMS_PROVIDER: ${SMS_PROVIDER:-}
       SMS_API_BASE_URL: ${SMS_API_BASE_URL:-}
       SMS_API_TOKEN: ${SMS_API_TOKEN:-}
       SMS_FOLLOWUP_API_TOKEN: ${SMS_FOLLOWUP_API_TOKEN:-}
       SMS_FOLLOWUP_API_BASE_URL: ${SMS_FOLLOWUP_API_BASE_URL:-}
       FOLLOW_UP_LINK_SECRET: ${FOLLOW_UP_LINK_SECRET:-}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       SMS_HTTP_ENDPOINT: ${SMS_HTTP_ENDPOINT:-}
       SMS_HTTP_TOKEN: ${SMS_HTTP_TOKEN:-}
       DONATION_INTERVAL_DAYS: ${DONATION_INTERVAL_DAYS:-120}
@@ -68,6 +77,7 @@ services:
       MATCH_RADIUS_KM: ${MATCH_RADIUS_KM:-250}
       ADMIN_PHONE: ${ADMIN_PHONE:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      FIREBASE_SERVICE_ACCOUNT_FILE: ${FIREBASE_SERVICE_ACCOUNT_FILE:-}
       CHOKIDAR_USE_POLLING: "true"
       VITE_USE_POLLING: "true"
     ports:
@@ -79,6 +89,8 @@ services:
       # production datastore.
       - ./data/lancedb-dev:/data/lancedb
       - ./data/media-dev/community:/data/media/community
+      - ./data/releases:/data/releases:ro
+      - ./data/push:/run/drop-push:ro
     stdin_open: true
     tty: true
 

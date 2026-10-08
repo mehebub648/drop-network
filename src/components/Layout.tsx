@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import { Bell, Home, FileText, MessagesSquare, Droplet, Heart, LogOut, MapPin, Menu, Plus, ShieldCheck, Sparkles, UserRound, X } from 'lucide-react';
 import Footer from './Footer';
+import { api } from '../lib/api';
 
 const navigation: Array<{ label: string; to: string; end?: boolean }> = [
   { label: 'Live requests', to: '/requests' },
@@ -42,6 +43,13 @@ export default function Layout({
   onLogout: () => void;
   otpBypassEnabled: boolean;
 }) {
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { if (!user) { setUnread(0); return; } api.getNotifications().then(items => { if (active) setUnread(items.filter((item: { read_at?: string }) => !item.read_at).length); }).catch(() => undefined); };
+    refresh(); window.addEventListener('focus', refresh); window.addEventListener('drop-notifications-changed', refresh);
+    return () => { active = false; window.removeEventListener('focus', refresh); window.removeEventListener('drop-notifications-changed', refresh); };
+  }, [user]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const { pathname } = useLocation();
@@ -112,6 +120,15 @@ export default function Layout({
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   Find blood
                 </Link>
+                <Link
+                  to="/profile/responses"
+                  className="site-notification-link"
+                  aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
+                  title="Notifications"
+                >
+                  <Bell className="h-[1.15rem] w-[1.15rem]" aria-hidden="true" />
+                  {unread > 0 && <span aria-hidden="true">{unread > 99 ? '99+' : unread}</span>}
+                </Link>
                 <NavLink
                   to="/profile"
                   className={({ isActive }) =>
@@ -164,7 +181,7 @@ export default function Layout({
             )}
           </div>
 
-          {pathname === '/' && <Link to={user ? '/profile/responses' : '/login?returnTo=%2Fprofile%2Fresponses'} className="home-notification icon-button ml-auto xl:hidden" aria-label="Notifications"><Bell aria-hidden="true" /></Link>}
+          {pathname === '/' && <Link to={user ? '/profile/responses' : '/login?returnTo=%2Fprofile%2Fresponses'} className="home-notification icon-button ml-auto xl:hidden" aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}><Bell aria-hidden="true" />{unread > 0 && <span className="text-xs font-bold">{unread}</span>}</Link>}
           <button
             ref={menuButtonRef}
             type="button"
