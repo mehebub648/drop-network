@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.160`
+Current version: `0.0.161`
 
 The native Android app is the primary mobile experience. Desktop browsers use
 the website; mobile browsers show an app-download cover. Privacy, terms, safety,

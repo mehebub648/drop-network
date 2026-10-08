@@ -88,7 +88,7 @@ export default function Layout({
       <header className="site-header sticky top-0 z-50">
         <div className="site-header-inner mx-auto flex min-h-[4.5rem] items-center gap-4 px-4 sm:px-5">
           <Link to="/" className="group flex min-h-11 shrink-0 items-center gap-3 rounded-xl" aria-label="Drop Network home">
-            {pathname === '/' ? <span className="home-brand"><span><Droplet fill="currentColor" aria-hidden="true" />drop</span><small>Find Donors. Save Lives.</small></span> : <>
+            <>
             <span className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-primary shadow-[0_12px_28px_-14px_rgba(190,18,60,0.8)] transition-transform group-hover:-rotate-3">
               <span className="absolute inset-1 rounded-xl border border-white/25" aria-hidden="true" />
               <Droplet className="relative h-5 w-5 text-white" aria-hidden="true" />
@@ -99,7 +99,7 @@ export default function Layout({
               </span>
               <span className="mt-1 hidden text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400 sm:block">Donor network</span>
             </span>
-            </>}
+            </>
           </Link>
 
           <nav className="site-desktop-nav ml-4 hidden items-center gap-0.5 rounded-full p-1 xl:flex" aria-label="Primary navigation">

@@ -1,6 +1,13 @@
 # Drop Network Architecture
 
-Current application version: `0.0.160`
+Current application version: `0.0.161`
+
+### Desktop homepage correction (0.0.161)
+
+The homepage uses the shared Drop header, a size-limited two-line heading and
+top-aligned donor-search panel. The trailing legacy homepage rules were removed
+because they overrode the desktop width, header height and control sizes. Donor
+search URLs, guest ownership, administration and the mobile app cover are unchanged.
 
 ### Desktop website, native mobile and operations (0.0.160)
 

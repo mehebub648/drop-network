@@ -26,8 +26,8 @@ export default function LandingPage({ user }: { user: any }) {
     <section className="home-hero" aria-labelledby="home-title">
       <div className="home-intro">
         <p className="home-eyebrow">Community donor network</p>
-        <h1 id="home-title">Find the right blood donor, with less friction.</h1>
-        <p className="home-intro-copy">Search verified and public-source donor listings across Bangladesh. Contact details stay protected until you create a blood request.</p>
+        <h1 id="home-title"><span>Find a blood donor.</span><span>When it matters.</span></h1>
+        <p className="home-intro-copy">Find donors across Bangladesh and coordinate a blood request. Contact details stay protected until you need them.</p>
         <div className="home-confidence"><ShieldCheck aria-hidden="true" /><span><strong>Private by default.</strong> Search first. Sign in only when you need to contact a donor.</span></div>
         <div className="home-intro-links">
           <Link to="/about">How Drop works <ArrowRight aria-hidden="true" /></Link>

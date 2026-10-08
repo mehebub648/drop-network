@@ -107,3 +107,18 @@ final result: release-gated
   SHA-256 `d60798723a04ab37b45349237ac1c8c3875a63b2981b1984f23ddbf16565ffca`.
   The private push sender and stable SMS encryption key are active and backed up.
   Real-device push/SMS delivery acceptance and Play upload remain in `PLAN.md`.
+
+## Desktop homepage correction - 0.0.161
+
+The user-reported screenshot exposed a missed CSS cascade regression: at a
+1536-pixel desktop viewport, a trailing legacy block narrowed the home to 920
+pixels, enlarged the header to 100 pixels and left the heading at 84.48 pixels
+across six lines. The earlier acceptance covered interactions but did not catch
+these poor proportions.
+
+The conflicting trailing block is removed. An isolated rootless production
+preview passed visual checks at 1280, 1536 and 1920 pixels: two-line heading,
+76-pixel shared header, top-aligned white search panel and no horizontal overflow.
+The O-negative selection reached `/directory?blood_group=O-` with the correct
+location step. No browser console warnings or errors occurred. The supported
+hosted image build passed; local Docker Desktop was not started.
