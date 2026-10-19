@@ -1015,6 +1015,19 @@ function activeFollowUpSmsProvider() {
 function activeSmsConfigured() { return Boolean(activeSmsProvider()); }
 function activeFollowUpSmsConfigured() { return Boolean(activeFollowUpSmsProvider()); }
 
+function smsRoutingMetadata() {
+  const enabledManaged = smsProviders.filter(provider => provider.enabled && !provider.deleted_at).length;
+  const environmentReady = (process.env.SMS_PROVIDER || '').trim().toLowerCase() === 'messavo' && Boolean(getSmsProvider());
+  const source = enabledManaged > 1
+    ? 'AMBIGUOUS'
+    : enabledManaged === 1
+      ? 'MANAGED'
+      : environmentReady
+        ? 'ENVIRONMENT'
+        : 'UNCONFIGURED';
+  return { strategy: 'SINGLE_MESSAVO' as const, source };
+}
+
 async function initDbData() {
   users = await getAllFromTable('common_users');
   requests = await getAllFromTable('common_requests');
@@ -5282,7 +5295,10 @@ app.patch('/api/admin/settings/otp-bypass', async (req, res) => {
 app.get('/api/admin/sms-providers', (req, res) => {
   const auth = requireStaffCapability(req, res, 'MANAGE_SMS');
   if (!auth) return;
-  res.json([...smsProviders].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)).map(publicSmsProvider));
+  res.json({
+    providers: [...smsProviders].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)).map(publicSmsProvider),
+    routing: smsRoutingMetadata()
+  });
 });
 
 app.post('/api/admin/sms-providers', asyncRoute(async (req, res) => {
@@ -5338,6 +5354,9 @@ app.patch('/api/admin/sms-providers/:id', asyncRoute(async (req, res) => {
   if (!provider || provider.deleted_at) return res.status(404).json({ error: 'SMS provider not found' });
   const reason = cleanString(req.body?.reason, 500);
   if (!reason) return validationError(res, 'A reason is required');
+  if (req.body?.enabled === true && smsProviders.some(item => item.id !== provider.id && item.enabled && !item.deleted_at)) {
+    return res.status(409).json({ error: 'Disable the current Messavo SIM 2 route before enabling another sender' });
+  }
   const before = publicSmsProvider(provider);
   if (req.body?.name !== undefined) {
     const name = cleanString(req.body.name, 100); if (!name) return validationError(res, 'Valid provider name is required'); provider.name = name;
@@ -5357,9 +5376,6 @@ app.patch('/api/admin/sms-providers/:id', asyncRoute(async (req, res) => {
   }
   if (req.body?.enabled !== undefined) {
     if (typeof req.body.enabled !== 'boolean') return validationError(res, 'Enabled must be true or false');
-    if (req.body.enabled && smsProviders.some(item => item.id !== provider.id && item.enabled && !item.deleted_at)) {
-      return res.status(409).json({ error: 'Disable the current Messavo SIM 2 route before enabling another sender' });
-    }
     provider.enabled = req.body.enabled;
   }
   provider.updated_at = new Date().toISOString(); provider.updated_by = auth.user.id;

@@ -7,8 +7,6 @@ import {
   BadgeCheck,
   BookOpenText,
   Building2,
-  ChevronDown,
-  ChevronUp,
   CheckCircle2,
   ClipboardList,
   Clock3,
@@ -35,7 +33,7 @@ import {
   X,
   XCircle
 } from 'lucide-react';
-import { api, type AdminCommunityPost, type CommunityPostStatus } from '../lib/api';
+import { api, type AdminCommunityPost, type CommunityPostStatus, type SmsRouting } from '../lib/api';
 import ModalPortal from '../components/ModalPortal';
 import { useSearchParams } from 'react-router';
 import AdminInvitationsPanel from '../components/AdminInvitationsPanel';
@@ -175,6 +173,7 @@ export default function AdminPage({ user, onOtpBypassChange, onSignedOut }: { us
   const [claims, setClaims] = useState<AdminRecord[]>([]);
   const [auditEvents, setAuditEvents] = useState<AdminRecord[]>([]);
   const [smsProviders, setSmsProviders] = useState<SmsProvider[]>([]);
+  const [smsRouting, setSmsRouting] = useState<SmsRouting>({ strategy: 'SINGLE_MESSAVO', source: 'UNCONFIGURED' });
   const [contactReports, setContactReports] = useState<ContactReportData>({ items: [], aggregations: {}, states: {} });
   const [userSearch, setUserSearch] = useState('');
   const [requestStatus, setRequestStatus] = useState('');
@@ -256,7 +255,9 @@ export default function AdminPage({ user, onOtpBypassChange, onSignedOut }: { us
       } else if (tab === 'audit') {
         setAuditEvents(await api.getAuditLog({ limit: 250, ...(auditUserFilter ? { user_id: auditUserFilter } : {}) }));
       } else if (tab === 'messavo') {
-        setSmsProviders(await api.getAdminSmsProviders());
+        const result = await api.getAdminSmsProviders();
+        setSmsProviders(result.providers || []);
+        setSmsRouting(result.routing || { strategy: 'SINGLE_MESSAVO', source: 'UNCONFIGURED' });
       }
     } catch (caught: any) {
       setError(caught.message || 'Could not load this administration area.');
@@ -340,21 +341,6 @@ export default function AdminPage({ user, onOtpBypassChange, onSignedOut }: { us
     } finally {
       setLoading(false);
     }
-  };
-
-  const moveProvider = (index: number, direction: -1 | 1) => {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= smsProviders.length) return;
-    const reordered = [...smsProviders];
-    [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
-    const moving = smsProviders[index];
-    moderationAction(
-      `Move ${moving.name} to priority ${nextIndex + 1}?`,
-      'Save priority order',
-      'default',
-      reason => api.rankAdminSmsProviders(reordered.filter(provider => !provider.deleted_at).map(provider => provider.id), reason),
-      'SMS fallback priority updated.'
-    );
   };
 
   const saveEditor = async (values: Record<string, unknown>) => {
@@ -1011,46 +997,48 @@ export default function AdminPage({ user, onOtpBypassChange, onSignedOut }: { us
               {activeTab === 'messavo' && (
                 <section>
                   <PanelHeader
-                    eyebrow="Delivery resilience"
-                    title="Messavo SMS priority"
-                    description="Keep multiple SMS connections in ranked order. Delivery starts with priority one and falls back only when that provider cannot send."
+                    eyebrow="One reviewed sender"
+                    title="Messavo SMS connection"
+                    description="Drop sends verification, recovery, invitation, and follow-up messages through one Messavo connection. Select SIM 2 inside Messavo; Drop does not switch connections or SIMs automatically."
                   />
+                  <div className={`admin-guidance mb-5 ${smsRouting.source === 'AMBIGUOUS' || smsRouting.source === 'UNCONFIGURED' ? 'border-amber-200 bg-amber-50' : ''}`} role="status">
+                    {smsRouting.source === 'MANAGED' ? <CheckCircle2 className="h-6 w-6 text-green-700" /> : smsRouting.source === 'ENVIRONMENT' ? <Server className="h-6 w-6 text-sky-700" /> : <AlertTriangle className="h-6 w-6 text-amber-700" />}
+                    <div><strong>{smsRouting.source === 'MANAGED' ? 'Managed sender active' : smsRouting.source === 'ENVIRONMENT' ? 'Environment sender active' : smsRouting.source === 'AMBIGUOUS' ? 'Delivery blocked: multiple managed senders' : 'No SMS sender configured'}</strong><p>{smsRouting.source === 'MANAGED' ? 'The enabled connection below is the only route Drop will use.' : smsRouting.source === 'ENVIRONMENT' ? 'This deployment uses its protected environment connection. Its URL and token are not shown here.' : smsRouting.source === 'AMBIGUOUS' ? 'Disable connections until exactly one managed sender remains. Drop fails closed while this is unresolved.' : 'Add and enable one Messavo connection before sending SMS.'}</p></div>
+                  </div>
                   <div className="admin-section-actions">
                     <div className="admin-guidance">
                       <Smartphone className="h-6 w-6" />
-                      <div><strong>Tokens stay private</strong><p>Saved API tokens are never returned to this screen. Enter a new token only when creating or rotating a connection.</p></div>
+                      <div><strong>Messavo owns the SIM choice</strong><p>Keep SIM 2 selected in Messavo. Saved API tokens stay private and are never returned to this screen.</p></div>
                     </div>
-                    <button className="button button-primary" onClick={() => setEditor({ kind: 'provider' })}><Plus className="h-4 w-4" /> Add provider</button>
+                    <button className="button button-primary" onClick={() => setEditor({ kind: 'provider' })}><Plus className="h-4 w-4" /> Add saved connection</button>
                   </div>
                   {loading ? <LoadingRows /> : smsProviders.length === 0 ? (
-                    <EmptyState icon={Smartphone} title="No SMS providers configured" description="Add the primary Messavo connection, then add fallbacks as needed." />
+                    smsRouting.source === 'ENVIRONMENT'
+                      ? <EmptyState icon={Smartphone} title="Environment connection is active" description="No managed connection is saved in the admin panel. Drop is using the deployment's protected Messavo configuration." />
+                      : <EmptyState icon={Smartphone} title="No managed connection saved" description="Add one Messavo connection and enable it when you are ready to make it the only sender." />
                   ) : (
                     <div className="provider-list">
-                      {smsProviders.map((provider, index) => (
+                      {smsProviders.map(provider => (
                         <article key={provider.id} className={`provider-row ${provider.deleted_at || !provider.enabled ? 'is-muted' : ''}`}>
-                          <div className="provider-priority" aria-label={`Priority ${index + 1}`}>{index + 1}</div>
                           <div className="provider-copy">
                             <div className="record-title-row">
                               <h3>{provider.name}</h3>
                               <StatusBadge value={provider.deleted_at ? 'DELETED' : provider.enabled ? 'ENABLED' : 'DISABLED'} />
+                              <span className="admin-badge">{provider.enabled && !provider.deleted_at ? 'Connected sender' : 'Saved connection'}</span>
                               {provider.has_api_token && <span className="verified-label"><LockKeyhole className="h-3.5 w-3.5" /> Token saved</span>}
                             </div>
                             <p>{provider.base_url} · Updated {formatDateTime(provider.updated_at)}</p>
                           </div>
-                          <div className="provider-order-actions" aria-label={`Change priority for ${provider.name}`}>
-                            <button className="icon-button" disabled={index === 0 || Boolean(provider.deleted_at)} onClick={() => void moveProvider(index, -1)} aria-label="Move up"><ChevronUp className="h-4 w-4" /></button>
-                            <button className="icon-button" disabled={index === smsProviders.length - 1 || Boolean(provider.deleted_at)} onClick={() => void moveProvider(index, 1)} aria-label="Move down"><ChevronDown className="h-4 w-4" /></button>
-                          </div>
                           <div className="record-actions">
                             {!provider.deleted_at && <button className="button button-secondary" onClick={() => setEditor({ kind: 'provider', record: provider })}>Edit</button>}
-                            {!provider.deleted_at && <button className="button button-secondary" onClick={() => moderationAction(
+                            {!provider.deleted_at && <button className="button button-secondary" disabled={!provider.enabled && smsProviders.some(item => item.id !== provider.id && item.enabled && !item.deleted_at)} onClick={() => moderationAction(
                               provider.enabled ? `Disable ${provider.name}?` : `Enable ${provider.name}?`,
-                              provider.enabled ? 'Disable provider' : 'Enable provider',
+                              provider.enabled ? 'Disable connection' : 'Enable connection',
                               'default',
                               reason => api.updateAdminSmsProvider(provider.id, { enabled: !provider.enabled, reason }),
-                              `Provider ${provider.enabled ? 'disabled' : 'enabled'}.`
+                              `Messavo connection ${provider.enabled ? 'disabled' : 'enabled'}.`
                             )}>{provider.enabled ? 'Disable' : 'Enable'}</button>}
-                            <button className={`button ${provider.deleted_at ? 'button-secondary' : 'button-danger'}`} onClick={() => moderationAction(
+                            <button className={`button ${provider.deleted_at ? 'button-secondary' : 'button-danger'}`} disabled={Boolean(provider.deleted_at && smsProviders.some(item => item.id !== provider.id && item.enabled && !item.deleted_at))} onClick={() => moderationAction(
                               provider.deleted_at ? `Restore ${provider.name}?` : `Delete ${provider.name}?`,
                               provider.deleted_at ? 'Restore provider' : 'Delete provider',
                               provider.deleted_at ? 'default' : 'danger',
@@ -1151,6 +1139,7 @@ export default function AdminPage({ user, onOtpBypassChange, onSignedOut }: { us
         <AdminEditorDialog
           state={editor}
           busy={busy === 'editor'}
+          smsEnableAvailable={!smsProviders.some(provider => provider.enabled && !provider.deleted_at && provider.id !== editor.record?.id)}
           onClose={() => setEditor(null)}
           onSave={saveEditor}
         />
@@ -1422,9 +1411,10 @@ function LoadingRows() {
   );
 }
 
-function AdminEditorDialog({ state, busy, onClose, onSave }: {
+function AdminEditorDialog({ state, busy, smsEnableAvailable, onClose, onSave }: {
   state: EditorState;
   busy: boolean;
+  smsEnableAvailable: boolean;
   onClose: () => void;
   onSave: (values: Record<string, unknown>) => Promise<void>;
 }) {
@@ -1455,7 +1445,7 @@ function AdminEditorDialog({ state, busy, onClose, onSave }: {
   const [body, setBody] = useState(String(source.body_markdown || source.text || ''));
   const [baseUrl, setBaseUrl] = useState(String(source.base_url || ''));
   const [apiToken, setApiToken] = useState('');
-  const [enabled, setEnabled] = useState(source.enabled === undefined ? true : Boolean(source.enabled));
+  const [enabled, setEnabled] = useState(source.enabled === undefined ? smsEnableAvailable : Boolean(source.enabled));
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
@@ -1555,7 +1545,8 @@ function AdminEditorDialog({ state, busy, onClose, onSave }: {
               <label><span>Provider name</span><input value={name} onChange={event => setName(event.target.value)} required maxLength={100} placeholder="Primary Messavo" /></label>
               <label className="admin-field-wide"><span>API base URL</span><input value={baseUrl} onChange={event => setBaseUrl(event.target.value)} type="url" required placeholder="https://…" /></label>
               <label className="admin-field-wide"><span>{state.record?.has_api_token ? 'New API token (leave blank to keep current)' : 'API token'}</span><input value={apiToken} onChange={event => setApiToken(event.target.value)} type="password" required={!state.record?.has_api_token} autoComplete="new-password" /></label>
-              <label className="admin-check"><input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} /><span>Enabled for delivery</span></label>
+              <label className="admin-check"><input type="checkbox" checked={enabled} disabled={!smsEnableAvailable && !source.enabled} onChange={event => setEnabled(event.target.checked)} /><span>Use as Drop’s single SMS sender</span></label>
+              {!smsEnableAvailable && !source.enabled && <p className="admin-field-wide text-sm text-amber-800">Another managed Messavo connection is active. Save this one disabled, or disable the active connection first.</p>}
             </>}
 
             <label className="admin-field-wide"><span>Reason for this change *</span><textarea value={reason} onChange={event => setReason(event.target.value)} rows={3} maxLength={500} required placeholder="Explain what changed and why" /></label>

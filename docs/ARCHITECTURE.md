@@ -21,6 +21,9 @@ dispatch is capped at 20, with adjustable ramped dispatch for larger batches.
 Provider delivery and profile responses are tracked separately; a sent message
 is never treated as delivered without a receipt. Resends retain attempt history.
 All SMS purposes use one Messavo route, whose connected device is fixed to SIM 2.
+The admin connection list returns safe routing-source metadata, including the
+environment connection when no managed connection is enabled. Creating or enabling
+a second managed connection is rejected before any configuration is changed.
 
 Confirmed registration SMS outages return a pending result instead of an error.
 Existing device-bound temporary blood-help access permits requests and protected

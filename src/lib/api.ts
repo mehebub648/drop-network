@@ -131,6 +131,11 @@ export type AdminSession = {
   session: { id: string; expires_at: string };
 };
 
+export type SmsRouting = {
+  strategy: 'SINGLE_MESSAVO';
+  source: 'MANAGED' | 'ENVIRONMENT' | 'UNCONFIGURED' | 'AMBIGUOUS';
+};
+
 type ClaimProfileDetails = {
   name: string;
   blood_group: string;
@@ -732,7 +737,7 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to undo this change');
   },
 
-  async getAdminSmsProviders() {
+  async getAdminSmsProviders(): Promise<{ providers: any[]; routing: SmsRouting }> {
     const res = await fetch(`${API_BASE}/admin/sms-providers`, { headers: getHeaders(), cache: 'no-store' });
     return readJsonOrThrow(res, 'Failed to load SMS providers');
   },
