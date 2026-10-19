@@ -1,6 +1,6 @@
 import GuidedForm from '../components/GuidedForm';
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ArrowLeft, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react';
 import BloodHelpNotice from '../components/BloodHelpNotice';
 import AuthShell from '../components/AuthShell';
@@ -9,6 +9,8 @@ import { api, type OtpDelivery } from '../lib/api';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const claimReturnTo = /^\/c\/[^/?#]+$/.test(searchParams.get('returnTo') || '') ? searchParams.get('returnTo')! : '';
   const [step, setStep] = useState(1);
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -40,7 +42,9 @@ export default function ForgotPasswordPage() {
       } else {
         if (password !== confirmPassword) throw new Error('Enter the same new password twice.');
         await api.resetPassword(phone, password, token);
-        navigate('/login?reset=1', { replace: true });
+        const next = new URLSearchParams({ reset: '1' });
+        if (claimReturnTo) next.set('returnTo', claimReturnTo);
+        navigate(`/login?${next.toString()}`, { replace: true });
       }
     } catch (error: any) {
       setMessage(error.message || 'Password recovery could not be completed.');
@@ -112,7 +116,7 @@ export default function ForgotPasswordPage() {
         </button>
       </GuidedForm>
       {step === 2 && <button type="button" disabled={busy} className="auth-text-link mt-4" onClick={() => { setStep(1); setDelivery(null); setCode(''); setToken(''); setMessage(''); }}>Use a different phone number</button>}
-      <Link to="/login" className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-primary"><ArrowLeft className="h-4 w-4" />Back to sign in</Link>
+      <Link to={claimReturnTo ? `${claimReturnTo}` : '/login'} className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-primary"><ArrowLeft className="h-4 w-4" />{claimReturnTo ? 'Back to invitation' : 'Back to sign in'}</Link>
     </AuthShell>
   );
 }

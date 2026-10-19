@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { matchingRequestReasonOptions, recommendedBloodComponentForReason } from './requestReasons';
+import { matchingRequestReasonOptions, recommendedBloodComponentForReason, requestReasonLabel } from './requestReasons';
 
 test('indications keep the Bangladesh frequency order and Other last', () => {
   const options = matchingRequestReasonOptions('');
@@ -12,6 +12,9 @@ test('indications keep the Bangladesh frequency order and Other last', () => {
 test('plain-language and clinical synonyms find the intended indication', () => {
   assert.equal(matchingRequestReasonOptions('low hb')[0].value, 'ANAEMIA');
   assert.equal(matchingRequestReasonOptions('c-section')[0].value, 'CHILDBIRTH');
+  assert.equal(matchingRequestReasonOptions('dengue')[0].value, 'DENGUE');
+  assert.equal(matchingRequestReasonOptions('platelets')[0].value, 'DENGUE');
+  assert.equal(requestReasonLabel('DENGUE'), 'Dengue');
   assert.equal(matchingRequestReasonOptions('hemodialysis')[0].value, 'KIDNEY_DIALYSIS');
 });
 
@@ -23,6 +26,7 @@ test('component suggestions are conservative and fall back when the reason is br
   assert.equal(recommendedBloodComponentForReason('ANAEMIA'), 'RED_CELLS');
   assert.equal(recommendedBloodComponentForReason('THALASSEMIA'), 'RED_CELLS');
   assert.equal(recommendedBloodComponentForReason('LIVER_CLOTTING'), 'PLASMA');
+  assert.equal(recommendedBloodComponentForReason('DENGUE'), 'NOT_SURE');
   assert.equal(recommendedBloodComponentForReason('SURGERY'), 'NOT_SURE');
   assert.equal(recommendedBloodComponentForReason('OTHER'), 'NOT_SURE');
 });

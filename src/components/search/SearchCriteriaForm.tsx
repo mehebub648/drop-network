@@ -17,6 +17,7 @@ import {
   type RegisteredCollectionFacility
 } from '../../lib/collectionFacilities';
 import type { RequesterRole } from '../../lib/searchDraft';
+import { api } from '../../lib/api';
 import ModalPortal from '../ModalPortal';
 import RequesterRolePicker from './RequesterRolePicker';
 
@@ -47,7 +48,25 @@ function normalized(value: string) {
   return value.trim().toLocaleLowerCase('en');
 }
 
-function DistrictPicker({ value, onChange }: { value: string; onChange: (district: string) => void }) {
+function donorCountLabel(count: number) {
+  return `${count.toLocaleString('en-BD')} donor${count === 1 ? '' : 's'}`;
+}
+
+function availableCount(counts: Record<string, number> | undefined, key: string) {
+  if (!counts || !Object.prototype.hasOwnProperty.call(counts, key)) return undefined;
+  const count = counts[key];
+  return Number.isFinite(count) && count >= 0 ? count : undefined;
+}
+
+function DistrictPicker({
+  value,
+  donorCounts,
+  onChange
+}: {
+  value: string;
+  donorCounts?: Record<string, number>;
+  onChange: (district: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -59,6 +78,7 @@ function DistrictPicker({ value, onChange }: { value: string; onChange: (distric
     const needle = normalized(query);
     return needle ? BD_LOCATION_NAMES.filter(name => normalized(name).includes(needle)) : BD_LOCATION_NAMES;
   }, [query]);
+  const selectedCount = availableCount(donorCounts, value);
 
   useEffect(() => {
     if (!open) return;
@@ -87,7 +107,10 @@ function DistrictPicker({ value, onChange }: { value: string; onChange: (distric
         className="input relative flex items-center gap-3 pl-11 pr-10 text-left"
       >
         <MapPin className="pointer-events-none absolute left-4 h-4 w-4 text-primary" aria-hidden="true" />
-        <span className={value ? 'text-slate-900' : 'text-slate-500'}>{value || 'Choose a district'}</span>
+        <span className={`min-w-0 flex-1 ${value ? 'text-slate-900' : 'text-slate-500'}`}>
+          <span className="block truncate">{value || 'Choose a district'}</span>
+          {selectedCount !== undefined && <small className="mt-0.5 block text-xs font-bold text-primary">{donorCountLabel(selectedCount)}</small>}
+        </span>
         <ChevronDown className="pointer-events-none absolute right-4 h-4 w-4 text-slate-500" aria-hidden="true" />
       </button>
 
@@ -103,7 +126,7 @@ function DistrictPicker({ value, onChange }: { value: string; onChange: (distric
               role="dialog"
               aria-modal="true"
               aria-labelledby={titleId}
-              className="flex max-h-[85dvh] w-full flex-col rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-6"
+              className="search-district-dialog flex max-h-[85dvh] w-full flex-col rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-6"
             >
               <div>
                 <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-primary">Location</p>
@@ -155,8 +178,15 @@ function DistrictPicker({ value, onChange }: { value: string; onChange: (distric
                     }}
                     className={`flex min-h-12 w-full items-center justify-between rounded-xl px-3 text-left text-sm font-bold ${district === value ? 'bg-rose-50 text-primary' : 'text-slate-800 hover:bg-slate-50'}`}
                   >
-                    {district}
-                    {district === value && <Check className="h-4 w-4" aria-hidden="true" />}
+                    <span>{district}</span>
+                    <span className="flex items-center gap-2">
+                      {availableCount(donorCounts, district) !== undefined && (
+                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-extrabold text-slate-700 shadow-sm">
+                          {donorCountLabel(availableCount(donorCounts, district)!)}
+                        </span>
+                      )}
+                      {district === value && <Check className="h-4 w-4" aria-hidden="true" />}
+                    </span>
                   </button>
                 ))}
                 {filteredDistricts.length === 0 && (
@@ -207,12 +237,40 @@ export default function SearchCriteriaForm({
   const [districtFacilities, setDistrictFacilities] = useState<RegisteredCollectionFacility[]>([]);
   const [facilityLoading, setFacilityLoading] = useState(false);
   const [facilityLoadFailed, setFacilityLoadFailed] = useState(false);
+  const [districtDonorCounts, setDistrictDonorCounts] = useState<Record<string, number> | undefined>();
+  const [upazilaDonorCounts, setUpazilaDonorCounts] = useState<Record<string, number> | undefined>();
   const facilityListId = useId();
   const facilityInputRef = useRef<HTMLInputElement>(null);
   const question = activeStep === 1 && value.blood_group
     ? `Where is ${value.blood_group} blood needed?`
     : QUESTIONS[activeStep];
   const upazilas = useMemo(() => getUpazilasForDistrict(value.district), [value.district]);
+
+  useEffect(() => {
+    setDistrictDonorCounts(undefined);
+    if (!value.blood_group) return;
+    const controller = new AbortController();
+    api.getDonorDistrictMeta(value.blood_group, controller.signal)
+      .then(meta => setDistrictDonorCounts(meta.donor_counts))
+      .catch(error => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) setDistrictDonorCounts(undefined);
+      });
+    return () => controller.abort();
+  }, [value.blood_group]);
+
+  useEffect(() => {
+    setUpazilaDonorCounts(undefined);
+    if (!value.blood_group || !value.district) return;
+    const controller = new AbortController();
+    api.getDonorUpazilaMeta(value.district, value.blood_group, controller.signal)
+      .then(meta => setUpazilaDonorCounts(Object.fromEntries(
+        meta.items.flatMap<[string, number]>(item => item.donor_count === null ? [] : [[item.value, item.donor_count]])
+      )))
+      .catch(error => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) setUpazilaDonorCounts(undefined);
+      });
+    return () => controller.abort();
+  }, [value.blood_group, value.district]);
 
   useEffect(() => {
     if (!value.district) {
@@ -377,6 +435,7 @@ export default function SearchCriteriaForm({
               <span className="mb-2 block text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">District</span>
               <DistrictPicker
                 value={value.district}
+                donorCounts={districtDonorCounts}
                 onChange={district => onChange({
                     ...value,
                     district,
@@ -397,7 +456,10 @@ export default function SearchCriteriaForm({
                   className="input disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option value="">{value.district ? 'Choose an upazila or thana' : 'Choose a district first'}</option>
-                  {upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  {upazilas.map(item => {
+                    const count = availableCount(upazilaDonorCounts, item.value);
+                    return <option key={item.value} value={item.value}>{item.label}{count === undefined ? '' : ` · ${donorCountLabel(count)}`}</option>;
+                  })}
                 </Select>
             </label>
           </div>

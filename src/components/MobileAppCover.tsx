@@ -13,13 +13,31 @@ export function isMobileBrowser() {
 // Privacy, support and listing removal must remain reachable from any device.
 const publicHelpRoutes = new Set(['/privacy', '/terms', '/safety', '/contact', '/delete-account', '/directory/remove']);
 
+function hasClaimReturnPath(search: string) {
+  const returnTo = new URLSearchParams(search).get('returnTo') || '';
+  return /^\/c\/[^/?#]+$/.test(returnTo);
+}
+
+function isBrowserAccessiblePath(pathname: string, search: string) {
+  if (publicHelpRoutes.has(pathname)) return true;
+  // Claim links may arrive by SMS or messaging apps. The whole ownership and
+  // account-creation journey must work in that mobile browser.
+  if (pathname.startsWith('/c/')) return true;
+  // Account recovery is part of a claim journey only when its safe return
+  // target is the private invitation page.
+  if ((pathname === '/login' || pathname === '/forgot-password') && hasClaimReturnPath(search)) return true;
+  // Old public profile URLs remain reachable so they can explain how to use
+  // the private invitation instead of deriving one from a public identifier.
+  return /^\/directory\/(?:imported\/)?[^/]+$/.test(pathname);
+}
+
 export default function MobileAppCover({ children, mobile, downloadUrl }: {
   children: ReactNode;
   mobile: boolean;
   downloadUrl: string | null;
 }) {
-  const { pathname } = useLocation();
-  if (!mobile || publicHelpRoutes.has(pathname)) return children;
+  const { pathname, search } = useLocation();
+  if (!mobile || isBrowserAccessiblePath(pathname, search)) return children;
 
   return (
     <main id="main-content" className="mobile-app-cover">

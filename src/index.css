@@ -3,15 +3,23 @@
 @import "./styles/website.css" layer(components);
 
 @theme {
-  --color-primary: #b92c49;
-  --color-primary-dark: #932039;
-  --color-bg: #faf7f0;
+  --color-primary: #c92b4b;
+  --color-primary-dark: #a31e3b;
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-text: #30272e;
-  --color-text-muted: #625a63;
-  --color-metadata: #525f70;
-  --color-field-boundary: #98a2b3;
-  --color-border: #ded7d2;
+  --color-text: #302b38;
+  --color-text-muted: #645e70;
+  --color-metadata: #645e70;
+  --color-field-boundary: #938b9b;
+  --color-border: #e2dfe8;
+  --color-surface-muted: #f7f7fa;
+  --color-blush: #ffe6ed;
+  --color-mint: #e4f5ef;
+  --color-mint-ink: #246451;
+  --color-sky: #e9f3ff;
+  --color-sky-ink: #365e86;
+  --color-lilac: #eee8fb;
+  --color-lilac-ink: #62518f;
   --color-teal-300: #fda4af;
   --font-sans: "Nunito", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-weight-extrabold: 700;
@@ -22,19 +30,19 @@
   :root {
     color-scheme: light;
     --cartoon-ink: var(--color-text);
-    --cartoon-paper: #fffdf8;
+    --cartoon-paper: #fff;
     --cartoon-paper-strong: #fff;
-    --cartoon-red-soft: #fff1f3;
+    --cartoon-red-soft: var(--color-blush);
     --cartoon-red: var(--color-primary);
     --cartoon-red-dark: var(--color-primary-dark);
-    --cartoon-shadow: 3px 3px 0 #30272e;
+    --cartoon-shadow: 3px 3px 0 var(--color-text);
     --launch-canvas: var(--color-bg);
     --launch-paper: #fff;
     --launch-ink: var(--color-text);
     --launch-muted: var(--color-text-muted);
     --launch-line: var(--color-border);
     --launch-rose: var(--color-primary);
-    --launch-rose-soft: #fff1f3;
+    --launch-rose-soft: var(--color-blush);
   }
   html { background: var(--color-bg); scroll-padding-top: 6rem; }
   body { margin: 0; min-width: 0; min-height: 100vh; color: var(--color-text); background: var(--color-bg); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
@@ -42,7 +50,7 @@
   button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   button:not(:disabled), summary { cursor: pointer; }
   input[type="checkbox"], input[type="radio"] { accent-color: var(--color-primary); }
-  ::selection { background: #fce1e7; color: #86152b; }
+  ::selection { background: var(--color-blush); color: var(--color-primary-dark); }
 }
 @font-face {
   font-family: Nunito;

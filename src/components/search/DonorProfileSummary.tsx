@@ -40,14 +40,12 @@ export default function DonorProfileSummary({
   donor,
   onClose,
   onRequest,
-  busy,
-  showClaimOption
+  busy
 }: {
   donor: SearchDonorCard;
   onClose: () => void;
   onRequest: () => void;
   busy?: boolean;
-  showClaimOption: boolean;
 }) {
   const donationSummary = donor.donor_kind === 'REGISTERED' ? donor.donation_summary : undefined;
   const issues = Object.entries(donor.contact_issues || {}).filter(([, count]) => Boolean(count));
@@ -146,14 +144,6 @@ export default function DonorProfileSummary({
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-600">The full number stays protected until an eligible blood request is published, and every reveal is recorded.</p>
           </div>
-
-          {showClaimOption && donor.donor_kind === 'IMPORTED' && donor.claim_path && (
-            <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-3">
-              <p className="text-sm font-bold text-violet-950">Is this your listing?</p>
-              <p className="mt-1 text-xs leading-5 text-violet-900/80">Verify the listed phone, confirm your details, and manage availability yourself.</p>
-              <Link to={donor.claim_path} onClick={onClose} className="mt-2 inline-flex min-h-9 items-center rounded-lg bg-violet-700 px-3 text-xs font-extrabold text-white hover:bg-violet-800">Claim with short link</Link>
-            </div>
-          )}
 
           <div className="dialog-actions">
             <button type="button" onClick={onClose} className="button button-secondary">Close</button>

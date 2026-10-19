@@ -176,6 +176,30 @@ test('unclaimed listings are reachable by any stored spelling of their upazila',
   await database.deleteImportedDonorsByPublicIds([donor.public_id]);
 });
 
+test('location counts include only searchable unclaimed listings in the exact group', async () => {
+  const create = (ref: string, phone: string, bloodGroup = 'B+', upazila = 'Savar') => toImportedDonor({
+    source_id: 'bd-scouts', source_organization: 'Bangladesh Scouts', source_url: 'https://example.test',
+    scraped_at: '2026-10-19T00:00:00.000Z', source_ref: ref, name: `Count ${ref}`,
+    phone, blood_group: bloodGroup, district: 'Dhaka', upazila
+  }, '2026-10-19T00:00:00.000Z');
+  const visible = create('count-visible', '+8801712000001');
+  const second = create('count-second', '+8801712000002', 'B+', 'Dhamrai');
+  const wrongGroup = create('count-wrong-group', '+8801712000003', 'O+');
+  const claimed = create('count-claimed', '+8801712000004'); claimed.claim_status = 'CLAIMED';
+  const removed = create('count-removed', '+8801712000005'); removed.listing_state = 'REMOVED';
+  const privateListing = create('count-private', '+8801712000006'); privateListing.publication_state = 'PRIVATE_PENDING';
+  const suspended = create('count-suspended', '+8801712000007'); suspended.contact_state = 'SUSPENDED';
+  const donors = [visible, second, wrongGroup, claimed, removed, privateListing, suspended];
+  await database.addImportedDonors(donors.map(toImportedDonorRow));
+
+  const counts = await database.importedDonorLocationCounts('B+');
+  assert.equal(counts.districts.Dhaka, 2);
+  assert.equal(counts.upazilas.Dhaka.Savar, 1);
+  assert.equal(counts.upazilas.Dhaka.Dhamrai, 1);
+
+  await database.deleteImportedDonorsByPublicIds(donors.map(donor => donor.public_id));
+});
+
 test('a withdrawn listing disappears from every way of reaching it', async () => {
   const donor = toImportedDonor({
     source_id: 'bd-scouts',

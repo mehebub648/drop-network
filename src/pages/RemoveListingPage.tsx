@@ -1,6 +1,6 @@
 import GuidedForm from '../components/GuidedForm';
-import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { CheckCircle2, KeyRound, Phone, ShieldOff } from 'lucide-react';
 import OtpDeliveryStatus from '../components/OtpDeliveryStatus';
 import { api, type OtpDelivery } from '../lib/api';
@@ -19,6 +19,8 @@ import { PageHeader, StatusBadge, Surface } from '../components/ui';
  * so it cannot be used to test which numbers are in the directory.
  */
 export default function RemoveListingPage() {
+  const [searchParams] = useSearchParams();
+  const claimSlug = searchParams.get('claim') || '';
   const [step, setStep] = useState<'phone' | 'code' | 'done'>('phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -26,6 +28,17 @@ export default function RemoveListingPage() {
   const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!claimSlug) return;
+    let active = true;
+    void api.getClaimProfile(claimSlug)
+      .then(profile => {
+        if (active && typeof profile.phone === 'string') setPhone(profile.phone);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [claimSlug]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);

@@ -1,4 +1,5 @@
 import type { LastDonationInput, PublicDonationSummary } from './donation';
+import type { Upazila } from './upazilas';
 
 const API_BASE = '/api';
 
@@ -49,6 +50,17 @@ export const experienceApi = {
   guestRequests: async () => readJsonOrThrow(await fetch(`${API_BASE}/guest/requests`, { cache: 'no-store' }), 'Cannot load device requests')
 };
 
+export type DonorDistrictMeta = {
+  items: string[];
+  locations: Array<{ name: string; lat: number; lng: number }>;
+  donor_counts?: Record<string, number>;
+};
+
+export type DonorUpazilaMeta = {
+  district: string;
+  items: Array<Omit<Upazila, 'donor_count'> & { donor_count: number | null }>;
+};
+
 // Create or retrieve browser fingerprint. The server rejects fingerprints
 // shorter than 16 characters, so regenerate any legacy short value.
 function generateFingerprint() {
@@ -94,6 +106,29 @@ export type OtpDelivery = {
   blood_help_eligible?: boolean;
 };
 
+type ClaimProfileDetails = {
+  name: string;
+  blood_group: string;
+  district: string;
+  upazila: string;
+  availability_status: 'AVAILABLE' | 'NOT_AVAILABLE';
+  availability_reason?: string;
+  availability_consent: true;
+};
+
+export type CompleteClaimProfileInput = ClaimProfileDetails & (
+  | { intent: 'CLAIM'; phone: string; verification_token: string; password?: string }
+  | { intent: 'SEPARATE_PROFILE'; phone: string; verification_token: string; password: string }
+  | {
+      intent: 'CHANGE_PHONE';
+      listed_phone: string;
+      listed_phone_verification_token: string;
+      phone: string;
+      verification_token: string;
+      password?: string;
+    }
+);
+
 export type SearchDonorCard = {
   is_district_fallback?: boolean;
   donor_ref: string;
@@ -111,7 +146,6 @@ export type SearchDonorCard = {
   donation_summary?: PublicDonationSummary;
   source?: { organization: string; url: string };
   contact_issues?: Partial<Record<'WRONG_NUMBER' | 'UNREACHABLE' | 'DECLINED' | 'RECENTLY_DONATED' | 'TOO_FAR' | 'HEALTH', number>>;
-  claim_path?: string;
   preference_match_reasons?: string[];
   donation_total?: number;
 };
@@ -219,6 +253,21 @@ export type DonationShareDraftInput = {
 };
 
 export const api = {
+  async getDonorDistrictMeta(bloodGroup: string, signal?: AbortSignal): Promise<DonorDistrictMeta> {
+    const query = new URLSearchParams();
+    if (bloodGroup) query.set('blood_group', bloodGroup);
+    const suffix = query.size ? `?${query}` : '';
+    const res = await fetch(`${API_BASE}/meta/districts${suffix}`, { headers: getHeaders(), signal });
+    return readJsonOrThrow(res, 'Failed to load donor counts');
+  },
+
+  async getDonorUpazilaMeta(district: string, bloodGroup: string, signal?: AbortSignal): Promise<DonorUpazilaMeta> {
+    const query = new URLSearchParams({ district });
+    if (bloodGroup) query.set('blood_group', bloodGroup);
+    const res = await fetch(`${API_BASE}/meta/upazilas?${query}`, { headers: getHeaders(), signal });
+    return readJsonOrThrow(res, 'Failed to load donor counts');
+  },
+
   async login(phone: string, password?: string) {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
@@ -450,7 +499,7 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to block user');
   },
 
-  async createSupportTicket(data: { name: string; email?: string; phone?: string; category: string; message: string }) {
+  async createSupportTicket(data: { name: string; email?: string; phone: string; category: string; message: string }) {
     const res = await fetch(`${API_BASE}/support/tickets`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) });
     return readJsonOrThrow(res, 'Failed to send support request');
   },
@@ -884,13 +933,6 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to remove your listing');
   },
 
-  // Opaque profile links remain for owners who need to claim an imported
-  // record. There is intentionally no API client for browsing the collection.
-  async getDirectoryProfile(id: string) {
-    const res = await fetch(`${API_BASE}/directory/${encodeURIComponent(id)}`, { headers: getHeaders() });
-    return readJsonOrThrow(res, 'Failed to load that profile');
-  },
-
   async getClaimProfile(slug: string) {
     const res = await fetch(`${API_BASE}/claims/${encodeURIComponent(slug)}`, {
       headers: getHeaders(),
@@ -899,18 +941,16 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to load that claim profile');
   },
 
-  async completeClaimProfile(slug: string, body: {
-    phone: string;
-    verification_token: string;
-    name: string;
-    blood_group: string;
-    district: string;
-    upazila: string;
-    availability_status: 'AVAILABLE' | 'NOT_AVAILABLE';
-    availability_reason?: string;
-    availability_consent: true;
-    password?: string;
-  }) {
+  async previewClaimProfile(slug: string, phone: string, verificationToken: string) {
+    const res = await fetch(`${API_BASE}/claims/${encodeURIComponent(slug)}/preview`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ phone, verification_token: verificationToken })
+    });
+    return readJsonOrThrow(res, 'Failed to load the verified profile details');
+  },
+
+  async completeClaimProfile(slug: string, body: CompleteClaimProfileInput) {
     const res = await fetch(`${API_BASE}/claims/${encodeURIComponent(slug)}/complete`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
     });

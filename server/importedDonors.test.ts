@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  chooseClaimDonor,
+  claimSlugForPhone,
+  phoneFromClaimSlug,
   claimSlugForPublicId,
   dedupeKey,
   evaluateClaim,
@@ -10,6 +13,7 @@ import {
   missingFields,
   toImportedDonor,
   toImportedDonorRow,
+  toClaimPromptImportedDonor,
   toPublicImportedDonor,
   toRevealedImportedDonor,
   withCollisionCheckedClaimSlugs,
@@ -57,12 +61,48 @@ test('imported donors start unclaimed and never expose a raw phone publicly', ()
   assert.deepEqual(publicView.missing_fields, []);
   assert.equal(publicView.id, donor.public_id);
   assert.match(donor.claim_slug, /^[A-Za-z0-9_-]{12}$/);
-  assert.equal(publicView.claim_path, `/c/${donor.claim_slug}`);
+  assert.equal('claim_path' in publicView, false);
   assert.notEqual(publicView.id, donor.id);
   assert.equal(serialized.includes(scraped.phone), false);
   assert.equal(serialized.includes(encodeURIComponent(scraped.phone)), false);
   assert.equal(serialized.includes(encodeURIComponent(`phone:${scraped.phone}`)), false);
   assert.equal(serialized.includes(donor.id), false);
+});
+
+test('phone claim slugs round-trip canonically at valid operator boundaries', () => {
+  for (const phone of ['+8801300000000', '+8801701234567', '+8801999999999']) {
+    const slug = claimSlugForPhone(phone);
+    assert.ok(slug);
+    assert.equal(slug, slug.toLowerCase());
+    assert.equal(phoneFromClaimSlug(slug), phone);
+  }
+});
+
+test('claim slug decoding rejects invalid, uppercase, noncanonical, and operator-invalid values', () => {
+  assert.equal(claimSlugForPhone('+8801201234567'), null);
+  assert.equal(phoneFromClaimSlug('ABC'), null);
+  assert.equal(phoneFromClaimSlug('0001'), null);
+  assert.equal(phoneFromClaimSlug('zzzzzzz'), null);
+  assert.equal(phoneFromClaimSlug('0'), null);
+  assert.equal(phoneFromClaimSlug((12_345_678).toString(36)), null);
+});
+
+test('the initial claim prompt sends no unproved full profile details', () => {
+  const donor = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
+  const prompt = toClaimPromptImportedDonor(donor);
+  const serialized = JSON.stringify(prompt);
+  assert.equal(prompt.phone, donor.phone);
+  assert.equal(serialized.includes(donor.name), false);
+  assert.equal(serialized.includes(donor.upazila), false);
+  assert.equal(serialized.includes(donor.district), false);
+  assert.equal(serialized.includes(donor.blood_group), false);
+});
+
+test('duplicate phone claim lookup prefers an unclaimed row deterministically', () => {
+  const base = toImportedDonor(scraped, '2026-07-29T00:00:00.000Z');
+  const pending = { ...base, public_id: `${base.public_id.slice(0, -1)}1`, claim_status: 'PENDING_REVIEW' as const };
+  const later = { ...base, public_id: `${base.public_id.slice(0, -1)}2`, imported_at: '2026-07-30T00:00:00.000Z' };
+  assert.equal(chooseClaimDonor([pending, later, base])?.public_id, base.public_id);
 });
 
 test('storage rows keep separate internal and public identities', () => {

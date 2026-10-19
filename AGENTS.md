@@ -51,11 +51,13 @@
 ## Production Hosting and MCP Updates
 
 - Production is hosted at
-  `https://site-21000.91.108.104.57.mehebub.com/` on server
+  `https://findadrop.org/` on server
   `91.108.104.57` as CloudPanel site user `site-21000`.
 - The Panelavo system domain is
   `site-21000.91.108.104.57.mehebub.com`. Use this exact domain with the
   `panel-91-108-104-57` MCP connection.
+- Keep the legacy system host serving older Android clients. `www.findadrop.org`
+  redirects to the apex; `APP_URL` is `https://findadrop.org`.
 - The application root is
   `/home/site-21000/htdocs/site-21000.91.108.104.57.mehebub.com`.
 - The rootless Compose app listens through `127.0.0.1:31000`; confirm the current
@@ -73,7 +75,7 @@
 ### Hosted Testing
 
 - The canonical live test target is
-  `https://site-21000.91.108.104.57.mehebub.com/`. Use that origin for release
+  `https://findadrop.org/`. Use that origin for release
   verification; do not substitute a localhost result for hosted evidence.
 - Prefer the `panel-91-108-104-57` Panelavo MCP connection. When it is not
   available and the user has authorized server access, SSH to

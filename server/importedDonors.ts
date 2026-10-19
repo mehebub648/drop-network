@@ -71,7 +71,7 @@ export type ImportedDonor = {
   id: string;
   /** Stable opaque id used by directory URLs and API lookups. */
   public_id: string;
-  /** Stable 12-character owner-facing claim route identifier. */
+  /** Stable opaque legacy claim route identifier. */
   claim_slug: string;
   source: ImportedDonorSource;
   source_ref: string;
@@ -166,6 +166,58 @@ export function claimSlugForPublicId(publicId: string, attempt = 0) {
     .update(`drop:claim-slug:v1\0${publicId}\0${attempt}`, 'utf8')
     .digest('base64url')
     .slice(0, 12);
+}
+
+/**
+ * Canonical owner-facing slug requested for Bangladesh mobile listings.
+ * This is an identifier only; every mutation still requires purpose-bound
+ * phone verification (and password sign-in for an existing account).
+ */
+export function claimSlugForPhone(phone: string) {
+  if (!/^\+8801[3-9]\d{8}$/.test(phone)) return null;
+  const subscriber = phone.slice('+8801'.length);
+  return Number.parseInt(subscriber, 10).toString(36);
+}
+
+export function phoneFromClaimSlug(slug: string) {
+  if (!/^[0-9a-z]{1,6}$/.test(slug)) return null;
+  const value = Number.parseInt(slug, 36);
+  if (!Number.isSafeInteger(value) || value < 0 || value > 999_999_999 || value.toString(36) !== slug) return null;
+  const phone = `+8801${String(value).padStart(9, '0')}`;
+  return /^\+8801[3-9]\d{8}$/.test(phone) ? phone : null;
+}
+
+export function claimPathForImportedDonor(donor: Pick<ImportedDonor, 'phone' | 'claim_slug'>) {
+  return `/c/${claimSlugForPhone(donor.phone) || donor.claim_slug}`;
+}
+
+function maskClaimWords(value: string) {
+  return value.trim().split(/\s+/).filter(Boolean)
+    .map(word => `${word.slice(0, 1)}${'*'.repeat(Math.max(2, Math.min(8, word.length - 1)))}`)
+    .join(' ');
+}
+
+/** Initial invitation prompt: full listed phone, but no unproved profile details. */
+export function toClaimPromptImportedDonor(donor: ImportedDonor) {
+  return {
+    claim_path: claimPathForImportedDonor(donor),
+    phone: donor.phone,
+    name_masked: maskClaimWords(donor.name),
+    address_masked: [donor.upazila, donor.district].filter(Boolean).map(maskClaimWords).join(', '),
+    has_phone: Boolean(donor.phone),
+    claim_status: donor.claim_status,
+    source: { organization: donor.source.organization }
+  };
+}
+
+/** Deterministic record selection when older imports contain duplicate phones. */
+export function chooseClaimDonor(donors: ImportedDonor[]) {
+  const status = (item: ImportedDonor) => item.claim_status === 'UNCLAIMED' ? 0 : item.claim_status === 'PENDING_REVIEW' ? 1 : 2;
+  return [...donors].sort((left, right) =>
+    status(left) - status(right) ||
+    left.imported_at.localeCompare(right.imported_at) ||
+    left.public_id.localeCompare(right.public_id)
+  )[0] || null;
 }
 
 /** Deterministically resolves any 12-character collision in a complete set. */
@@ -268,7 +320,6 @@ export function maskPhone(phone: string) {
 
 export type PublicImportedDonor = {
   id: string;
-  claim_path: string;
   name: string;
   blood_group: string;
   district: string;
@@ -288,7 +339,6 @@ export function missingFields(donor: Pick<ImportedDonor, 'name' | 'phone' | 'blo
 export function toPublicImportedDonor(donor: ImportedDonor): PublicImportedDonor {
   return {
     id: publicIdForImportedDonor(donor),
-    claim_path: `/c/${donor.claim_slug}`,
     name: donor.name,
     blood_group: donor.blood_group,
     district: donor.district,

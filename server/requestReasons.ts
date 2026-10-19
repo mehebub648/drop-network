@@ -31,6 +31,12 @@ export const REQUEST_REASON_OPTIONS = [
     recommendedComponent: 'NOT_SURE'
   },
   {
+    value: 'DENGUE',
+    label: 'Dengue',
+    keywords: 'dengue fever platelet platelets thrombocytopenia',
+    recommendedComponent: 'NOT_SURE'
+  },
+  {
     value: 'KIDNEY_DIALYSIS',
     label: 'Kidney disease or dialysis',
     keywords: 'kidney renal dialysis haemodialysis hemodialysis ckd',

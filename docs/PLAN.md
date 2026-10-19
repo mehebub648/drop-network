@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.164`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.168`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -12,6 +12,27 @@ delivered.
 ## Bucket 1 - Fixable in-repo (no credentials, no external service)
 
 ### Code quality / polish
+
+- [ ] Verify the 0.0.168 website palette in the supported app build and hosted
+  browser after release authorization. Color-only homepage/sign-in snapshots,
+  keyboard focus and palette contrast checks pass; local Docker was not authorized.
+
+- [ ] Finish physical-device password recovery inside request/account continuation
+  for Android 1.0.43. Purpose-bound reset and preserved-answer regressions pass;
+  physical white-form, Dengue and exact-group location-count checks pass. Use
+  isolated accounts and fake SMS before the release is authorized.
+
+- [ ] Diagnose the Android home rendering assertion observed once after a
+  locked-screen launch: `sliver_multi_box_adaptor.dart:277`. Cold restart cleared
+  it; paused/async completion/landscape-to-portrait widget reproductions did not
+  fail. Live device tracing found separate home-refresh/notification-resume
+  `setState` Future-return errors, now fixed in Android 1.0.41 with regressions.
+  Capture the sliver stack if it recurs; do not treat that assertion as fixed
+  before release.
+
+- [ ] Finish physical-device invitation deep-link acceptance for Android 1.0.41.
+  Browser claims, proof/account API checks and native fixture tests passed;
+  automatic approval review blocked launching the test URL through ADB.
 
 - [ ] Finish Android physical-device notification acceptance: FCM foreground/background/cold-start, token refresh, logout/account switching and denied permissions. The private sender is active as of 0.0.160; authentication and validation-only FCM passed without delivery. Emulator installation/cold launch and canonical desktop/mobile/admin acceptance passed; see `design-qa.md`.
 
@@ -123,9 +144,6 @@ These cannot be finished by editing code alone.
   hospitals to confirm completed donations. The generated DGHS district
   suggestions also need a periodic registry refresh and facility-level
   confirmation before any current-service guarantee can be shown.
-- [ ] **Production hosting & TLS** - provision the deploy target and a
-  TLS-terminating reverse proxy for `findadrop.org`. The canonical `APP_URL` is
-  configured, but the production session cookie requires a real HTTPS host.
 - [ ] **21 donor accounts stranded in the previous datastore.** `data/lancedb`
   (the live store, started 2026-07-17) holds 1 user; `data/lancedb-legacy-prod`
   still holds 21 users, all with donor profiles, plus 11 `donors_*` partitions.

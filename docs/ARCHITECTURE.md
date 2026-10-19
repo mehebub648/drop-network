@@ -1,6 +1,73 @@
 # Drop Network Architecture
 
-Current application version: `0.0.164`
+Current application version: `0.0.168` (unreleased source; live code is `0.0.164`)
+
+### Website palette (0.0.168, unreleased)
+
+Shared theme tokens in `src/index.css` define white/neutral surfaces, cherry red
+actions and blush, mint, sky and lilac accents. Website treatments consume those
+tokens without changing layout, routes or behavior. Large cream/yellow decorative
+surfaces are replaced; semantic warning colors remain. Field boundaries meet
+3:1 against their fill; checked text/action color pairs exceed 4.5:1. Local visual
+checks used captured public homepage/sign-in markup with the candidate CSS, not
+a rebuilt React app. Production remains unchanged pending release authorization.
+
+### Public domain connection (0.0.167 source metadata)
+
+On 19 October 2026, `findadrop.org` and `www.findadrop.org` were attached to the
+existing Drop site, datastore and loopback service. DNS is hosted in Cloudflare
+with direct records; Let's Encrypt covers both addresses and the legacy system
+host. The apex is canonical and www redirects preserve paths and queries.
+`APP_URL=https://findadrop.org`; CORS allows the apex and legacy system origin.
+Only the Drop rootless service was recreated to apply configuration. Live code
+remains clean `0.0.164`; the 0.0.165–0.0.167 source changes remain unpublished.
+Android 1.0.44 uses the apex and retains legacy-host App Links. Public APK and
+Play publication remain on hold.
+
+### Selected-group location counts (0.0.166)
+
+Donor-search clients pass `blood_group` to district/upazila metadata endpoints.
+Counts combine eligible registered donors and searchable unclaimed directory
+listings for that exact group, using one projected imported-table read. District
+names remain backward compatible with an added `donor_counts` map; upazila rows
+carry filtered `donor_count` values. Missing datastore counts are omitted/null so
+clients never substitute all-group or partial totals. No-group metadata behavior
+is unchanged. Verification alone does not exclude a registered or imported donor
+from default search or public counts; privacy, opt-in, eligibility and contact
+suspension rules still apply. Legacy radius search and available-donor totals use
+the same registered-donor status boundary. Explicit verified-only search remains
+available. The shared request-reason list includes `DENGUE` with no inferred blood
+component. Search panels use white surfaces and visible input outlines.
+This candidate remains unreleased.
+
+### Invitation and donor experience candidate (0.0.165)
+
+This source candidate remains unpublished. The domain connection above uses the
+existing production code. Private acceptance uses a separate rootless Compose
+project, disposable fixtures and a local fake SMS provider; it mounts no
+production datastore or provider credentials.
+
+Canonical invitation links encode the nine digits after a normalized `+8801`
+prefix in base36. Decoding restores leading zeroes to nine digits. Existing
+opaque claim identifiers remain supported without a directory-wide rewrite.
+The reversible link is an identifier and never an authorization token. Initial
+claim responses contain the phone and masked name/address; purpose-bound proof
+for the listed phone unlocks the full profile for review. Existing accounts
+require their own password-authenticated session before account mutation.
+
+The mobile browser admits invitations and their related enrollment/authentication
+continuations while ordinary product routes retain the Android download cover.
+The shared canvas is white; deliberate pastel illustration accents remain.
+Homepage totals describe eligible directory records. Donor preferences and
+explicit availability/readiness govern helpful request recommendations and
+donor search ranking; private health notes are excluded from public projections.
+Support ticket validation requires a valid phone on both clients and server.
+Isolated rootless typecheck, 48 focused server tests, experience and moderation
+integration, and the production frontend bundle passed. Browser checks covered
+proof-gated details, existing-account claim completion, mobile claim/removal
+access, donor preferences, relevant home requests, comment replies, community
+images and missing-phone rejection. Android focused checks and a private debug
+build passed; no production deployment or signed release was made.
 
 ### Password authentication and launch privacy (0.0.163)
 

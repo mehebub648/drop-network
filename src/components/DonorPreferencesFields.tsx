@@ -95,10 +95,14 @@ export default function DonorPreferencesFields({
   return (
     <QuestionPages>
       <div className="grid gap-4 sm:grid-cols-2">
-        <fieldset className="sm:col-span-2"><legend>Travel willingness</legend><div className="flex flex-wrap gap-2 mt-2">{[['HOME_ONLY', 'Only my home upazila'], ['PREFERRED_AREAS', 'My home and preferred areas'], ['ANYWHERE_IN_DISTRICT', 'Anywhere in my home district']].map(([key, label]) => <label key={key} className="flex items-center gap-2 rounded-xl border p-3"><input type="radio" name="travel-willingness" checked={value.travelWillingness === key} onChange={() => onChange({ ...value, travelWillingness: key as TravelWillingness })} />{label}</label>)}</div><small>This controls where your available profile can match a blood search.</small></fieldset>
+        <fieldset className="sm:col-span-2"><legend>How far can you usually travel?</legend><div className="profile-choice-grid donor-travel-choices">{[
+          ['HOME_ONLY', 'Close to home', 'Only my home upazila'],
+          ['PREFERRED_AREAS', 'A few chosen places', 'Home plus areas I select'],
+          ['ANYWHERE_IN_DISTRICT', 'Across my district', 'Any upazila in my home district']
+        ].map(([key, label, note]) => <label key={key} className="profile-choice"><input type="radio" name="travel-willingness" checked={value.travelWillingness === key} onChange={() => onChange({ ...value, travelWillingness: key as TravelWillingness })} /><span><strong>{label}</strong><small>{note}</small></span></label>)}</div><small>This choice controls which nearby requests and donor searches are useful to you.</small></fieldset>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+      <div className="donor-preference-step">
         <div className="flex items-start gap-3">
           <MapPinned className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
           <div><h3 className="font-extrabold text-slate-950">Preferred areas</h3><p className="text-sm leading-6 text-slate-600">Add up to 10 upazilas or thanas where donation is convenient.</p></div>
@@ -109,7 +113,7 @@ export default function DonorPreferencesFields({
           </Select>
           <input value={areaQuery} onChange={event => setAreaQuery(event.target.value)} className="input" aria-label="Search preferred upazilas" placeholder="Search upazilas" />
         </div>
-        <div className="mt-3 max-h-60 overflow-y-auto">{areaUpazilas.filter(area => normalized(area.label).includes(normalized(areaQuery))).map(area => { const checked = value.preferredAreas.some(item => item.district === areaDistrict && item.upazila === area.value); return <label key={area.value} className="flex items-center gap-3 py-3"><input type="checkbox" checked={checked} disabled={!checked && value.preferredAreas.length >= 10} onChange={() => onChange({ ...value, preferredAreas: checked ? value.preferredAreas.filter(item => !(item.district === areaDistrict && item.upazila === area.value)) : [...value.preferredAreas, { district: areaDistrict, upazila: area.value }] })} />{area.label}</label>; })}</div>
+        <div className="preference-chip-picker">{areaUpazilas.filter(area => normalized(area.label).includes(normalized(areaQuery))).map(area => { const checked = value.preferredAreas.some(item => item.district === areaDistrict && item.upazila === area.value); return <button key={area.value} type="button" aria-pressed={checked} disabled={!checked && value.preferredAreas.length >= 10} onClick={() => onChange({ ...value, preferredAreas: checked ? value.preferredAreas.filter(item => !(item.district === areaDistrict && item.upazila === area.value)) : [...value.preferredAreas, { district: areaDistrict, upazila: area.value }] })}>{area.label}</button>; })}</div>
         {value.preferredAreas.length > 0 && (
           <ul className="mt-3 flex flex-wrap gap-2">
             {value.preferredAreas.map(area => (
@@ -122,7 +126,7 @@ export default function DonorPreferencesFields({
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+      <div className="donor-preference-step">
         <div className="flex items-start gap-3">
           <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
           <div><h3 className="font-extrabold text-slate-950">Preferred collection facilities</h3><p className="text-sm leading-6 text-slate-600">Choose up to 8 facilities from the registered DGHS list.</p></div>
@@ -134,10 +138,10 @@ export default function DonorPreferencesFields({
           <input value={facilityQuery} onChange={event => setFacilityQuery(event.target.value)} className="input" placeholder={facilitiesLoading ? 'Loading facilities…' : 'Type a facility name'} aria-label="Find a registered collection facility" />
         </div>
         {facilityMatches.length > 0 && (
-          <ul className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <ul className="preference-facility-list">
             {facilityMatches.map(facility => (
-              <li key={facility.registryCode} className="border-b border-slate-100 last:border-0">
-                <label className="flex items-start gap-3 px-3 py-3"><input type="checkbox" checked={value.preferredFacilities.some(item => facility.registryCodes.includes(item.registry_code))} disabled={value.preferredFacilities.length >= 8 && !value.preferredFacilities.some(item => facility.registryCodes.includes(item.registry_code))} onChange={event => event.target.checked ? addFacility(facility) : onChange({ ...value, preferredFacilities: value.preferredFacilities.filter(item => !facility.registryCodes.includes(item.registry_code)) })} /><span><strong className="block text-sm">{facility.name}</strong><span className="text-xs text-slate-500">{facility.locality || facility.district}</span></span></label>
+              <li key={facility.registryCode}>
+                <button type="button" aria-pressed={value.preferredFacilities.some(item => facility.registryCodes.includes(item.registry_code))} disabled={value.preferredFacilities.length >= 8 && !value.preferredFacilities.some(item => facility.registryCodes.includes(item.registry_code))} onClick={() => value.preferredFacilities.some(item => facility.registryCodes.includes(item.registry_code)) ? onChange({ ...value, preferredFacilities: value.preferredFacilities.filter(item => !facility.registryCodes.includes(item.registry_code)) }) : addFacility(facility)}><span><strong>{facility.name}</strong><small>{facility.locality || facility.district}</small></span></button>
               </li>
             ))}
           </ul>
@@ -154,7 +158,7 @@ export default function DonorPreferencesFields({
         )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+      <div className="donor-preference-step">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3"><Clock3 className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" /><div><h3 className="font-extrabold text-slate-950">Usual contact or donation windows</h3><p className="text-sm leading-6 text-slate-600">Add up to 3 recurring times in Asia/Dhaka. Searchers see only a match reason, never your schedule.</p></div></div>
           <button type="button" disabled={value.contactWindows.length >= 3} onClick={() => onChange({ ...value, contactWindows: [...value.contactWindows, { days: [0, 1, 2, 3, 4, 5, 6], start_time: '09:00', end_time: '18:00' }] })} className="button button-secondary"><Plus className="h-4 w-4" aria-hidden="true" />Add</button>

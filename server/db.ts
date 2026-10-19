@@ -444,6 +444,34 @@ export async function countImportedDonors(query: ImportedDonorQuery = {}) {
   return await table.countRows(filter || undefined);
 }
 
+export type ImportedDonorLocationCounts = {
+  districts: Record<string, number>;
+  upazilas: Record<string, Record<string, number>>;
+};
+
+/**
+ * Groups searchable, unclaimed directory listings for one exact blood group.
+ *
+ * Location selectors need every district at once, so one projected table read
+ * is substantially cheaper than issuing a count query for every district and
+ * upazila. The normal imported-donor privacy filters still apply here.
+ */
+export async function importedDonorLocationCounts(bloodGroup: string): Promise<ImportedDonorLocationCounts> {
+  const table = await readable(await ensureImportedDonorTable());
+  const filter = buildImportedFilter({ bloodGroups: [bloodGroup], claimStatus: 'UNCLAIMED' });
+  let query = table.query().select(['district', 'upazila']);
+  if (filter) query = query.where(filter);
+  const rows = await query.toArray() as unknown as Array<{ district?: unknown; upazila?: unknown }>;
+  const counts: ImportedDonorLocationCounts = { districts: {}, upazilas: {} };
+  for (const row of rows) {
+    if (typeof row.district !== 'string' || typeof row.upazila !== 'string') continue;
+    counts.districts[row.district] = (counts.districts[row.district] || 0) + 1;
+    const district = counts.upazilas[row.district] ||= {};
+    district[row.upazila] = (district[row.upazila] || 0) + 1;
+  }
+  return counts;
+}
+
 /**
  * Imported listings that can back a district+upazila blood request.
  *

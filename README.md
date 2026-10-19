@@ -6,24 +6,53 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.164`
+Current version: `0.0.168` (unreleased; production remains `0.0.164`)
+
+The live website and API are at `https://findadrop.org`. The domain connection
+changed DNS, HTTPS and runtime origins only; the held source updates are not live.
+The legacy hosting address remains available for older Android clients, and
+`www.findadrop.org` redirects to the apex. Google Play publication remains on hold.
 
 The desktop website uses a shared navigation rail and consistent workspace
 across donor search, requests, community, accounts and administration. Phones
-use the app download cover; privacy, safety, support, account deletion and listing removal remain
+use the app download cover; profile invitations and their account-creation flow,
+privacy, safety, support, account deletion and listing removal remain
 available in mobile browsers. Website theme styles live in `src/styles/`.
+
+The pending website palette uses white and cool neutral surfaces, cherry red
+actions and small blush, mint, sky and lilac accents. Form controls keep visible
+borders and a red keyboard-focus outline. Color-only homepage/sign-in snapshots
+and palette contrast checks passed; the full app build and hosted acceptance
+remain pending under the publication hold.
 
 The native Android app is the primary mobile experience. Desktop browsers use
 the website; mobile browsers show an app-download cover. Privacy, terms, safety,
-support, account deletion and listing removal remain accessible on every device. A signed APK in
+support, profile invitations, their account-creation flow, account deletion and
+listing removal remain accessible on every device. A signed APK in
 `data/releases/drop-android.apk` is served at `/downloads/drop-android.apk`;
 `ANDROID_APP_URL` can instead point to a real HTTPS store/download destination.
 
 Account sign-in uses a phone number and password. Registration verifies the
 phone through Messavo SMS; forgotten-password recovery verifies a separate,
 purpose-bound code and revokes existing sessions. The web and Android clients
-share this policy. The website uses warm paper colours, outlined controls and
+share this policy. The website uses a white canvas, outlined controls and
 existing doodle illustrations across its shared layouts.
+
+Invitation links use `/c/<base36>`: the nine decimal digits after `+8801` are
+encoded in base36. This is a reversible identifier, not ownership proof. The
+invitation shows the listed phone with masked name/address; a matching claim
+verification unlocks full details. Existing opaque invitation URLs remain valid.
+Claiming, verified removal, a number change and unrelated new registration have
+separate choices. Existing accounts still require password sign-in.
+
+Home counts describe eligible directory records, rather than claiming that every
+record is a verified or currently available donor. Donor recommendations and
+search order use location/travel preferences and explicit availability; health
+notes stay private. Support requests require a valid phone number.
+
+Verification alone never excludes a donor from directory totals, location counts
+or default search. The optional verified-only search filter remains available.
+Blood requests include Dengue as a reason without assuming a blood component.
 
 The public `/delete-account` page explains in-app deletion and accepts privacy
 requests when a member cannot sign in. Deletion clears private profile fields,
@@ -79,6 +108,10 @@ Shared location discovery is available at `/api/v1/meta/districts`,
 `/api/v1/meta/upazilas?district=...`, and
 `/api/v1/meta/facilities?district=...`. Browser and native clients should use
 these endpoints instead of reading frontend asset files directly.
+Donor search adds `blood_group` to district/upazila metadata calls to display
+searchable counts for that exact group. District responses retain their name list
+and add `donor_counts`; upazila rows use filtered `donor_count` values. Unavailable
+counts remain unlabeled rather than falling back to all-group totals.
 - Changelogs: [changelog/](./changelog/)
 
 ## Run With Docker
@@ -107,8 +140,8 @@ Refresh the district facility files from the public DGHS registry with:
 
 - `PORT` controls the Docker production host port.
 - `DEV_PORT` controls the Docker development host port.
-- `APP_URL` is the canonical public origin. Production defaults to the current
-  hosted HTTPS address; future domain changes require configuration only.
+- `APP_URL` is the canonical public origin, currently `https://findadrop.org`.
+  Future domain changes require configuration only.
 - `CORS_ORIGIN` can list allowed cross-origin browser origins; same-origin
   production requests do not need it.
 - `METRICS_TOKEN` must contain at least 32 random characters in production.

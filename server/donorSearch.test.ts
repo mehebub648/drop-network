@@ -5,8 +5,10 @@ import {
   donorCanSeeRequest,
   donorEligibility,
   donorPreferenceMatch,
+  donorRequestMatchReasons,
   matchesPreferenceSearch,
   matchesUpazilaSearch,
+  rankHelpfulDonorRequests,
   rankDonorResults,
   type SearchableDonorProfile
 } from './donorSearch';
@@ -22,8 +24,10 @@ test('availability, registration, facility match and profile completeness determ
     { ...base, donor_ref: 'directory', donor_kind: 'IMPORTED' as const },
     { ...base, donor_ref: 'unavailable', availability_status: 'NOT_AVAILABLE', ranking: { facility_match: true, profile_complete: true } },
   ];
-  assert.deepEqual(rankDonorResults([...ordered].reverse(), 'B+').map(item => item.donor_ref), ordered.map(item => item.donor_ref));
-  assert.equal(matchesPreferenceSearch(profile({ availability_status: undefined, availability_confirmed_at: undefined }), search), true);
+  const ranked = rankDonorResults([...ordered].reverse(), 'B+', 'best_location');
+  assert.ok(ranked.slice(0, 4).every(item => item.donor_kind === 'REGISTERED'));
+  assert.equal(ranked.at(-1)?.donor_ref, 'unavailable');
+  assert.equal(matchesPreferenceSearch(profile({ availability_status: undefined, availability_confirmed_at: undefined }), search), false);
   assert.equal(matchesPreferenceSearch(profile({ deferral_status: 'PERMANENT' }), search), false);
 });
 
@@ -61,8 +65,8 @@ test('unavailable, ineligible, and incompatible donors are excluded', () => {
   assert.equal(donorEligibility({ availability_confirmed_at: new Date().toISOString() }).eligible, true);
 });
 
-test('the donor feed runs the compatibility table in the opposite direction', () => {
-  const request = { blood_group: 'A+', upazila: 'Banani', location: { area_name: 'Dhaka' } };
+test('the donor feed uses red-cell compatibility only for explicit red-cell requests', () => {
+  const request = { blood_group: 'A+', blood_component: 'RED_CELLS', upazila: 'Banani', location: { area_name: 'Dhaka' } };
   // An O- donor can supply an A+ patient.
   assert.equal(donorCanSeeRequest(profile({ blood_group: 'O-' }), request), true);
   // An A+ donor cannot supply an O- patient, so that request is not their feed.
@@ -70,12 +74,34 @@ test('the donor feed runs the compatibility table in the opposite direction', ()
     donorCanSeeRequest(profile({ blood_group: 'A+' }), { ...request, blood_group: 'O-' }),
     false
   );
+  assert.equal(donorCanSeeRequest(profile({ blood_group: 'O-' }), { ...request, blood_component: 'PLASMA' }), false);
+  assert.equal(donorCanSeeRequest(profile({ blood_group: 'O-' }), { ...request, blood_component: 'NOT_SURE' }), false);
+  assert.equal(donorCanSeeRequest(profile({ blood_group: 'A+' }), { ...request, blood_component: 'PLASMA' }), true);
+  assert.equal(donorCanSeeRequest(profile({ availability_status: 'NOT_AVAILABLE' }), request), false);
+  assert.equal(donorCanSeeRequest(profile({ availability_confirmed_at: '2020-01-01T00:00:00Z' }), request), false);
   assert.equal(donorCanSeeRequest(profile({ upazila: 'Gulshan' }), request), false);
   // A request published before upazila existed still reaches the district.
   assert.equal(
     donorCanSeeRequest(profile({ upazila: 'Gulshan' }), { ...request, upazila: undefined }),
     true
   );
+});
+
+test('the donor feed puts exact local requests before compatible or travel-area requests', () => {
+  const donor = profile({
+    blood_group: 'O-',
+    preferred_areas: [{ district: 'Dhaka', upazila: 'Gulshan' }],
+    travel_willingness: 'PREFERRED_AREAS'
+  });
+  const requests = [
+    { id: 'travel-exact', blood_group: 'O-', upazila: 'Gulshan', location: { area_name: 'Dhaka' }, needed_by: '2026-09-06T18:00:00Z', created_at: '2026-09-01T00:00:00Z' },
+    { id: 'local-compatible', blood_group: 'A+', upazila: 'Banani', location: { area_name: 'Dhaka' }, needed_by: '2026-09-04T18:00:00Z', created_at: '2026-09-03T00:00:00Z' },
+    { id: 'local-exact', blood_group: 'O-', upazila: 'Banani', location: { area_name: 'Dhaka' }, needed_by: '2026-09-05T18:00:00Z', created_at: '2026-09-02T00:00:00Z' }
+  ];
+  assert.deepEqual(rankHelpfulDonorRequests(requests, donor).map(item => item.id), [
+    'local-exact', 'local-compatible', 'travel-exact'
+  ]);
+  assert.deepEqual(donorRequestMatchReasons(donor, requests[0]), ['Same blood group', 'Preferred donation area']);
 });
 
 test('the two compatibility tables are exact inverses', () => {
@@ -104,16 +130,16 @@ test('results put registered members first and the exact group above a compatibl
   ]);
 });
 
-test('preferred travel areas do not bypass the selected upazila', () => {
+test('only explicit travel preferences broaden the donor search location', () => {
   assert.equal(matchesPreferenceSearch(profile({
     upazila: 'Gulshan',
     preferred_areas: [{ district: 'Dhaka', upazila: 'Banani' }],
     travel_willingness: 'PREFERRED_AREAS'
-  }), search), false);
+  }), search), true);
   assert.equal(matchesPreferenceSearch(profile({
     upazila: 'Gulshan',
     travel_willingness: 'ANYWHERE_IN_DISTRICT'
-  }), search), false);
+  }), search), true);
   assert.equal(matchesPreferenceSearch(profile({
     upazila: 'Gulshan',
     travel_willingness: 'HOME_ONLY'

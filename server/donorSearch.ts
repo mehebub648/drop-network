@@ -94,13 +94,12 @@ function profileMatchesLocation(profile: SearchableDonorProfile, search: Pick<Up
   return homeUpazila || preferredArea || anywhereInHomeDistrict;
 }
 
-/** Home upazila only; travel preferences do not silently broaden this search. */
+/** Home location plus only the travel areas the donor explicitly selected. */
 export function matchesPreferenceSearch(profile: SearchableDonorProfile | undefined, search: UpazilaSearch, now = Date.now()) {
   if (!profile || !search.compatibleGroups.includes(profile.blood_group)) return false;
-  if (!sameText(profile.location?.area_name, search.district) || !profile.upazila) return false;
-  if (!search.upazilas.some(value => sameText(profile.upazila, value))) return false;
-  // Explicit availability does not expire automatically. Clinical deferrals remain respected.
-  return donorEligibility({ ...profile, availability_confirmed_at: new Date(now).toISOString() }, now).eligible;
+  if (!profileMatchesLocation(profile, search)) return false;
+  if (profile.availability_status !== 'AVAILABLE') return false;
+  return donorEligibility(profile, now).eligible;
 }
 
 /**
@@ -112,16 +111,76 @@ export function matchesPreferenceSearch(profile: SearchableDonorProfile | undefi
  * do not silently vanish from every donor's feed.
  */
 export function donorCanSeeRequest(
-  profile: Pick<SearchableDonorProfile, 'blood_group' | 'upazila' | 'location' | 'preferred_areas' | 'travel_willingness'> | undefined,
-  request: { blood_group: string; upazila?: string; location: { area_name: string } }
+  profile: SearchableDonorProfile | undefined,
+  request: { blood_group: string; blood_component?: string; upazila?: string; location: { area_name: string } },
+  now = Date.now()
 ) {
   if (!profile) return false;
-  if (!canDonateTo(profile.blood_group).includes(request.blood_group as BloodGroup)) return false;
+  if (profile.availability_status !== 'AVAILABLE' || !donorEligibility(profile, now).eligible) return false;
+  if (profile.blood_group !== request.blood_group) {
+    if (request.blood_component !== 'RED_CELLS') return false;
+    if (!canDonateTo(profile.blood_group).includes(request.blood_group as BloodGroup)) return false;
+  }
   if (!request.upazila) return sameText(profile.location?.area_name, request.location?.area_name);
   return profileMatchesLocation(profile as SearchableDonorProfile, {
     district: request.location.area_name,
     upazilas: [request.upazila]
   });
+}
+
+export type HelpfulDonorRequest = {
+  blood_group: string;
+  upazila?: string;
+  location: { area_name: string };
+  needed_by?: string;
+  created_at: string;
+};
+
+/** Explains and orders requests that already passed the strict visibility filter. */
+export function donorRequestMatchReasons(
+  profile: Pick<SearchableDonorProfile, 'blood_group' | 'upazila' | 'location' | 'preferred_areas' | 'travel_willingness'>,
+  request: HelpfulDonorRequest
+) {
+  const reasons: string[] = [];
+  if (profile.blood_group === request.blood_group) reasons.push('Same blood group');
+  const sameDistrict = sameText(profile.location.area_name, request.location.area_name);
+  if (sameDistrict && request.upazila && sameText(profile.upazila, request.upazila)) {
+    reasons.push('Your upazila');
+  } else if (sameDistrict && !request.upazila) {
+    reasons.push('Your district');
+  } else if (profile.travel_willingness === 'PREFERRED_AREAS' && (profile.preferred_areas || []).some(area =>
+    sameText(area.district, request.location.area_name) && sameText(area.upazila, request.upazila)
+  )) {
+    reasons.push('Preferred donation area');
+  } else if (profile.travel_willingness === 'ANYWHERE_IN_DISTRICT' && sameDistrict) {
+    reasons.push('Within your district');
+  }
+  return reasons;
+}
+
+export function rankHelpfulDonorRequests<T extends HelpfulDonorRequest>(
+  requests: T[],
+  profile: Pick<SearchableDonorProfile, 'blood_group' | 'upazila' | 'location' | 'preferred_areas' | 'travel_willingness'>
+) {
+  const locationTier = (request: T) => {
+    const reasons = donorRequestMatchReasons(profile, request);
+    if (reasons.includes('Your upazila')) return 0;
+    if (reasons.includes('Your district')) return 1;
+    if (reasons.includes('Preferred donation area')) return 2;
+    return 3;
+  };
+  const deadline = (request: T) => Date.parse(request.needed_by || '') || Number.MAX_SAFE_INTEGER;
+  const tier = (request: T) => {
+    const local = locationTier(request) <= 1;
+    const exact = request.blood_group === profile.blood_group;
+    return local ? (exact ? 0 : 1) : (exact ? 2 : 3);
+  };
+  return [...requests].sort((left, right) =>
+    tier(left) - tier(right) ||
+    locationTier(left) - locationTier(right) ||
+    deadline(left) - deadline(right) ||
+    Date.parse(right.created_at) - Date.parse(left.created_at)
+  );
 }
 
 export const SEARCH_SORTS = [
@@ -230,14 +289,10 @@ export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGrou
   const priority = (donor: T) => {
     const available = (!donor.availability_status || donor.availability_status === 'AVAILABLE');
     const registered = donor.donor_kind === 'REGISTERED';
-    const named = Boolean(donor.name?.trim()) && !/^(anonymous( donor)?|unknown|donor|blood donor|n\/a)$/i.test(donor.name.trim());
-    const facility = donor.ranking?.facility_match === true;
-    if (available && registered && facility && named && donor.ranking?.profile_complete) return 0;
-    if (available && registered && facility && named) return 1;
-    if (available && registered && facility) return 2;
-    if (available && registered && named) return 3;
-    if (available && named) return 4;
-    return 5;
+    if (donor.is_current_user && available) return 0;
+    if (available && registered) return 1;
+    if (available) return 2;
+    return 3;
   };
   const exactTier = (donor: T) => (donor.is_exact_group ?? donor.blood_group === exactGroup) ? 0 : 1;
   const confirmed = (donor: T) => new Date(donor.ranking?.availability_confirmed_at || 0).getTime() || 0;
@@ -255,21 +310,22 @@ export function rankDonorResults<T extends RankableDonor>(donors: T[], exactGrou
   return [...donors].sort((a, b) => {
     const tier = priority(a) - priority(b);
     if (tier) return tier;
+    const exact = exactTier(a) - exactTier(b);
+    if (exact) return exact;
     if (sort === 'name') return stableName(a, b);
     if (sort === 'recently_confirmed') {
-      return confirmed(b) - confirmed(a) || exactTier(a) - exactTier(b) || stableTie(a, b);
+      return confirmed(b) - confirmed(a) || stableTie(a, b);
     }
     if (sort === 'best_location') {
-      return location(b) - location(a) || exactTier(a) - exactTier(b) || confirmed(b) - confirmed(a) || stableTie(a, b);
+      return location(b) - location(a) || confirmed(b) - confirmed(a) || stableTie(a, b);
     }
     if (sort === 'most_donations') {
-      return donations(b) - donations(a) || exactTier(a) - exactTier(b) || location(b) - location(a) || stableTie(a, b);
+      return donations(b) - donations(a) || location(b) - location(a) || stableTie(a, b);
     }
     if (sort === 'fewest_contact_issues') {
-      return issues(a) - issues(b) || exactTier(a) - exactTier(b) || location(b) - location(a) || stableTie(a, b);
+      return issues(a) - issues(b) || location(b) - location(a) || stableTie(a, b);
     }
-    return exactTier(a) - exactTier(b)
-      || location(b) - location(a)
+    return location(b) - location(a)
       || confirmed(b) - confirmed(a)
       || issues(a) - issues(b)
       || stableTie(a, b);

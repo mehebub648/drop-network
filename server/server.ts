@@ -14,8 +14,8 @@ import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 
 import { access, readFile } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
-import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports, deleteStoredDocument, deleteRequestCallReports, adoptGuestCallReports } from './db';
-import { claimSlugForPublicId, evaluateClaim, maskPhone, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
+import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, getDb, removeDonorFromAllPartitions, ensureImportedDonorTable, queryImportedDonors, queryImportedDonorsForRequest, countImportedDonors, importedDonorLocationCounts, getImportedDonor, getImportedDonorByClaimSlug, replaceImportedDonor, withdrawImportedDonorsByPhone, addImportedDonors, addCallReports, queryCallReports, deleteStoredDocument, deleteRequestCallReports, adoptGuestCallReports } from './db';
+import { chooseClaimDonor, claimPathForImportedDonor, claimSlugForPhone, claimSlugForPublicId, evaluateClaim, maskPhone, phoneFromClaimSlug, toClaimPromptImportedDonor, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
 import { BD_LOCATIONS, BD_LOCATION_NAMES, getLocationByName } from './locations';
 import { resolveRegistrationLocation } from './registrationLocation';
 import { createRankedMessavoProvider, getFollowUpSmsProvider, getSmsProvider, SmsProviderError, type RankedMessavoConfig, type SmsDelivery, type SmsDeliveryStatus } from './sms';
@@ -42,7 +42,9 @@ import {
   donorCanSeeRequest,
   donorEligibility,
   donorPreferenceMatch,
+  donorRequestMatchReasons,
   matchesPreferenceSearch,
+  rankHelpfulDonorRequests,
   rankDonorResults,
   SEARCH_SORTS,
   type SearchSort
@@ -102,6 +104,7 @@ import { deleteRequestDocument, adoptCallReports } from './db';
 import { DAY_MS, dhakaDate, isCalendarDate, requestDeadline, requestExpiry, requestIsLive, requestIsOverdue, migrateRequestLifecycle, REQUEST_CLOSURE_REASONS, type RequestOwnership } from './requestLifecycle';
 import { resolveRequestTiming, type RequestTiming } from './requestLifecycle';
 import { GUEST_COOKIE, newGuestToken, guestToken, guestTokenHash, ownsGuestRequest, adoptGuestRequest, RequestWriteQueue, GUEST_REQUEST_LIMIT, GUEST_CONTACT_LIMIT, guestDeviceExpired, guestCanPublish, guestCanReveal, type GuestDevice as LifecycleGuestDevice } from './guestRequests';
+import { countImportedDonorsForLocation, countRegisteredDonorsForLocation, isSearchableRegisteredDonor } from './locationDonorCounts';
 import {
   DONATION_OUTCOMES,
   deriveFollowUpState,
@@ -644,7 +647,7 @@ const REVERSIBLE_AUDIT_ACTIONS = new Set([
 type SupportTicket = {
   id: string;
   name: string;
-  phone?: string;
+  phone: string;
   email?: string;
   category: 'SUPPORT' | 'SAFETY' | 'PRIVACY' | 'PARTNERSHIP';
   message: string;
@@ -1404,8 +1407,7 @@ async function findDonorMatches(
 
   return dbMatches
     .filter(u => u.id !== excludeUserId)
-    .filter(u => u.account_status !== 'SUSPENDED' && !u.deleted_at && u.is_verified)
-    .filter(u => !u.donor_profile.contact_suspended_at)
+    .filter(isSearchableRegisteredDonor)
     .filter(u => !u.blocked_user_ids?.includes(excludeUserId) && !requester?.blocked_user_ids?.includes(u.id))
     .filter(u => donorGroups.includes(u.donor_profile.blood_group as BloodGroup))
     .filter(u => u.donor_profile.availability_status === 'AVAILABLE')
@@ -1625,7 +1627,7 @@ function registeredDonorCard(
     preference_match_reasons: preferenceMatch.reasons,
     ranking: {
       facility_match: preferenceMatch.reasons.includes('Preferred collection facility'),
-      profile_complete: [profile.age, profile.weight_kg, profile.last_donation, profile.donation_count, profile.preferred_areas?.length, profile.contact_windows?.length, profile.medical_conditions].filter(value => value !== undefined && value !== null && value !== '' && value !== 0).length >= 4,
+      profile_complete: [profile.upazila, profile.last_donation, profile.donation_count, profile.preferred_areas?.length, profile.preferred_facilities?.length, profile.contact_windows?.length].filter(value => value !== undefined && value !== null && value !== '' && value !== 0).length >= 4,
       location_match_score: preferenceMatch.score,
       availability_confirmed_at: profile.availability_confirmed_at,
       donation_total: donationTotal || 0,
@@ -1653,7 +1655,6 @@ function importedDonorCard(donor: ImportedDonor, exactGroup: string): DonorCard 
     // No availability status: nobody has asked these people whether they are
     // free, and inventing one would misrepresent a scraped listing.
     source: { organization: view.source.organization, url: view.source.url },
-    claim_path: view.claim_path,
     preference_match_reasons: ['Listed in the searched upazila'],
     ...(donationTotal !== undefined ? { donation_total: donationTotal } : {}),
     ranking: { location_match_score: 1, donation_total: donationTotal || 0, contact_issue_total: 0 }
@@ -2620,7 +2621,7 @@ app.get('/metrics', (req, res) => {
 
 app.get('/robots.txt', (req, res) => {
   const origin = publicOrigin(req);
-  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nDisallow: /follow-up\nDisallow: /community/new\nDisallow: /directory/call/\nDisallow: /directory/imported/\nSitemap: ${origin}/sitemap.xml\n`);
+  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /profile\nDisallow: /follow-up\nDisallow: /community/new\nDisallow: /directory/call/\nDisallow: /directory/imported/\nDisallow: /c/\nSitemap: ${origin}/sitemap.xml\n`);
 });
 
 app.get('/sitemap.xml', asyncRoute(async (req, res) => {
@@ -4390,7 +4391,7 @@ app.post('/api/donation-follow-ups/verify', asyncRoute(async (req, res) => {
   if (!target.user) {
     if (challenge) await consumeChallenge(challenge);
     const listing = 'listing' in target ? target.listing : undefined;
-    return res.json({ claim_required: true, claim_path: listing ? `/c/${listing.claim_slug}` : null });
+    return res.json({ claim_required: true, claim_path: listing ? claimPathForImportedDonor(listing) : null });
   }
   followUp.donor_user_id = target.user.id;
   followUp.updated_at = new Date().toISOString();
@@ -4431,11 +4432,11 @@ app.get('/api/me/donor-requests', async (req, res) => {
   await enforceExpiredRequests();
 
   const profile = auth.user.donor_profile;
-  const items = requests
-    .filter(request => ['ACTIVE', 'PARTIALLY_FULFILLED'].includes(request.status))
+  const helpfulRequests = requests
+    .filter(request => requestIsLive(request) && !requestIsOverdue(request))
     .filter(request => request.user_id !== auth.user.id)
-    .filter(request => donorCanSeeRequest(profile, request))
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .filter(request => donorCanSeeRequest(profile, request));
+  const items = rankHelpfulDonorRequests(helpfulRequests, profile)
     .slice(0, 50)
     .map(request => {
       const response = donorResponses.find(item =>
@@ -4443,6 +4444,7 @@ app.get('/api/me/donor-requests', async (req, res) => {
       );
       return {
         ...publicRequestPayload(request),
+        match_reasons: donorRequestMatchReasons(profile, request),
         // Mask the chosen patient-side call contact, never the private account
         // number of a different person coordinating the request.
         requester_phone_masked: maskPhone(request.contacts?.[0]?.phone || ''),
@@ -4850,12 +4852,11 @@ app.post('/api/me/blocks/:userId', async (req, res) => {
 app.post('/api/support/tickets', async (req, res) => {
   const name = cleanString(req.body?.name, 100);
   const email = optionalCleanString(req.body?.email, 160);
-  const phone = req.body?.phone ? normalizeBangladeshPhone(req.body.phone) : undefined;
+  const phone = normalizeBangladeshPhone(req.body?.phone);
   const category = req.body?.category;
   const message = cleanString(req.body?.message, 2000);
   if (!name || !message || !isOneOf(category, ['SUPPORT', 'SAFETY', 'PRIVACY', 'PARTNERSHIP'] as const)) return validationError(res, 'Name, category, and message are required');
-  if (!email && !phone) return validationError(res, 'Email or Bangladesh phone is required');
-  if (req.body?.phone && !phone) return validationError(res, 'Valid Bangladesh phone is required');
+  if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
   const now = new Date().toISOString();
   const ticket: SupportTicket = { id: uuidv4(), name, email: email || undefined, phone, category, message, status: 'OPEN', created_at: now, updated_at: now };
   supportTickets.push(ticket);
@@ -4906,9 +4907,7 @@ app.get('/api/admin/overview', async (req, res) => {
       staff_users: users.filter(user => user.staff_role).length,
       registered_donors: users.filter(user => user.donor_profile).length,
       available_donors: users.filter(user =>
-        user.account_status !== 'SUSPENDED' &&
-        !user.deleted_at &&
-        user.is_verified &&
+        isSearchableRegisteredDonor(user) &&
         user.donor_profile?.availability_status === 'AVAILABLE' &&
         donorEligibility(user.donor_profile).eligible
       ).length,
@@ -5244,7 +5243,7 @@ app.patch('/api/admin/users/:id', async (req, res) => {
   await saveToTable('common_users', target);
   if (donorProfileChanged) {
     await removeDonorFromAllPartitions(target.id);
-    if (target.donor_profile?.availability_status === 'AVAILABLE' && target.account_status !== 'SUSPENDED' && !target.deleted_at && target.is_verified) {
+    if (target.donor_profile?.availability_status === 'AVAILABLE' && target.account_status !== 'SUSPENDED' && !target.deleted_at) {
       await syncDonorToPartition(target);
     }
   }
@@ -5758,7 +5757,7 @@ app.post('/api/admin/audit/:id/undo', asyncRoute((req, res) => accountWrites.run
         session.revoked_at = now; await saveToTable('common_sessions', session);
       }
     }
-    if (!target.deleted_at && target.account_status !== 'SUSPENDED' && target.is_verified && target.donor_profile?.availability_status === 'AVAILABLE') await syncDonorToPartition(target);
+    if (!target.deleted_at && target.account_status !== 'SUSPENDED' && target.donor_profile?.availability_status === 'AVAILABLE') await syncDonorToPartition(target);
     result = sanitizeUser(target);
   } else if (event.target_type === 'REQUEST') {
     const target = requests.find(item => item.id === event.target_id);
@@ -5915,8 +5914,8 @@ function fingerprintDigest(fingerprint: string) {
     .digest('hex');
 }
 
-function neutralContributionResponse(claimSlug?: string) {
-  const slug = claimSlug || createHash('sha256').update(uuidv4()).digest('base64url').slice(0, 12);
+function neutralContributionResponse(input?: { phone?: string; claimSlug?: string }) {
+  const slug = (input?.phone && claimSlugForPhone(input.phone)) || input?.claimSlug || createHash('sha256').update(uuidv4()).digest('base64url').slice(0, 12);
   return {
     success: true,
     claim_path: `/c/${slug}`,
@@ -5977,7 +5976,7 @@ app.post('/api/contributions', contributionLimiter, asyncRoute(async (req, res) 
     includeRemoved: true,
     limit: 1
   }))[0];
-  if (duplicate) return res.status(202).json(neutralContributionResponse(duplicate.claim_slug));
+  if (duplicate) return res.status(202).json(neutralContributionResponse({ phone, claimSlug: duplicate.claim_slug }));
 
   const now = new Date();
   const record: ScrapedRecordInput = {
@@ -6006,7 +6005,7 @@ app.post('/api/contributions', contributionLimiter, asyncRoute(async (req, res) 
   }
   await addImportedDonors([toImportedDonorRow(donor)]);
   await audit('anonymous', 'DONOR_CONTRIBUTION_CREATED', 'IMPORTED_DONOR', donor.id);
-  res.status(202).json(neutralContributionResponse(donor.claim_slug));
+  res.status(202).json(neutralContributionResponse({ phone: donor.phone, claimSlug: donor.claim_slug }));
 }));
 
 // --- Imported donor ownership -------------------------------------------
@@ -6023,8 +6022,20 @@ async function loadImportedDonor(id: string): Promise<ImportedDonor | null> {
 
 async function loadClaimDonor(slug: string): Promise<ImportedDonor | null> {
   const value = cleanString(slug, 12);
-  if (!value || !/^[A-Za-z0-9_-]{12}$/.test(value)) return null;
-  const donor = await getImportedDonorByClaimSlug(value);
+  if (!value) return null;
+  const canonicalPhone = phoneFromClaimSlug(value);
+  let donor: ImportedDonor | null = null;
+  if (canonicalPhone) {
+    const matches = await queryImportedDonors({
+      phone: canonicalPhone,
+      includePrivate: true,
+      includeSuspended: true,
+      limit: 100
+    });
+    donor = chooseClaimDonor(matches) || null;
+  } else if (/^[A-Za-z0-9_-]{12}$/.test(value)) {
+    donor = await getImportedDonorByClaimSlug(value);
+  }
   if (!donor) return null;
   if (
     donor.publication_state === 'PRIVATE_PENDING' &&
@@ -6044,7 +6055,18 @@ app.get('/api/claims/:slug', asyncRoute(async (req, res) => {
   if (!donor || donor.claim_status === 'CLAIMED') {
     return res.status(404).json({ error: 'Claim profile not found' });
   }
-  res.json(toPublicImportedDonor(donor));
+  res.json(toClaimPromptImportedDonor(donor));
+}));
+
+app.post('/api/claims/:slug/preview', asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  const donor = await loadClaimDonor(req.params.slug);
+  if (!donor || donor.claim_status === 'CLAIMED') return res.status(404).json({ error: 'Claim profile not found' });
+  const phone = normalizeBangladeshPhone(req.body?.phone);
+  if (!phone || phone !== donor.phone) return res.status(403).json({ error: 'Verify the listed phone before viewing this profile' });
+  const challenge = verifiedChallenge(phone, 'CLAIM_PROFILE', req.body?.verification_token);
+  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify the listed phone before viewing this profile' });
+  res.json({ profile: { ...toPublicImportedDonor(donor), claim_path: claimPathForImportedDonor(donor), phone: donor.phone } });
 }));
 
 async function writeVerifiedClaimProfile(
@@ -6085,17 +6107,37 @@ async function writeVerifiedClaimProfile(
   else await removeDonorFromAllPartitions(user.id);
 }
 
-app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
+app.post('/api/claims/:slug/complete', asyncRoute((req, res) => accountWrites.run(async () => {
   const donor = await loadClaimDonor(req.params.slug);
   if (!donor || donor.claim_status === 'CLAIMED') {
     return res.status(404).json({ error: 'Claim profile not found' });
   }
+  const intent = req.body?.intent || 'CLAIM';
+  if (!isOneOf(intent, ['CLAIM', 'SEPARATE_PROFILE', 'CHANGE_PHONE'] as const)) {
+    return validationError(res, 'Choose how you want to continue');
+  }
   const phone = normalizeBangladeshPhone(req.body?.phone);
-  const challenge = phone
-    ? verifiedChallenge(phone, 'CLAIM_PROFILE', req.body?.verification_token)
-    : null;
+  const purpose = intent === 'SEPARATE_PROFILE' ? 'REGISTER' : intent === 'CHANGE_PHONE' ? 'CHANGE_PHONE' : 'CLAIM_PROFILE';
+  const challenge = phone ? verifiedChallenge(phone, purpose, req.body?.verification_token) : null;
   if (!phone || (!challenge && !isOtpBypassEnabled())) {
     return res.status(403).json({ error: 'Verify the selected phone before continuing' });
+  }
+  let listedPhoneChallenge: OtpChallenge | null = null;
+  if (intent === 'CLAIM' && donor.phone !== phone) {
+    return res.status(403).json({ error: 'Verify the listed phone before claiming this profile' });
+  }
+  if (intent === 'SEPARATE_PROFILE' && donor.phone === phone) {
+    return res.status(409).json({ error: 'This is the listed phone. Claim the profile instead.' });
+  }
+  if (intent === 'CHANGE_PHONE') {
+    const listedPhone = normalizeBangladeshPhone(req.body?.listed_phone);
+    listedPhoneChallenge = listedPhone
+      ? verifiedChallenge(listedPhone, 'CLAIM_PROFILE', req.body?.listed_phone_verification_token)
+      : null;
+    if (!listedPhone || listedPhone !== donor.phone || (!listedPhoneChallenge && !isOtpBypassEnabled())) {
+      return res.status(403).json({ error: 'Verify the listed phone before changing it' });
+    }
+    if (phone === donor.phone) return validationError(res, 'Enter a different new phone number');
   }
 
   const name = cleanString(req.body?.name, 100);
@@ -6118,8 +6160,28 @@ app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
 
   const auth = getCurrentAuth(req);
   let user = users.find(item => item.phone === phone && !item.deleted_at);
+  const listedAccount = intent === 'CHANGE_PHONE'
+    ? users.find(item => item.phone === donor.phone && !item.deleted_at)
+    : undefined;
+  if (listedAccount && auth?.user.id !== listedAccount.id) {
+    return res.status(409).json({
+      error: 'Sign in with your password before changing this existing account',
+      sign_in_required: true
+    });
+  }
+  const changesSignedInPhone = intent === 'CHANGE_PHONE' && auth?.user.phone === donor.phone;
+  if (changesSignedInPhone) {
+    if (user && user.id !== auth.user.id) return res.status(409).json({ error: 'Phone already registered' });
+    user = auth.user;
+  }
   const accountCreated = !user;
   if (user?.account_status === 'SUSPENDED') return res.status(403).json({ error: 'This account is suspended' });
+  if (user && auth?.user.id !== user.id) {
+    return res.status(409).json({
+      error: 'Sign in with your password before changing this existing account',
+      sign_in_required: true
+    });
+  }
   if (!user) {
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (password.length < 8) return validationError(res, 'Create a password with at least 8 characters to secure your new account');
@@ -6136,6 +6198,7 @@ app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
     };
     users.push(user);
   }
+  if (changesSignedInPhone) user.phone = phone;
   await writeVerifiedClaimProfile(user, {
     name,
     bloodGroup,
@@ -6144,13 +6207,19 @@ app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
     availabilityStatus: availability.value.status,
     availabilityReason: availability.value.reason
   });
+  if (changesSignedInPhone) {
+    await resolveRegisteredContactIssues(user, ['WRONG_NUMBER', 'UNREACHABLE'], 'PHONE_CHANGED_AND_VERIFIED');
+  }
 
-  const matchedImportedPhone = donor.phone === phone;
-  if (matchedImportedPhone) {
+  const claimsImportedProfile = intent !== 'SEPARATE_PROFILE';
+  if (claimsImportedProfile) {
     donor.claim_status = 'CLAIMED';
     donor.claimed_by = user.id;
     donor.claimed_at = new Date().toISOString();
-    donor.claim_note = 'Verified phone matches the submitted listing';
+    donor.claim_note = intent === 'CHANGE_PHONE'
+      ? 'Previous and replacement phone numbers were verified'
+      : 'Verified phone matches the submitted listing';
+    if (intent === 'CHANGE_PHONE') donor.phone = phone;
     donor.name = name;
     donor.blood_group = bloodGroup;
     donor.district = district;
@@ -6160,25 +6229,25 @@ app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
   }
 
   const fingerprint = getFingerprint(req);
-  const hasAccountAccess = accountCreated || auth?.user.id === user.id;
-  if (fingerprint && hasAccountAccess) await adoptFingerprintOwnership(fingerprint, user);
+  if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
   if (accountCreated) {
     const sessionToken = await issueSession(user.id, req);
     res.cookie(SESSION_COOKIE, sessionToken, sessionCookieOptions());
   }
   if (challenge) await consumeChallenge(challenge);
-  await audit(user.id, matchedImportedPhone ? 'DIRECTORY_CLAIM_APPROVED' : 'CLAIM_CREATED_SEPARATE_PROFILE', 'IMPORTED_DONOR', donor.id, {
-    matched_imported_phone: matchedImportedPhone,
-    account_created: accountCreated
+  if (listedPhoneChallenge) await consumeChallenge(listedPhoneChallenge);
+  await audit(user.id, claimsImportedProfile ? 'DIRECTORY_CLAIM_APPROVED' : 'CLAIM_CREATED_SEPARATE_PROFILE', 'IMPORTED_DONOR', donor.id, {
+    intent,
+    account_created: accountCreated,
+    phone_changed: intent === 'CHANGE_PHONE'
   });
   res.json({
     success: true,
-    result: matchedImportedPhone ? 'CLAIMED' : 'SEPARATE_PROFILE_CREATED',
+    result: intent === 'SEPARATE_PROFILE' ? 'SEPARATE_PROFILE_CREATED' : intent === 'CHANGE_PHONE' ? 'PHONE_CHANGED' : 'CLAIMED',
     account_created: accountCreated,
-    ...(!hasAccountAccess ? { sign_in_required: true } : {}),
     user: sanitizeUser(user)
   });
-}));
+})));
 
 app.get('/api/directory', (_req, res) => {
   res.status(404).json({ error: 'Directory browsing is not available. Search for donors by blood group, district, and upazila.' });
@@ -6393,7 +6462,8 @@ app.patch('/api/admin/directory/claims/:id', async (req, res) => {
 // registered count alone, which would understate the network by six figures.
 app.get('/api/stats', async (req, res) => {
   await enforceExpiredRequests();
-  const registeredDonors = users.filter(u => u.donor_profile).length;
+  const registeredDonorRecords = users.filter(isSearchableRegisteredDonor);
+  const registeredDonors = registeredDonorRecords.length;
   let directoryDonors: number | null = null;
   try {
     directoryDonors = await countImportedDonors({ claimStatus: 'UNCLAIMED' });
@@ -6404,8 +6474,10 @@ app.get('/api/stats', async (req, res) => {
     donors: directoryDonors === null ? null : registeredDonors + directoryDonors,
     directory_donors: directoryDonors,
     registered_donors: registeredDonors,
-    available_donors: users.filter(u => u.donor_profile?.availability_status === 'AVAILABLE').length,
-    active_requests: requests.filter(r => r.status === 'ACTIVE' || r.status === 'PARTIALLY_FULFILLED').length,
+    available_donors: registeredDonorRecords.filter(user =>
+      user.donor_profile?.availability_status === 'AVAILABLE' && donorEligibility(user.donor_profile).eligible
+    ).length,
+    active_requests: requests.filter(request => requestIsLive(request) && !requestIsOverdue(request)).length,
     fulfilled_requests: requests.filter(r => r.status === 'FULFILLED').length
   });
 });
@@ -6436,24 +6508,65 @@ app.get('/api/requests', async (req, res) => {
   });
 });
 
-app.get('/api/meta/districts', (_req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=86400');
+app.get('/api/meta/districts', async (req, res) => {
+  const requestedGroup = typeof req.query.blood_group === 'string' ? req.query.blood_group : '';
+  const bloodGroup = BLOOD_GROUPS.includes(requestedGroup as BloodGroup) ? requestedGroup as BloodGroup : undefined;
+  if (requestedGroup && !bloodGroup) return validationError(res, 'Valid blood group is required');
+  let donorCounts: Record<string, number> | undefined;
+  if (bloodGroup) {
+    try {
+      const importedCounts = await importedDonorLocationCounts(bloodGroup);
+      donorCounts = Object.fromEntries(BD_LOCATION_NAMES.map(district => {
+        const upazilas = getUpazilasForDistrict(district).flatMap(item => getUpazilaVariants(district, item.value));
+        return [district,
+          countRegisteredDonorsForLocation(users, bloodGroup, district, upazilas) +
+          countImportedDonorsForLocation(importedCounts, district, upazilas)
+        ];
+      }));
+    } catch {
+      // Locations remain useful when the directory count store is unavailable;
+      // omitting the map prevents clients from presenting a partial count.
+      donorCounts = undefined;
+    }
+  }
+  res.setHeader('Cache-Control', `public, max-age=${bloodGroup ? 300 : 86400}`);
   res.json({
     items: BD_LOCATION_NAMES,
     locations: BD_LOCATIONS.map(location => ({
       name: location.area,
       lat: location.lat,
       lng: location.lng
-    }))
+    })),
+    ...(donorCounts ? { donor_counts: donorCounts } : {})
   });
 });
 
-app.get('/api/meta/upazilas', (req, res) => {
+app.get('/api/meta/upazilas', async (req, res) => {
   const district = typeof req.query.district === 'string' ? req.query.district : '';
   const canonical = district ? getLocationByName(district)?.area_name : undefined;
   if (!canonical) return validationError(res, 'Valid Bangladesh district is required');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.json({ district: canonical, items: getUpazilasForDistrict(canonical) });
+  const requestedGroup = typeof req.query.blood_group === 'string' ? req.query.blood_group : '';
+  const bloodGroup = BLOOD_GROUPS.includes(requestedGroup as BloodGroup) ? requestedGroup as BloodGroup : undefined;
+  if (requestedGroup && !bloodGroup) return validationError(res, 'Valid blood group is required');
+  let items: Array<Omit<ReturnType<typeof getUpazilasForDistrict>[number], 'donor_count'> & { donor_count: number | null }> = getUpazilasForDistrict(canonical);
+  if (bloodGroup) {
+    try {
+      const importedCounts = await importedDonorLocationCounts(bloodGroup);
+      items = items.map(item => {
+        const variants = getUpazilaVariants(canonical, item.value);
+        return {
+          ...item,
+          donor_count:
+            countRegisteredDonorsForLocation(users, bloodGroup, canonical, variants) +
+            countImportedDonorsForLocation(importedCounts, canonical, variants)
+        };
+      });
+    } catch {
+      items = items.map(item => ({ ...item, donor_count: null }));
+    }
+  }
+  res.setHeader('Cache-Control', `public, max-age=${bloodGroup ? 300 : 86400}`);
+  res.json({ district: canonical, items });
 });
 
 app.get('/api/meta/facilities', async (req, res) => {
@@ -6817,6 +6930,10 @@ async function startServer() {
     });
     app.get('*', (req, res, next) => {
       if (path.extname(req.path)) return next();
+      if (req.path.startsWith('/c/')) {
+        res.set('Cache-Control', 'private, no-store');
+        res.set('X-Robots-Tag', 'noindex, nofollow');
+      }
       res.type('html').send(renderPublicOriginHtml(indexTemplate, publicOrigin(req)));
     });
   }

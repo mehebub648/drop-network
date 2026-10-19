@@ -144,14 +144,20 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </div>
         </header>
 
+        <div className="profile-match-strip" aria-label="Current matching summary">
+          <span><strong>{bloodGroup}</strong> blood group</span>
+          <span><strong>{upazila || district}</strong> home area</span>
+          <span><strong>{statusLabels[status]}</strong></span>
+        </div>
+
         <details className="profile-form-section profile-collapsible" open>
           <summary className="profile-section-heading">
             <span><MapPin aria-hidden="true" /></span>
-            <div><h2>Search details</h2><p>These details help people find you when you are available.</p></div>
+            <div><h2>Your matching basics</h2><p>Blood group and home area decide which requests can reach you.</p></div>
             <ChevronDown className="profile-section-chevron" aria-hidden="true" />
           </summary>
           <div className="profile-section-body profile-form-grid">
-            <fieldset><legend>Blood group</legend><div className="flex flex-wrap gap-2 mt-2">{BLOOD_GROUPS.map(group => <label key={group} className="flex items-center gap-2 rounded-xl border p-3"><input type="radio" name="donor-blood-group" value={group} checked={bloodGroup === group} onChange={() => setBloodGroup(group)} />{group}</label>)}</div></fieldset>
+            <fieldset className="profile-grid-wide"><legend>Blood group</legend><div className="profile-choice-grid">{BLOOD_GROUPS.map(group => <label key={group} className="profile-choice"><input type="radio" name="donor-blood-group" value={group} checked={bloodGroup === group} onChange={() => setBloodGroup(group)} /><span>{group}</span></label>)}</div></fieldset>
             <label>Home district
               <Select id="donor-district" value={district} onChange={event => { setDistrict(event.target.value); setUpazila(''); }} className="input">
                 {BD_LOCATION_NAMES.map(name => <option key={name}>{name}</option>)}
@@ -167,10 +173,10 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
           </div>
         </details>
 
-        <details className="profile-form-section profile-collapsible">
+        <details className="profile-form-section profile-collapsible" open>
           <summary className="profile-section-heading">
             <span><MapPin aria-hidden="true" /></span>
-            <div><h2>Where and when donation is convenient</h2><p>Optional preferences improve matching without publishing your private schedule or note.</p></div>
+            <div><h2>Places and times that work for you</h2><p>These choices rank helpful requests first. Your schedule and note stay private.</p></div>
             <ChevronDown className="profile-section-chevron" aria-hidden="true" />
           </summary>
           <div className="profile-section-body"><DonorPreferencesFields value={preferences} onChange={setPreferences} homeDistrict={district} /></div>
@@ -179,7 +185,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
         <details className="profile-form-section profile-health-section profile-collapsible">
           <summary className="profile-section-heading">
             <span><Stethoscope aria-hidden="true" /></span>
-            <div><h2>Private health details</h2><p>Helpful context for keeping your availability honest.</p></div>
+            <div><h2>Private physical details</h2><p>Optional notes you control. Drop never decides eligibility from this text.</p></div>
             <ChevronDown className="profile-section-chevron" aria-hidden="true" />
           </summary>
           <div className="profile-section-body profile-form-grid">
@@ -189,7 +195,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
             <label>Weight in kg <em>Optional</em>
               <input id="donor-weight" type="number" inputMode="numeric" min={30} max={200} value={weight} onChange={event => setWeight(event.target.value)} className="input" />
             </label>
-            <label className="profile-grid-wide">Any medical condition or current sickness? <em>Optional</em>
+            <label className="profile-grid-wide">Physical condition or health note <em>Optional</em>
               <textarea
                 id="donor-medical-conditions"
                 rows={4}
@@ -197,7 +203,7 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
                 value={medicalConditions}
                 onChange={event => setMedicalConditions(event.target.value)}
                 className="input profile-textarea"
-                placeholder="For example: recovering from fever, taking prescribed medicine, or a long-term condition"
+                placeholder="For your own reference, such as recovering, taking a break, or something to discuss at screening"
               />
               <small>{medicalConditions.length}/500 characters</small>
             </label>
@@ -206,9 +212,6 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
             <LockKeyhole aria-hidden="true" />
             <p><strong>Private to your account.</strong> This information never appears in donor search and is not medical clearance. Do not upload medical records; the collection facility will screen you before donation.</p>
           </div>
-          {medicalConditions.trim() && status === 'AVAILABLE' && (
-            <p className="profile-health-reminder">If you are currently unwell, consider changing your availability to “Sick or recovering”.</p>
-          )}
         </details>
 
         <details className="profile-form-section profile-collapsible">
@@ -232,11 +235,11 @@ export default function DonorPage({ user, onUpdate }: ProfilePageProps) {
         <details className="profile-form-section profile-collapsible" open>
           <summary className="profile-section-heading">
             <span><HeartPulse aria-hidden="true" /></span>
-            <div><h2>Availability</h2><p>Pause your listing any time. You can return when you are ready.</p></div>
+            <div><h2>How are you available today?</h2><p>Choose explicitly. Drop does not infer this from your private notes.</p></div>
             <ChevronDown className="profile-section-chevron" aria-hidden="true" />
           </summary>
           <div className="profile-section-body profile-form-grid">
-            <fieldset className="profile-grid-wide"><legend>Current status</legend><div className="flex flex-wrap gap-2 mt-2">{Object.entries(statusLabels).map(([value, label]) => <label key={value} className="flex items-center gap-2 rounded-xl border p-3"><input type="radio" name="donor-status" checked={status === value} onChange={() => setStatus(value as AvailabilityStatus)} />{label}</label>)}</div></fieldset>
+            <fieldset className="profile-grid-wide"><legend>Current status</legend><div className="profile-choice-grid profile-status-choices">{Object.entries(statusLabels).map(([value, label]) => <label key={value} className="profile-choice"><input type="radio" name="donor-status" checked={status === value} onChange={() => setStatus(value as AvailabilityStatus)} /><span>{label}</span></label>)}</div></fieldset>
             {status !== 'AVAILABLE' && (
               <label className="profile-grid-wide">Reason <em>Optional</em>
                 <textarea id="donor-availability-reason" maxLength={240} rows={3} value={availabilityReason} onChange={event => setAvailabilityReason(event.target.value)} className="input profile-textarea" placeholder="For example: recovering, traveling, or taking a break" />

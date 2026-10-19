@@ -464,7 +464,6 @@ export default function DonorSearchPage({
             void selectDonor(donor);
           }}
           busy={busyRef === profileDonor.donor_ref}
-          showClaimOption={!user}
         />
       )}
 

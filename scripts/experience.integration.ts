@@ -14,15 +14,40 @@ import { guestTokenHash } from '../server/guestRequests';
 if (process.env.DROP_ISOLATED_QA !== '1') throw new Error('Run in the isolated QA container only');
 const directory = await mkdtemp(path.join(tmpdir(), 'drop-experience-'));
 process.env.LANCEDB_PATH = path.join(directory, 'db');
-const { saveToTable, getAllFromTable, addImportedDonors } = await import('../server/db');
+const { saveToTable, getAllFromTable, addImportedDonors, getImportedDonorByClaimSlug } = await import('../server/db');
 const { toImportedDonorRow } = await import('../server/importedDonors');
 const password = 'Isolated-test-password-123';
 const privatePhone = '+8801700000001';
+const claimAccountPhone = '+8801700000012';
 await saveToTable('common_users', {
   id: 'qa-existing', phone: privatePhone, name: 'Isolated fixture',
   password: await bcrypt.hash(password, 4), is_verified: true,
   roles: ['MEMBER'], created_at: new Date().toISOString()
 });
+await saveToTable('common_users', {
+  id: 'qa-claim-account', phone: claimAccountPhone, name: 'Existing claim fixture',
+  password: await bcrypt.hash(password, 4), is_verified: true,
+  roles: ['MEMBER'], created_at: new Date().toISOString()
+});
+const helpfulDonorPhone = '+8801700000013';
+const unavailableDonorPhone = '+8801700000014';
+const cooldownDonorPhone = '+8801700000015';
+const helpfulProfile = {
+  blood_group: 'A+', upazila: 'Savar', location: { area_name: 'Dhaka', lat: 23.8, lng: 90.4 },
+  preferred_areas: [{ district: 'Dhaka', upazila: 'Gulshan' }], travel_willingness: 'PREFERRED_AREAS',
+  last_donation: { kind: 'NEVER' }, availability_status: 'AVAILABLE',
+  availability_confirmed_at: new Date().toISOString(), deferral_status: 'NONE'
+};
+for (const [id, phone, donorProfile] of [
+  ['qa-helpful-donor', helpfulDonorPhone, helpfulProfile],
+  ['qa-unavailable-donor', unavailableDonorPhone, { ...helpfulProfile, availability_status: 'NOT_AVAILABLE' }],
+  ['qa-cooldown-donor', cooldownDonorPhone, { ...helpfulProfile, last_donation_date: new Date().toISOString() }]
+] as const) {
+  await saveToTable('common_users', {
+    id, phone, name: 'Helpful feed fixture', password: await bcrypt.hash(password, 4),
+    is_verified: true, roles: ['MEMBER'], created_at: new Date().toISOString(), donor_profile: donorProfile
+  });
+}
 const expiredDevice = 'a'.repeat(64);
 await saveToTable('common_users', { id: 'qa-staff', phone: '+8801700000006', name: 'Isolated moderator',
   password: await bcrypt.hash(password, 4), is_verified: true, staff_role: 'MODERATOR', roles: ['MEMBER'], created_at: new Date().toISOString() });
@@ -40,10 +65,41 @@ const seededRequest = {
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-expired-guest', user_id: '', ownership: 'GUEST', guest_token_hash: guestTokenHash(expiredDevice), expires_at: seededRequest.needed_by });
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-overdue-owned', user_id: 'qa-existing', ownership: 'USER', expires_at: requestExpiry(seededRequest.needed_by, 'USER') });
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-expired-owned', user_id: 'qa-existing', ownership: 'USER', expires_at: seededRequest.needed_by });
+const helpfulNeededBy = new Date(Date.now() + 2 * DAY_MS).toISOString();
+const helpfulRequest = (id: string, changes: Record<string, unknown> = {}) => ({
+  ...seededRequest,
+  id,
+  user_id: 'qa-requester',
+  ownership: 'USER',
+  blood_group: 'A+',
+  blood_component: 'WHOLE_BLOOD',
+  upazila: 'Savar',
+  location: { area_name: 'Dhaka', lat: 23.8, lng: 90.4 },
+  status: 'ACTIVE',
+  needed_date: dhakaDate(Date.now() + 2 * DAY_MS),
+  needed_by: helpfulNeededBy,
+  expires_at: requestExpiry(helpfulNeededBy, 'USER'),
+  created_at: new Date().toISOString(),
+  ...changes
+});
+for (const request of [
+  helpfulRequest('qa-helpful-local'),
+  helpfulRequest('qa-helpful-preferred', { upazila: 'Gulshan' }),
+  helpfulRequest('qa-helpful-compatible', { blood_group: 'AB+', blood_component: 'RED_CELLS' }),
+  helpfulRequest('qa-helpful-own', { user_id: 'qa-helpful-donor' }),
+  helpfulRequest('qa-helpful-closed', { status: 'CANCELLED' }),
+  helpfulRequest('qa-helpful-unrelated', { blood_group: 'B+' }),
+  helpfulRequest('qa-helpful-distant', { upazila: 'Pahartali', location: { area_name: 'Chattogram', lat: 22.36, lng: 91.82 } })
+]) {
+  await saveToTable('common_requests', request);
+}
 const importedSource = { id: 'isolated-qa', organization: 'ISOLATED QA', url: 'https://example.invalid', scraped_at: new Date().toISOString() };
 await addImportedDonors([
-  toImportedDonorRow({ id: 'qa-claim-existing', public_id: 'qa-claim-existing', claim_slug: 'QACLAIMEXIST', source: importedSource, source_ref: 'qa-existing', name: 'Existing claim fixture', phone: privatePhone, blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PUBLIC', imported_at: new Date().toISOString() }),
-  toImportedDonorRow({ id: 'qa-claim-new', public_id: 'qa-claim-new', claim_slug: 'QACLAIMNEW01', source: importedSource, source_ref: 'qa-new', name: 'New claim fixture', phone: '+8801700000007', blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PUBLIC', imported_at: new Date().toISOString() })
+  toImportedDonorRow({ id: 'qa-claim-existing', public_id: 'qa-claim-existing', claim_slug: 'QACLAIMEXIST', source: importedSource, source_ref: 'qa-claim-account', name: 'Existing claim fixture', phone: claimAccountPhone, blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PUBLIC', imported_at: new Date().toISOString() }),
+  toImportedDonorRow({ id: 'qa-claim-new', public_id: 'qa-claim-new', claim_slug: 'QACLAIMNEW01', source: importedSource, source_ref: 'qa-new', name: 'New claim fixture', phone: '+8801700000007', blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PUBLIC', imported_at: new Date().toISOString() }),
+  toImportedDonorRow({ id: 'qa-claim-separate', public_id: 'qa-claim-separate', claim_slug: 'QASEPARATE01', source: importedSource, source_ref: 'qa-separate', name: 'Separate claim fixture', phone: '+8801700000009', blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PUBLIC', imported_at: new Date().toISOString() }),
+  toImportedDonorRow({ id: 'qa-private', public_id: 'qa-private', claim_slug: 'QAPRIVATE001', source: importedSource, source_ref: 'qa-private', name: 'Private fixture', phone: '+8801700000010', blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PRIVATE_PENDING', contribution_expires_at: new Date(Date.now() + DAY_MS).toISOString(), imported_at: new Date().toISOString() }),
+  toImportedDonorRow({ id: 'qa-removed', public_id: 'qa-removed', claim_slug: 'QAREMOVED001', source: importedSource, source_ref: 'qa-removed', name: 'Removed fixture', phone: '+8801700000011', blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PUBLIC', listing_state: 'REMOVED', removed_at: new Date().toISOString(), imported_at: new Date().toISOString() })
 ]);
 const followUpSecret = 'isolated-follow-up-secret';
 await saveToTable('common_donation_followups', {
@@ -55,7 +111,7 @@ for (const token of ['qa-follow-up-proof-1', 'qa-follow-up-proof-2']) {
   await saveToTable('common_otps', { id: token, phone: privatePhone, purpose: 'DONATION_FOLLOW_UP', code_hash: 'fixture', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + DAY_MS).toISOString(), attempts: 0, verified_at: new Date().toISOString(), verification_token: token, verification_expires_at: new Date(Date.now() + DAY_MS).toISOString() });
 }
 for (let i = 0; i < 34; i++) {
-  await saveToTable('common_users', { id: `qa-donor-${i}`, name: `Fixture Donor ${i}`, phone: `+8801900000${String(i).padStart(3, '0')}`, is_verified: true, roles: ['MEMBER'], created_at: new Date().toISOString(), donor_profile: { blood_group: 'B+', upazila: i < 4 ? 'Savar' : 'Dhamrai', location: { area_name: 'Dhaka', lat: 23.8, lng: 90.4 }, last_donation: { kind: 'NEVER' } } });
+  await saveToTable('common_users', { id: `qa-donor-${i}`, name: `Fixture Donor ${i}`, phone: `+8801900000${String(i).padStart(3, '0')}`, is_verified: true, roles: ['MEMBER'], created_at: new Date().toISOString(), donor_profile: { blood_group: 'B+', upazila: i < 4 ? 'Savar' : 'Dhamrai', location: { area_name: 'Dhaka', lat: 23.8, lng: 90.4 }, last_donation: { kind: 'NEVER' }, availability_status: 'AVAILABLE', availability_confirmed_at: new Date().toISOString(), deferral_status: 'NONE' } });
 }
 const idleToken = 'b'.repeat(64);
 await saveToTable('common_guest_devices', { id: guestTokenHash(idleToken), created_at: new Date(Date.now() - 16 * DAY_MS).toISOString(), last_seen_at: new Date(Date.now() - 16 * DAY_MS).toISOString(), request_count: 1 });
@@ -112,6 +168,23 @@ try {
   assert.ok(ready, 'QA server became ready');
   const guest = new Device('192.0.2.11');
   const stranger = new Device('192.0.2.12');
+  await guest.call('/api/support/tickets', { name: 'QA', category: 'SUPPORT', message: 'Missing phone must fail', email: 'qa@example.invalid' }, 'POST', 400);
+  const initialStats = await guest.call('/api/stats');
+  assert.equal(initialStats.directory_donors, 3);
+  const helpfulDonor = new Device('192.0.2.31');
+  await helpfulDonor.call('/api/auth/login', { phone: helpfulDonorPhone, password });
+  const helpfulFeed = await helpfulDonor.call('/api/me/donor-requests');
+  assert.deepEqual(helpfulFeed.items.map((item: any) => item.id), [
+    'qa-helpful-local', 'qa-helpful-compatible', 'qa-helpful-preferred'
+  ]);
+  assert.deepEqual(helpfulFeed.items[0].match_reasons, ['Same blood group', 'Your upazila']);
+  assert.deepEqual(helpfulFeed.items[2].match_reasons, ['Same blood group', 'Preferred donation area']);
+  for (const [phone, ip] of [[unavailableDonorPhone, '192.0.2.32'], [cooldownDonorPhone, '192.0.2.33']] as const) {
+    const donor = new Device(ip);
+    await donor.call('/api/auth/login', { phone, password });
+    assert.deepEqual((await donor.call('/api/me/donor-requests')).items, []);
+  }
+  console.log('PASS: donor request feed honors availability, cooldown, ownership, lifecycle, compatibility and explicit travel areas');
   const expired = new Device('192.0.2.14'); expired.cookies.set('drop_guest', expiredDevice);
   await expired.call('/api/search/requests', payload('01800000099'), 'POST', 428);
   await expired.call('/api/requests/qa-expired-guest', undefined, 'GET', 404);
@@ -136,24 +209,58 @@ try {
   assert.equal((await getAllFromTable('common_sessions')).length, sessionsAfterPasswordLogin);
   console.log('PASS: follow-up phone verification never creates an existing-account session');
   const existingClaim = new Device('192.0.2.16');
-  await existingClaim.call('/api/auth/otp/request', { phone: privatePhone, purpose: 'CLAIM_PROFILE' });
-  const existingClaimProof = await existingClaim.call('/api/auth/otp/verify', { phone: privatePhone, purpose: 'CLAIM_PROFILE', code: codes.get(privatePhone) });
+  const claimPrompt = await existingClaim.call('/api/claims/QACLAIMEXIST');
+  assert.equal(claimPrompt.phone, claimAccountPhone);
+  assert.equal(claimPrompt.name, undefined);
+  assert.equal(claimPrompt.district, undefined);
+  assert.equal(claimPrompt.upazila, undefined);
+  assert.equal(claimPrompt.blood_group, undefined);
+  assert.ok(claimPrompt.name_masked && claimPrompt.address_masked);
+  await existingClaim.call('/api/auth/otp/request', { phone: claimAccountPhone, purpose: 'CLAIM_PROFILE' });
+  const existingClaimProof = await existingClaim.call('/api/auth/otp/verify', { phone: claimAccountPhone, purpose: 'CLAIM_PROFILE', code: codes.get(claimAccountPhone) });
+  await existingClaim.call('/api/claims/QACLAIMEXIST/preview', { phone: '+8801700000002', verification_token: existingClaimProof.verification_token }, 'POST', 403);
+  await existingClaim.call('/api/auth/otp/request', { phone: claimAccountPhone, purpose: 'RESET_PASSWORD' });
+  const wrongPurposeProof = await existingClaim.call('/api/auth/otp/verify', { phone: claimAccountPhone, purpose: 'RESET_PASSWORD', code: codes.get(claimAccountPhone) });
+  await existingClaim.call('/api/claims/QACLAIMEXIST/preview', { phone: claimAccountPhone, verification_token: wrongPurposeProof.verification_token }, 'POST', 403);
+  const claimPreview = await existingClaim.call('/api/claims/QACLAIMEXIST/preview', { phone: claimAccountPhone, verification_token: existingClaimProof.verification_token });
+  assert.equal(claimPreview.profile.name, 'Existing claim fixture');
+  const replacementPhone = '+8801700000008';
+  await existingClaim.call('/api/auth/otp/request', { phone: replacementPhone, purpose: 'CHANGE_PHONE' });
+  const replacementProof = await existingClaim.call('/api/auth/otp/verify', { phone: replacementPhone, purpose: 'CHANGE_PHONE', code: codes.get(replacementPhone) });
+  await existingClaim.call('/api/claims/QACLAIMEXIST/complete', {
+    intent: 'CHANGE_PHONE', listed_phone: claimAccountPhone,
+    phone: replacementPhone, verification_token: replacementProof.verification_token, password,
+    name: 'Existing claim fixture', blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar',
+    availability_status: 'NOT_AVAILABLE', availability_reason: 'ISOLATED QA', availability_consent: true
+  }, 'POST', 403);
+  assert.equal((await getAllFromTable('common_users')).some(user => user.phone === replacementPhone), false);
+  assert.equal((await getImportedDonorByClaimSlug('QACLAIMEXIST'))?.phone, claimAccountPhone);
+  const rejectedPhoneChange = await existingClaim.call('/api/claims/QACLAIMEXIST/complete', {
+    intent: 'CHANGE_PHONE', listed_phone: claimAccountPhone, listed_phone_verification_token: existingClaimProof.verification_token,
+    phone: replacementPhone, verification_token: replacementProof.verification_token, password,
+    name: 'Existing claim fixture', blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar',
+    availability_status: 'NOT_AVAILABLE', availability_reason: 'ISOLATED QA', availability_consent: true
+  }, 'POST', 409);
+  assert.equal(rejectedPhoneChange.sign_in_required, true);
+  assert.equal((await getAllFromTable('common_users')).some(user => user.phone === replacementPhone), false);
+  assert.equal((await getImportedDonorByClaimSlug('QACLAIMEXIST'))?.phone, claimAccountPhone);
   const sessionsBeforeExistingClaim = (await getAllFromTable('common_sessions')).length;
   const existingClaimResult = await existingClaim.call('/api/claims/QACLAIMEXIST/complete', {
-    phone: privatePhone, verification_token: existingClaimProof.verification_token, name: 'Existing claim fixture', blood_group: 'AB+',
+    intent: 'CLAIM', phone: claimAccountPhone, verification_token: existingClaimProof.verification_token, name: 'Existing claim fixture', blood_group: 'AB+',
     district: 'Dhaka', upazila: 'Savar', availability_status: 'NOT_AVAILABLE', availability_reason: 'ISOLATED QA', availability_consent: true
-  });
-  assert.equal(existingClaimResult.account_created, false);
+  }, 'POST', 409);
   assert.equal(existingClaimResult.sign_in_required, true);
   assert.equal(existingClaim.cookies.has('drop_session'), false);
   assert.equal((await getAllFromTable('common_sessions')).length, sessionsBeforeExistingClaim);
+  assert.equal((await getImportedDonorByClaimSlug('QACLAIMEXIST'))?.claim_status, 'UNCLAIMED');
+  assert.equal((await getAllFromTable('common_users')).find(user => user.id === 'qa-claim-account')?.donor_profile, undefined);
 
   const newClaim = new Device('192.0.2.17');
   const newClaimPhone = '+8801700000007';
   await newClaim.call('/api/auth/otp/request', { phone: newClaimPhone, purpose: 'CLAIM_PROFILE' });
   const newClaimProof = await newClaim.call('/api/auth/otp/verify', { phone: newClaimPhone, purpose: 'CLAIM_PROFILE', code: codes.get(newClaimPhone) });
   const newClaimBody = {
-    phone: newClaimPhone, verification_token: newClaimProof.verification_token, name: 'New claim fixture', blood_group: 'AB+',
+    intent: 'CLAIM', phone: newClaimPhone, verification_token: newClaimProof.verification_token, name: 'New claim fixture', blood_group: 'AB+',
     district: 'Dhaka', upazila: 'Savar', availability_status: 'AVAILABLE', availability_consent: true
   };
   await newClaim.call('/api/claims/QACLAIMNEW01/complete', newClaimBody, 'POST', 400);
@@ -162,6 +269,18 @@ try {
   assert.equal(newClaimResult.account_created, true);
   assert.equal(newClaim.cookies.has('drop_session'), true);
   assert.equal((await getAllFromTable('common_sessions')).length, sessionsBeforeNewClaim + 1);
+  const separate = new Device('192.0.2.18');
+  const separatePhone = '+8801800000008';
+  await separate.call('/api/auth/otp/request', { phone: separatePhone, purpose: 'REGISTER' });
+  const separateProof = await separate.call('/api/auth/otp/verify', { phone: separatePhone, purpose: 'REGISTER', code: codes.get(separatePhone) });
+  const separateResult = await separate.call('/api/claims/QASEPARATE01/complete', {
+    intent: 'SEPARATE_PROFILE', phone: separatePhone, verification_token: separateProof.verification_token, password,
+    name: 'Separate account owner', blood_group: 'O+', district: 'Dhaka', upazila: 'Savar',
+    availability_status: 'NOT_AVAILABLE', availability_reason: 'ISOLATED QA', availability_consent: true
+  });
+  assert.equal(separateResult.result, 'SEPARATE_PROFILE_CREATED');
+  assert.equal((await getImportedDonorByClaimSlug('QASEPARATE01'))?.claim_status, 'UNCLAIMED');
+  assert.equal((await getImportedDonorByClaimSlug('QASEPARATE01'))?.phone, '+8801700000009');
   console.log('PASS: existing claims require password sign-in while new claim accounts set a password');
   await guest.call('/api/search/requests', { ...payload('01800000001'), consent: false }, 'POST', 400);
   await guest.call('/api/search/requests', payload('01800000001', dhakaDate(Date.now() - DAY_MS)), 'POST', 400);
