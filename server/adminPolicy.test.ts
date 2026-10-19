@@ -11,6 +11,8 @@ test('staff capabilities follow the three-level hierarchy', () => {
   assert.deepEqual(capabilitiesFor('MODERATOR'), ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS']);
   assert.equal(capabilitiesFor('ADMIN').includes('EDIT_USERS'), true);
   assert.equal(capabilitiesFor('ADMIN').includes('MANAGE_STAFF'), false);
+  assert.equal(capabilitiesFor('ADMIN').includes('MANAGE_INVITATIONS'), true);
+  assert.equal(capabilitiesFor('MODERATOR').includes('MANAGE_INVITATIONS'), false);
   assert.equal(capabilitiesFor('SUPERADMIN').includes('MANAGE_STAFF'), true);
   assert.equal(capabilitiesFor('ADMIN').includes('MANAGE_SYSTEM'), false);
   assert.equal(capabilitiesFor('SUPERADMIN').includes('MANAGE_SYSTEM'), true);

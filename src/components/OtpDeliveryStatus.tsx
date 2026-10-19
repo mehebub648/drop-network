@@ -48,8 +48,9 @@ export default function OtpDeliveryStatus({
   }, [delivery?.challenge_id, delivery?.delivery_status, onDeliveryChange]);
 
   if (!delivery) return null;
-  const failed = delivery.delivery_status === 'failed' || delivery.delivery_status === 'canceled';
-  const complete = delivery.delivery_status === 'delivered' || delivery.delivery_status === 'bypassed';
+  const deferred = Boolean(delivery.verification_deferred || delivery.registration_pending);
+  const failed = !deferred && (delivery.delivery_status === 'failed' || delivery.delivery_status === 'canceled');
+  const complete = !deferred && (delivery.delivery_status === 'delivered' || delivery.delivery_status === 'bypassed');
   const Icon = failed ? TriangleAlert : complete ? CheckCircle2 : delivery.delivery_status === 'sent' ? CheckCircle2 : Clock3;
 
   return (
@@ -64,7 +65,7 @@ export default function OtpDeliveryStatus({
     >
       <span className="flex min-w-0 items-start gap-3 font-semibold">
         <Icon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-        <span>{STATUS_COPY[delivery.delivery_status]}</span>
+        <span>{deferred ? 'SMS verification is temporarily paused. Your progress is saved, and you can keep finding blood.' : STATUS_COPY[delivery.delivery_status]}</span>
       </span>
       {failed && (
         <button

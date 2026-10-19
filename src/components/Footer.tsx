@@ -14,7 +14,7 @@ const columns = [
     title: 'About & safety',
     links: [
       { label: 'Stories and suggestions', to: '/community' },
-      { label: 'Suggest a donor privately', to: '/contribute' },
+      { label: 'Add donors', to: '/contribute' },
       { label: 'How Drop works', to: '/about' },
       { label: 'Safety guidance', to: '/safety' },
       { label: 'Privacy policy', to: '/privacy' }

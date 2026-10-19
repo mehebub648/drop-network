@@ -1,8 +1,33 @@
 # Drop Network Architecture
 
-Current application version: `0.0.168` (unreleased source; live code is `0.0.164`)
+Current application version: `0.0.169`
 
-### Website palette (0.0.168, unreleased)
+### Administration and donor invitations (0.0.169)
+
+Dedicated `common_admin_accounts` and `common_admin_sessions` hold administrator
+password hashes and hashed session tokens. Admin sign-in uses a separate cookie
+and `/admin/login`; member sessions cannot authorize administration APIs. The
+MODERATOR, ADMIN and SUPERADMIN capabilities still determine available actions.
+
+`common_profile_invitations`, `common_invitation_campaigns` and
+`common_contribution_batches` persist invitation attempts, campaign schedules and
+manual review. Member-created single profiles stay private pending owner proof.
+Reviewed donor lists can be published by an authorized administrator. Paste and
+attachments share a 50 MB budget; attachments live below the existing private
+media volume and require authenticated owner/administrator download access.
+
+Campaigns select a stable random set of never-invited eligible records. Immediate
+dispatch is capped at 20, with adjustable ramped dispatch for larger batches.
+Provider delivery and profile responses are tracked separately; a sent message
+is never treated as delivered without a receipt. Resends retain attempt history.
+All SMS purposes use one Messavo route, whose connected device is fixed to SIM 2.
+
+Confirmed registration SMS outages return a pending result instead of an error.
+Existing device-bound temporary blood-help access permits requests and protected
+donor contact; it never verifies a phone or creates an account session. Password
+resets and imported-profile ownership still require their own proof.
+
+### Website palette (0.0.168, deployed)
 
 Shared theme tokens in `src/index.css` define white/neutral surfaces, cherry red
 actions and blush, mint, sky and lilac accents. Website treatments consume those
@@ -10,7 +35,8 @@ tokens without changing layout, routes or behavior. Large cream/yellow decorativ
 surfaces are replaced; semantic warning colors remain. Field boundaries meet
 3:1 against their fill; checked text/action color pairs exceed 4.5:1. Local visual
 checks used captured public homepage/sign-in markup with the candidate CSS, not
-a rebuilt React app. Production remains unchanged pending release authorization.
+a rebuilt React app. Subsequent hosted type checking, 181 tests, isolated
+account/request integration, production build and live palette/count checks passed.
 
 ### Public domain connection (0.0.167 source metadata)
 
@@ -1131,12 +1157,12 @@ Operational endpoints and jobs:
 
 ## Current Constraints
 
-- Production registration requires either a complete Messavo API
-  configuration (`SMS_PROVIDER=messavo`, `SMS_API_BASE_URL`, and a privately
-  stored scoped `SMS_API_TOKEN`) or the legacy complete HTTP configuration.
-- Production follow-ups additionally require a dedicated automatic-send
-  `SMS_FOLLOWUP_API_TOKEN` and a separate 32+ character
-  `FOLLOW_UP_LINK_SECRET`.
+- Production SMS requires one enabled managed Messavo connection, or the complete
+  environment configuration (`SMS_PROVIDER=messavo`, `SMS_API_BASE_URL`, and a
+  privately stored scoped `SMS_API_TOKEN`). Multiple enabled connections pause
+  sending rather than choosing another device or SIM.
+- Production follow-ups use that same sender and additionally require a separate
+  32+ character `FOLLOW_UP_LINK_SECRET`.
 - OTP bypass is an explicit persisted non-production test setting, not an
   automatic fallback.
   It deliberately removes phone-ownership proof across all OTP-protected

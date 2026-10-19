@@ -6,10 +6,10 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.168` (unreleased; production remains `0.0.164`)
+Current version: `0.0.169`
 
-The live website and API are at `https://findadrop.org`. The domain connection
-changed DNS, HTTPS and runtime origins only; the held source updates are not live.
+The live website and API are at `https://findadrop.org`. Version 0.0.168 includes
+the white website palette, claim flow and selected-group donor counts.
 The legacy hosting address remains available for older Android clients, and
 `www.findadrop.org` redirects to the apex. Google Play publication remains on hold.
 
@@ -19,11 +19,21 @@ use the app download cover; profile invitations and their account-creation flow,
 privacy, safety, support, account deletion and listing removal remain
 available in mobile browsers. Website theme styles live in `src/styles/`.
 
-The pending website palette uses white and cool neutral surfaces, cherry red
+The website palette uses white and cool neutral surfaces, cherry red
 actions and small blush, mint, sky and lilac accents. Form controls keep visible
-borders and a red keyboard-focus outline. Color-only homepage/sign-in snapshots
-and palette contrast checks passed; the full app build and hosted acceptance
-remain pending under the publication hold.
+borders and a red keyboard-focus outline. The 0.0.168 release passed hosted
+type checking, 181 tests, isolated account/request integration and production
+build checks. The live donor total remains 134,588; available-donor totals now
+honor expired availability confirmations.
+
+Version 0.0.169 adds separate admin sign-in at `/admin/login`, reviewed donor-list uploads
+(50 MB aggregate), immediate member invitations, paced admin campaigns, delivery
+and response tracking, and graceful registration deferral during confirmed SMS
+outages. Drop SMS uses the single Messavo route; the connected relay is fixed to
+SIM 2. Public donor and admin identities remain separate. Hosted isolated type
+checking, 190 unit tests, experience/outage/admin/invitation integration and the
+production bundle passed. Real recipient campaign acceptance remains a separate
+check; no bulk SMS was sent during validation.
 
 The native Android app is the primary mobile experience. Desktop browsers use
 the website; mobile browsers show an app-download cover. Privacy, terms, safety,
@@ -164,9 +174,9 @@ Refresh the district facility files from the public DGHS registry with:
   attempt budget, stops polling after mobile-network handoff, and cancels unsent
   replaced or expired jobs. The former `woven` provider name is accepted as a
   compatibility alias; public responses consistently say `messavo`.
-- Donation follow-ups use a separate automatic-send credential in
-  `SMS_FOLLOWUP_API_TOKEN` and a separate 32+ character
-  `FOLLOW_UP_LINK_SECRET`. A requester records the donor's SMS consent after
+- Donation follow-ups use the same single Messavo connection as invitations and
+  OTP, plus a separate 32+ character `FOLLOW_UP_LINK_SECRET`. Legacy follow-up
+  provider credentials do not select another sender. A requester records the donor's SMS consent after
   the call; without consent the same follow-up remains in-app. Reminder links
   carry the private token only in the URL fragment and message text contains no
   patient, blood-group, hospital, or request details.

@@ -18,7 +18,7 @@ import { syncDonorToPartition, getAllFromTable, saveToTable, getPartitionName, g
 import { chooseClaimDonor, claimPathForImportedDonor, claimSlugForPhone, claimSlugForPublicId, evaluateClaim, maskPhone, phoneFromClaimSlug, toClaimPromptImportedDonor, toImportedDonor, toImportedDonorRow, toPublicImportedDonor, toRevealedImportedDonor, type ImportedDonor, type ScrapedRecordInput } from './importedDonors';
 import { BD_LOCATIONS, BD_LOCATION_NAMES, getLocationByName } from './locations';
 import { resolveRegistrationLocation } from './registrationLocation';
-import { createRankedMessavoProvider, getFollowUpSmsProvider, getSmsProvider, SmsProviderError, type RankedMessavoConfig, type SmsDelivery, type SmsDeliveryStatus } from './sms';
+import { createRankedMessavoProvider, getSmsProvider, SmsProviderError, type RankedMessavoConfig, type SmsDelivery, type SmsDeliveryStatus } from './sms';
 import { auditCategory, decryptSetting, encryptSetting, humanAuditSummary, maskedPhone, publicSmsProvider, validatePublicSmsBaseUrl, type StoredSmsProvider } from './adminControl';
 import { bloodHelpActive, eligibleOutage, redeemBloodHelp, verifiedContactEvidence, type GuestDevice as EmergencyGuestDevice, type OutageEvidence } from './emergencyAccess';
 import { getUpazilaByName, getUpazilaVariants, getUpazilasForDistrict } from './upazilas';
@@ -55,7 +55,7 @@ import {
   parseDonorPreferences,
   type DonorPreferences
 } from './donorPreferences';
-import { canAssignStaffRole, canEditMember, canManageMember, capabilitiesFor, hasCapability, isStaffRole, legacyStaffRole, type AdminCapability, type StaffRole } from './adminPolicy';
+import { canAssignStaffRole, canEditMember, canManageMember, capabilitiesFor, hasCapability, isStaffRole, type AdminCapability, type StaffRole } from './adminPolicy';
 import {
   canonicalLastDonationDate,
   createPublicDonationSummary,
@@ -105,6 +105,20 @@ import { DAY_MS, dhakaDate, isCalendarDate, requestDeadline, requestExpiry, requ
 import { resolveRequestTiming, type RequestTiming } from './requestLifecycle';
 import { GUEST_COOKIE, newGuestToken, guestToken, guestTokenHash, ownsGuestRequest, adoptGuestRequest, RequestWriteQueue, GUEST_REQUEST_LIMIT, GUEST_CONTACT_LIMIT, guestDeviceExpired, guestCanPublish, guestCanReveal, type GuestDevice as LifecycleGuestDevice } from './guestRequests';
 import { countImportedDonorsForLocation, countRegisteredDonorsForLocation, isSearchableRegisteredDonor } from './locationDonorCounts';
+import { createInvitationRoutes } from './invitationRoutes';
+import {
+  ADMIN_SESSION_TTL_MS,
+  hashAdminPassword,
+  hashAdminSessionToken,
+  isAdminRole,
+  newAdminSessionToken,
+  normalizeAdminUsername,
+  publicAdminAccount,
+  validAdminPassword,
+  verifyAdminPassword,
+  type AdminAccount,
+  type AdminSession
+} from './adminCredentials';
 import {
   DONATION_OUTCOMES,
   deriveFollowUpState,
@@ -125,7 +139,7 @@ const guestDevices = new Map<string, GuestDevice>();
 const guestWrites = new RequestWriteQueue();
 const guestActivitySavedAt = new Map<string, number>();
 // Defense in depth: credentials never leave storage through any legacy JSON path.
-app.set('json replacer', (key: string, value: unknown) => ['guest_token_hash', 'api_token_encrypted', 'password'].includes(key) ? undefined : value);
+app.set('json replacer', (key: string, value: unknown) => ['guest_token_hash', 'api_token_encrypted', 'password', 'password_hash', 'token_hash'].includes(key) ? undefined : value);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const configuredPort = Number(process.env.PORT || process.env.PROD_PORT || 3000);
 const PORT = Number.isFinite(configuredPort) ? configuredPort : 3000;
@@ -135,6 +149,7 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_VERIFICATION_TTL_MS = 30 * 60 * 1000;
 const MATCH_RADIUS_KM = Math.max(10, Number(process.env.MATCH_RADIUS_KM || 250));
 const SESSION_COOKIE = 'drop_session';
+const ADMIN_SESSION_COOKIE = 'drop_admin_session';
 // Anonymous fingerprints shorter than this are rejected so trivial values
 // (e.g. "anon") can't collide with comment author ids or claim ownership.
 const MIN_FINGERPRINT_LENGTH = 16;
@@ -239,10 +254,16 @@ app.use(cors({
     return callback(null, allowedCorsOrigins.has(origin));
   }
 }));
+// Bulk donor text is still bounded, but needs more room than ordinary API JSON.
+// File bytes use a separate private raw-upload route and never enter JSON.
+app.use('/api/me/donor-contribution-batches', express.json({ limit: '51mb' }));
+app.use('/api/admin/donor-contribution-batches', express.json({ limit: '51mb' }));
 app.use(express.json({ limit: '32kb' }));
 app.use(cookieParser());
 app.use((req, res, next) => {
-  const credential = getSessionCredential(req);
+  const credential = isAdminApiRequest(req)
+    ? getAdminSessionCredential(req)
+    : getSessionCredential(req);
   if (isTrustedCookieMutation({
     method: req.method,
     sessionToken: credential.transport === 'cookie' ? credential.token : (!req.get('x-drop-guest') ? guestToken(req.cookies?.[GUEST_COOKIE]) : ''),
@@ -264,6 +285,14 @@ const passwordLoginLimiter = rateLimit({
     });
     res.status(429).json({ error: 'Too many attempts, please try again later' });
   }
+});
+
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 7,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many admin sign-in attempts. Try again later.' }
 });
 
 const apiLimiter = rateLimit({
@@ -927,6 +956,9 @@ let users: User[] = [];
 let requests: BloodRequest[] = [];
 let sessions: AuthSession[] = [];
 const sessionsByToken = new Map<string, AuthSession>();
+let adminAccounts: AdminAccount[] = [];
+let adminSessions: AdminSession[] = [];
+const adminSessionsByTokenHash = new Map<string, AdminSession>();
 let otpChallenges: OtpChallenge[] = [];
 let donorResponses: DonorResponse[] = [];
 let donationFollowUps: DonationFollowUp[] = [];
@@ -945,6 +977,10 @@ function rankedSmsConfigs(): RankedMessavoConfig[] | null {
   const stored = smsProviders;
   const enabled = stored.filter(provider => provider.enabled && !provider.deleted_at);
   if (!enabled.length) return [];
+  // Drop has one reviewed Messavo route fixed to the connected device's SIM 2.
+  // Multiple enabled credentials would re-introduce an unreviewed sender/SIM
+  // fallback, so fail closed instead of silently trying another route.
+  if (enabled.length !== 1) return null;
   const secret = smsSettingsSecret();
   if (!secret || secret.length < 32) return null;
   const configs: RankedMessavoConfig[] = [];
@@ -967,18 +1003,13 @@ function activeSmsProvider() {
       channel: event.kind, ...(event.status ? { delivery_status: event.status } : {}), ...(event.reason ? { reason: event.reason } : {})
     });
   }, async config => { await validatePublicSmsBaseUrl(config.baseUrl); });
-  return getSmsProvider();
+  return (process.env.SMS_PROVIDER || '').trim().toLowerCase() === 'messavo' ? getSmsProvider() : null;
 }
 
 function activeFollowUpSmsProvider() {
-  const configs = rankedSmsConfigs();
-  if (configs === null) return null;
-  if (configs.length) return createRankedMessavoProvider(configs, async event => {
-    await audit('system', `SMS_PROVIDER_${event.outcome}`, 'SMS_PROVIDER', event.providerId, {
-      channel: event.kind, ...(event.status ? { delivery_status: event.status } : {}), ...(event.reason ? { reason: event.reason } : {})
-    });
-  }, async config => { await validatePublicSmsBaseUrl(config.baseUrl); });
-  return getFollowUpSmsProvider();
+  // Verification, recovery, invitations and follow-ups share the same fixed
+  // Messavo device route. Messavo owns the immutable SIM 2 snapshot.
+  return activeSmsProvider();
 }
 
 function activeSmsConfigured() { return Boolean(activeSmsProvider()); }
@@ -1000,6 +1031,14 @@ async function initDbData() {
   sessions = await getAllFromTable('common_sessions');
   sessionsByToken.clear();
   for (const session of sessions) sessionsByToken.set(session.token, session);
+  adminAccounts = (await getAllFromTable('common_admin_accounts')).filter(
+    account => normalizeAdminUsername(account.username) &&
+      ['MODERATOR', 'ADMIN', 'SUPERADMIN'].includes(account.staff_role) &&
+      ['ACTIVE', 'SUSPENDED'].includes(account.account_status)
+  );
+  adminSessions = await getAllFromTable('common_admin_sessions');
+  adminSessionsByTokenHash.clear();
+  for (const session of adminSessions) adminSessionsByTokenHash.set(session.token_hash, session);
   otpChallenges = await getAllFromTable('common_otps');
   donorResponses = await getAllFromTable('common_responses');
   donationFollowUps = await getAllFromTable('common_donation_followups');
@@ -1019,11 +1058,7 @@ async function initDbData() {
     };
     await saveToTable('common_app_settings', otpBypassSetting);
   }
-  const legacyStaffTokens = new Set(['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER']);
   for (const user of users) {
-    const migratedStaffRole = user.staff_role || legacyStaffRole(user.roles);
-    const migratedRoles = [...new Set((user.roles || ['MEMBER']).filter(role => !legacyStaffTokens.has(role)))];
-    if (!migratedRoles.includes('MEMBER')) migratedRoles.unshift('MEMBER');
     const donationLedger = user.donor_profile ? migrateDonationLedger(user.donor_profile) : undefined;
     const ledgerChanged = Boolean(user.donor_profile && (
       user.donor_profile.donations_before_history !== donationLedger!.donations_before_history ||
@@ -1033,19 +1068,7 @@ async function initDbData() {
       user.donor_profile.donations_before_history = donationLedger.donations_before_history;
       user.donor_profile.donation_count = donationLedger.donation_count;
     }
-    if (ledgerChanged || user.staff_role !== migratedStaffRole || JSON.stringify(user.roles || []) !== JSON.stringify(migratedRoles)) {
-      user.staff_role = migratedStaffRole;
-      user.roles = migratedRoles;
-      await saveToTable('common_users', user);
-    }
-  }
-  const superadminPhone = normalizeBangladeshPhone(process.env.SUPERADMIN_PHONE || process.env.ADMIN_PHONE);
-  if (superadminPhone) {
-    const superadmin = users.find(user => user.phone === superadminPhone);
-    if (superadmin && superadmin.staff_role !== 'SUPERADMIN') {
-      superadmin.staff_role = 'SUPERADMIN';
-      await saveToTable('common_users', superadmin);
-    }
+    if (ledgerChanged) await saveToTable('common_users', user);
   }
   for (let index = 0; index < requests.length; index++) {
     const current = requests[index];
@@ -1842,6 +1865,18 @@ function getSessionCredential(req: express.Request) {
   });
 }
 
+function isAdminApiRequest(req: express.Request) {
+  const requestPath = (req.originalUrl || req.url).split('?')[0];
+  return /^\/api(?:\/v\d+)?\/admin(?:\/|$)/.test(requestPath);
+}
+
+function getAdminSessionCredential(req: express.Request) {
+  return resolveSessionCredential({
+    authorization: req.get('authorization'),
+    cookieToken: req.cookies?.[ADMIN_SESSION_COOKIE]
+  });
+}
+
 function getSessionToken(req: express.Request) {
   return getSessionCredential(req).token;
 }
@@ -1865,7 +1900,52 @@ function sessionCookieOptions() {
   };
 }
 
+function adminSessionCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: 'strict' as const,
+    secure: IS_PRODUCTION,
+    maxAge: ADMIN_SESSION_TTL_MS,
+    path: '/api/admin'
+  };
+}
+
+function getCurrentAdminAuth(req: express.Request) {
+  const token = getAdminSessionCredential(req).token;
+  if (!token) return null;
+  const adminSession = adminSessionsByTokenHash.get(hashAdminSessionToken(token));
+  if (!adminSession || adminSession.revoked_at || Date.parse(adminSession.expires_at) <= Date.now()) return null;
+  const adminAccount = adminAccounts.find(account =>
+    account.id === adminSession.admin_account_id && account.account_status === 'ACTIVE'
+  );
+  if (!adminAccount) return null;
+  adminSession.last_seen_at = new Date().toISOString();
+  const user: User = {
+    id: adminAccount.id,
+    phone: '',
+    name: adminAccount.username,
+    is_verified: true,
+    roles: [],
+    staff_role: adminAccount.staff_role,
+    account_status: adminAccount.account_status,
+    created_at: adminAccount.created_at
+  };
+  const session: AuthSession = {
+    id: adminSession.id,
+    token: '',
+    user_id: adminAccount.id,
+    created_at: adminSession.created_at,
+    expires_at: adminSession.expires_at,
+    revoked_at: adminSession.revoked_at,
+    user_agent: adminSession.user_agent,
+    ip: adminSession.ip,
+    last_seen_at: adminSession.last_seen_at
+  };
+  return { user, session, adminAccount, adminSession };
+}
+
 function getCurrentAuth(req: express.Request) {
+  if (isAdminApiRequest(req)) return getCurrentAdminAuth(req);
   const token = getSessionToken(req);
   if (!token) return null;
 
@@ -1933,6 +2013,52 @@ async function issueSession(userId: string, req: express.Request) {
   sessionsByToken.set(session.token, session);
   await saveToTable('common_sessions', session);
   return session.token;
+}
+
+async function issueAdminSession(account: AdminAccount, req: express.Request) {
+  const now = Date.now();
+  const token = newAdminSessionToken();
+  const session: AdminSession = {
+    id: uuidv4(),
+    token_hash: hashAdminSessionToken(token),
+    admin_account_id: account.id,
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + ADMIN_SESSION_TTL_MS).toISOString(),
+    user_agent: cleanString(req.get('user-agent'), 300) || 'Unknown device',
+    ip: req.ip,
+    last_seen_at: new Date(now).toISOString()
+  };
+  adminSessions.push(session);
+  adminSessionsByTokenHash.set(session.token_hash, session);
+  await saveToTable('common_admin_sessions', session);
+  return { token, session };
+}
+
+async function revokeAdminSession(session: AdminSession) {
+  if (session.revoked_at) return;
+  session.revoked_at = new Date().toISOString();
+  await saveToTable('common_admin_sessions', session);
+}
+
+async function revokeAdminAccountSessions(accountId: string) {
+  let revoked = 0;
+  for (const session of adminSessions.filter(item =>
+    item.admin_account_id === accountId && !item.revoked_at
+  )) {
+    await revokeAdminSession(session);
+    revoked += 1;
+  }
+  return revoked;
+}
+
+function adminSessionPayload(account: AdminAccount, session: AdminSession) {
+  return {
+    admin: {
+      ...publicAdminAccount(account),
+      capabilities: capabilitiesFor(account.staff_role)
+    },
+    session: { id: session.id, expires_at: session.expires_at }
+  };
 }
 
 /**
@@ -3107,11 +3233,14 @@ async function issueOtpChallenge(
 }
 
 function otpDeliveryPayload(challenge: OtpChallenge, req?: express.Request) {
+  const deferredRegistration = challenge.purpose === 'REGISTER' && req &&
+    eligibleOutage(challenge, requestGuestDevice(req)?.id || '');
   return {
     challenge_id: challenge.id,
     delivery_status: challenge.delivery_status || 'queued',
     expires_at: challenge.expires_at,
-    ...(req ? { blood_help_eligible: eligibleOutage(challenge, requestGuestDevice(req)?.id || '') } : {})
+    ...(req ? { blood_help_eligible: eligibleOutage(challenge, requestGuestDevice(req)?.id || '') } : {}),
+    ...(deferredRegistration ? { verification_deferred: true, registration_pending: true } : {})
   };
 }
 
@@ -3147,6 +3276,10 @@ app.post('/api/auth/otp/request', asyncRoute(async (req, res) => {
   // only after the caller proves control of the number.
 
   const issued = await issueOtpChallenge(phone, purpose, provider, requestGuestDevice(req)?.id, req);
+  if ('error' in issued && 'challenge' in issued && issued.challenge && purpose === 'REGISTER' &&
+    eligibleOutage(issued.challenge, requestGuestDevice(req)?.id || '')) {
+    return res.status(202).json({ success: true, ...otpDeliveryPayload(issued.challenge, req) });
+  }
   if ('error' in issued) return res.status(issued.status).json({
     error: issued.error,
     ...('challenge' in issued && issued.challenge ? otpDeliveryPayload(issued.challenge, req) : {}),
@@ -3232,6 +3365,179 @@ app.post('/api/auth/otp/verify', asyncRoute(async (req, res) => {
 app.post('/api/auth/otp/login', (_req, res) => {
   res.status(410).json({ error: 'Code sign-in is no longer available. Sign in with your password or reset it.' });
 });
+
+app.post('/api/admin/auth/login', adminLoginLimiter, asyncRoute(async (req, res) => {
+  const username = normalizeAdminUsername(req.body?.username);
+  const password = req.body?.password;
+  if (!username || typeof password !== 'string') {
+    return res.status(401).json({ error: 'Invalid admin credentials' });
+  }
+  const account = adminAccounts.find(item => item.username === username && item.account_status === 'ACTIVE');
+  if (!account || !(await verifyAdminPassword(password, account.password_hash))) {
+    await audit('admin:unknown', 'ADMIN_LOGIN_FAILED', 'ADMIN_ACCOUNT',
+      `username:${createHash('sha256').update(username).digest('hex').slice(0, 16)}`,
+      { reason: 'Invalid credentials' });
+    return res.status(401).json({ error: 'Invalid admin credentials' });
+  }
+  const { token, session } = await issueAdminSession(account, req);
+  await audit(account.id, 'ADMIN_LOGIN_SUCCEEDED', 'ADMIN_ACCOUNT', account.id);
+  res.cookie(ADMIN_SESSION_COOKIE, token, adminSessionCookieOptions());
+  res.set('Cache-Control', 'no-store').json({
+    ...adminSessionPayload(account, session),
+    ...(req.get('x-drop-client')?.toLowerCase() === 'android'
+      ? { session_token: token }
+      : {})
+  });
+}));
+
+app.get('/api/admin/session', (req, res) => {
+  const auth = getCurrentAdminAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Admin sign-in required' });
+  res.set('Cache-Control', 'no-store').json(
+    adminSessionPayload(auth.adminAccount, auth.adminSession)
+  );
+});
+
+app.post('/api/admin/auth/logout', asyncRoute(async (req, res) => {
+  const auth = getCurrentAdminAuth(req);
+  if (auth) {
+    await revokeAdminSession(auth.adminSession);
+    await audit(auth.adminAccount.id, 'ADMIN_LOGOUT', 'ADMIN_ACCOUNT', auth.adminAccount.id);
+  }
+  res.clearCookie(ADMIN_SESSION_COOKIE, { path: '/api/admin' });
+  res.json({ success: true });
+}));
+
+app.post('/api/admin/account/password', asyncRoute(async (req, res) => {
+  const auth = getCurrentAdminAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Admin sign-in required' });
+  const currentPassword = req.body?.current_password;
+  const newPassword = req.body?.new_password;
+  if (!(await verifyAdminPassword(currentPassword, auth.adminAccount.password_hash))) {
+    return res.status(403).json({ error: 'Current password is incorrect' });
+  }
+  if (!validAdminPassword(newPassword)) {
+    return validationError(res, 'New admin password must be 12–128 characters');
+  }
+  auth.adminAccount.password_hash = await hashAdminPassword(newPassword);
+  auth.adminAccount.password_changed_at = new Date().toISOString();
+  auth.adminAccount.updated_at = auth.adminAccount.password_changed_at;
+  await saveToTable('common_admin_accounts', auth.adminAccount);
+  await revokeAdminAccountSessions(auth.adminAccount.id);
+  await audit(auth.adminAccount.id, 'ADMIN_PASSWORD_CHANGED', 'ADMIN_ACCOUNT', auth.adminAccount.id, {
+    sessions_revoked: true
+  });
+  res.clearCookie(ADMIN_SESSION_COOKIE, { path: '/api/admin' });
+  res.json({ success: true, signed_out: true });
+}));
+
+app.get('/api/admin/accounts', (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_STAFF');
+  if (!auth) return;
+  res.set('Cache-Control', 'no-store').json({
+    accounts: [...adminAccounts]
+      .sort((a, b) => a.username.localeCompare(b.username))
+      .map(publicAdminAccount)
+  });
+});
+
+app.post('/api/admin/accounts', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_STAFF');
+  if (!auth) return;
+  const username = normalizeAdminUsername(req.body?.username);
+  const name = cleanString(req.body?.name, 100);
+  const staffRole = req.body?.staff_role;
+  const initialPassword = req.body?.initial_password;
+  if (!username || !name || !isAdminRole(staffRole) || !validAdminPassword(initialPassword)) {
+    return validationError(res, 'Username, name, admin role, and a 12–128 character initial password are required');
+  }
+  if (adminAccounts.some(account => account.username === username)) {
+    return res.status(409).json({ error: 'Admin username already exists' });
+  }
+  const now = new Date().toISOString();
+  const account: AdminAccount = {
+    id: uuidv4(),
+    username,
+    name,
+    password_hash: await hashAdminPassword(initialPassword),
+    staff_role: staffRole,
+    account_status: 'ACTIVE',
+    created_at: now,
+    updated_at: now,
+    password_changed_at: now
+  };
+  adminAccounts.push(account);
+  await saveToTable('common_admin_accounts', account);
+  await audit(auth.user.id, 'ADMIN_ACCOUNT_CREATED', 'ADMIN_ACCOUNT', account.id, {
+    username: account.username,
+    name: account.name,
+    staff_role: account.staff_role
+  });
+  res.status(201).json({ admin: publicAdminAccount(account) });
+}));
+
+app.patch('/api/admin/accounts/:id', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_STAFF');
+  if (!auth) return;
+  const account = adminAccounts.find(item => item.id === req.params.id);
+  if (!account) return res.status(404).json({ error: 'Admin account not found' });
+  const nameProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'name');
+  const roleProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'staff_role');
+  const statusProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'account_status');
+  const name = nameProvided ? cleanString(req.body?.name, 100) : account.name || account.username;
+  const staffRole = roleProvided ? req.body?.staff_role : account.staff_role;
+  const accountStatus = statusProvided ? req.body?.account_status : account.account_status;
+  if (!name || !isAdminRole(staffRole) || !isOneOf(accountStatus, ['ACTIVE', 'SUSPENDED'] as const)) {
+    return validationError(res, 'Valid name, admin role, and account status are required');
+  }
+  const removingOwnAccess = auth.user.id === account.id &&
+    (staffRole !== account.staff_role || accountStatus !== 'ACTIVE');
+  if (removingOwnAccess) {
+    return res.status(409).json({ error: 'You cannot remove or reduce your own admin access' });
+  }
+  const activeSuperadmins = adminAccounts.filter(item =>
+    item.staff_role === 'SUPERADMIN' && item.account_status === 'ACTIVE'
+  ).length;
+  if (account.staff_role === 'SUPERADMIN' && account.account_status === 'ACTIVE' &&
+      (staffRole !== 'SUPERADMIN' || accountStatus !== 'ACTIVE') && activeSuperadmins <= 1) {
+    return res.status(409).json({ error: 'The last active superadmin cannot be changed or suspended' });
+  }
+  const before = publicAdminAccount(account);
+  const accessChanged = staffRole !== account.staff_role || accountStatus !== account.account_status;
+  account.name = name;
+  account.staff_role = staffRole;
+  account.account_status = accountStatus;
+  account.updated_at = new Date().toISOString();
+  await saveToTable('common_admin_accounts', account);
+  const revokedSessions = accessChanged ? await revokeAdminAccountSessions(account.id) : 0;
+  await audit(auth.user.id, 'ADMIN_ACCOUNT_UPDATED', 'ADMIN_ACCOUNT', account.id, {
+    before,
+    after: publicAdminAccount(account),
+    revoked_sessions: revokedSessions
+  });
+  res.json({ admin: publicAdminAccount(account), revoked_sessions: revokedSessions });
+}));
+
+app.post('/api/admin/accounts/:id/reset-password', asyncRoute(async (req, res) => {
+  const auth = requireStaffCapability(req, res, 'MANAGE_STAFF');
+  if (!auth) return;
+  const account = adminAccounts.find(item => item.id === req.params.id);
+  if (!account) return res.status(404).json({ error: 'Admin account not found' });
+  const newPassword = req.body?.new_password;
+  if (!validAdminPassword(newPassword)) {
+    return validationError(res, 'New admin password must be 12–128 characters');
+  }
+  const now = new Date().toISOString();
+  account.password_hash = await hashAdminPassword(newPassword);
+  account.password_changed_at = now;
+  account.updated_at = now;
+  await saveToTable('common_admin_accounts', account);
+  const revokedSessions = await revokeAdminAccountSessions(account.id);
+  await audit(auth.user.id, 'ADMIN_PASSWORD_RESET', 'ADMIN_ACCOUNT', account.id, {
+    revoked_sessions: revokedSessions
+  });
+  res.json({ success: true, revoked_sessions: revokedSessions });
+}));
 
 app.post('/api/auth/login', passwordLoginLimiter, asyncRoute((req, res) => accountWrites.run(async () => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
@@ -4904,7 +5210,7 @@ app.get('/api/admin/overview', async (req, res) => {
       users: users.length,
       verified_users: users.filter(user => user.is_verified).length,
       suspended_users: users.filter(user => user.account_status === 'SUSPENDED').length,
-      staff_users: users.filter(user => user.staff_role).length,
+      admin_accounts: adminAccounts.filter(account => account.account_status === 'ACTIVE').length,
       registered_donors: users.filter(user => user.donor_profile).length,
       available_donors: users.filter(user =>
         isSearchableRegisteredDonor(user) &&
@@ -4997,6 +5303,9 @@ app.post('/api/admin/sms-providers', asyncRoute(async (req, res) => {
     id: uuidv4(), name, base_url: baseUrl, api_token_encrypted: encryptSetting(apiToken, smsSettingsSecret()), priority,
     enabled: req.body?.enabled !== false, created_at: now, updated_at: now, updated_by: auth.user.id
   };
+  if (provider.enabled && smsProviders.some(item => item.enabled && !item.deleted_at)) {
+    return res.status(409).json({ error: 'Disable the current Messavo SIM 2 route before enabling another sender' });
+  }
   smsProviders.push(provider); await saveToTable('common_sms_providers', provider);
   await audit(auth.user.id, 'SMS_PROVIDER_CREATED', 'SMS_PROVIDER', provider.id, { reason, name, base_url: baseUrl, priority, enabled: provider.enabled });
   res.status(201).json(publicSmsProvider(provider));
@@ -5047,7 +5356,11 @@ app.patch('/api/admin/sms-providers/:id', asyncRoute(async (req, res) => {
     const priority = parsePositiveInteger(req.body.priority, 100); if (!priority) return validationError(res, 'Priority must be between 1 and 100'); provider.priority = priority;
   }
   if (req.body?.enabled !== undefined) {
-    if (typeof req.body.enabled !== 'boolean') return validationError(res, 'Enabled must be true or false'); provider.enabled = req.body.enabled;
+    if (typeof req.body.enabled !== 'boolean') return validationError(res, 'Enabled must be true or false');
+    if (req.body.enabled && smsProviders.some(item => item.id !== provider.id && item.enabled && !item.deleted_at)) {
+      return res.status(409).json({ error: 'Disable the current Messavo SIM 2 route before enabling another sender' });
+    }
+    provider.enabled = req.body.enabled;
   }
   provider.updated_at = new Date().toISOString(); provider.updated_by = auth.user.id;
   await saveToTable('common_sms_providers', provider);
@@ -5077,6 +5390,9 @@ app.post('/api/admin/sms-providers/:id/restore', asyncRoute(async (req, res) => 
   if (!provider) return res.status(404).json({ error: 'SMS provider not found' });
   const reason = cleanString(req.body?.reason, 500);
   if (!reason) return validationError(res, 'A reason is required');
+  if (smsProviders.some(item => item.id !== provider.id && item.enabled && !item.deleted_at)) {
+    return res.status(409).json({ error: 'Disable the current Messavo SIM 2 route before restoring another sender' });
+  }
   provider.deleted_at = undefined; provider.enabled = true; provider.updated_at = new Date().toISOString(); provider.updated_by = auth.user.id;
   await saveToTable('common_sms_providers', provider);
   await audit(auth.user.id, 'SMS_PROVIDER_RESTORED', 'SMS_PROVIDER', provider.id, { reason, provider: publicSmsProvider(provider) });
@@ -5099,6 +5415,9 @@ app.get('/api/admin/users', (req, res) => {
 app.patch('/api/admin/users/:id', async (req, res) => {
   const auth = requireStaffCapability(req, res, 'VIEW_USERS');
   if (!auth) return;
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'staff_role')) {
+    return validationError(res, 'Admin access uses a separate admin account');
+  }
   const target = users.find(user => user.id === req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
   const previousDonorProfile = target.donor_profile;
@@ -5617,6 +5936,8 @@ function safeAuditActorSummary(actorId: string) {
   if (actorId === 'anonymous') return { type: 'Visitor', label: 'Anonymous visitor' };
   if (actorId.startsWith('guest:')) return { type: 'Visitor', label: `Visitor ${actorId.slice(-6)}` };
   if (actorId === 'self-service') return { type: 'Self-service', label: 'Verified self-service flow' };
+  const admin = adminAccounts.find(account => account.id === actorId);
+  if (admin) return { type: `${admin.staff_role.toLowerCase()} staff`, label: admin.name || admin.username };
   const actor = users.find(user => user.id === actorId);
   if (!actor) return { type: 'Account', label: 'Account no longer available' };
   return {
@@ -5627,6 +5948,13 @@ function safeAuditActorSummary(actorId: string) {
 
 function safeAuditTargetSummary(event: AuditEvent, postsById: Map<string, CommunityPost>) {
   const fallback = { type: event.target_type || 'Record', label: `${(event.target_type || 'Record').replaceAll('_', ' ').toLowerCase()} no longer available` };
+  if (event.target_type === 'ADMIN_ACCOUNT') {
+    const target = adminAccounts.find(account => account.id === event.target_id);
+    return target ? { type: 'Admin account', label: target.name || target.username } : fallback;
+  }
+  if (['PROFILE_INVITATION', 'INVITATION_CAMPAIGN', 'CONTRIBUTION_BATCH'].includes(event.target_type)) {
+    return { type: event.target_type.replaceAll('_', ' ').toLowerCase(), label: `${event.target_type.replaceAll('_', ' ').toLowerCase()} ${event.target_id.slice(-6)}` };
+  }
   if (event.target_type === 'USER') {
     const target = users.find(user => user.id === event.target_id);
     return target ? { type: target.staff_role ? 'Staff account' : 'Member account', label: target.name || 'Unnamed account' } : fallback;
@@ -6007,6 +6335,40 @@ app.post('/api/contributions', contributionLimiter, asyncRoute(async (req, res) 
   await audit('anonymous', 'DONOR_CONTRIBUTION_CREATED', 'IMPORTED_DONOR', donor.id);
   res.status(202).json(neutralContributionResponse({ phone: donor.phone, claimSlug: donor.claim_slug }));
 }));
+
+app.use('/api/me/donor-contributions', contributionLimiter);
+app.post('/api/me/donor-contribution-batches', contributionLimiter);
+
+const invitationSystem = createInvitationRoutes(app, {
+  getAuth: req => getCurrentAuth(req),
+  requireManager: (req, res) => requireStaffCapability(req, res, 'MANAGE_INVITATIONS'),
+  normalizePhone: normalizeBangladeshPhone,
+  cleanString,
+  parseImportedInput(value) {
+    if (!isPlainObject(value)) return { error: 'Donor details are required' };
+    const name = cleanString(value.name, 100);
+    const phone = normalizeBangladeshPhone(value.phone);
+    const bloodGroup = optionalCleanString(value.blood_group, 3) || '';
+    const district = optionalCleanString(value.district, 80) || '';
+    const upazila = value.upazila === undefined || value.upazila === '' ? '' : district ? parseUpazila(district, value.upazila) : null;
+    if (!name || !phone) return { error: 'A valid donor name and Bangladesh mobile are required' };
+    if (bloodGroup && !isOneOf(bloodGroup, BLOOD_GROUPS)) return { error: 'Choose a valid blood group' };
+    if (district && !getLocationByName(district)) return { error: 'Choose a supported district' };
+    if (upazila === null) return { error: 'Choose an upazila that belongs to the selected district' };
+    return { name, phone, blood_group: bloodGroup, district, upazila };
+  },
+  resolveLocation: getLocationByName,
+  publicOrigin,
+  configuredOrigin: () => configuredPublicOrigin,
+  smsProvider: () => configuredPublicOrigin ? activeSmsProvider() : null,
+  registeredPhone: phone => users.some(user => user.phone === phone && !user.deleted_at),
+  maskPhone,
+  userSummary(id) {
+    const user = users.find(item => item.id === id && !item.deleted_at);
+    return user ? { id: user.id, name: user.name, phone: user.phone } : null;
+  },
+  audit
+});
 
 // --- Imported donor ownership -------------------------------------------
 //
@@ -6845,10 +7207,12 @@ app.use('/media', (_req, res) => res.status(404).end());
 
 async function startServer() {
   await initDbData();
+  await invitationSystem.initialize();
   await enforceExpiredRequests();
 
   await expireOtpChallenges();
   await processDonationFollowUps();
+  await invitationSystem.processInvitations();
   // Prepare the imported directory before reporting ready. It is otherwise
   // prepared lazily on first access, and after a schema change that means the
   // first donor search blocks behind a full-table migration while /ready has
@@ -6881,6 +7245,15 @@ async function startServer() {
   }, 60_000);
   requestExpiryTimer.unref();
   maintenanceTimer.unref();
+  let invitationProcessing = false;
+  const invitationTimer = setInterval(() => {
+    if (invitationProcessing) return;
+    invitationProcessing = true;
+    void invitationSystem.processInvitations()
+      .catch(error => console.error('profile invitation processing failed', error))
+      .finally(() => { invitationProcessing = false; });
+  }, 5_000);
+  invitationTimer.unref();
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -6939,9 +7312,19 @@ async function startServer() {
   }
 
   isReady = true;
-  app.listen(PORT, "0.0.0.0", () => {
+  const httpServer = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    clearInterval(maintenanceTimer); clearInterval(pushTimer); clearInterval(requestExpiryTimer); clearInterval(invitationTimer);
+    httpServer.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
 startServer();

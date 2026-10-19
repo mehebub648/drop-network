@@ -1,5 +1,6 @@
 import type { LastDonationInput, PublicDonationSummary } from './donation';
 import type { Upazila } from './upazilas';
+import type { ContributionBatch, InvitationCampaign, InvitationPacing, ReviewedDonorInput } from './invitationTypes';
 
 const API_BASE = '/api';
 
@@ -104,6 +105,30 @@ export type OtpDelivery = {
   delivery_status: OtpDeliveryStatus;
   expires_at: string;
   blood_help_eligible?: boolean;
+  verification_deferred?: boolean;
+  registration_pending?: boolean;
+};
+
+export type AdminSessionUser = {
+  id: string;
+  username: string;
+  name?: string;
+  staff_role: 'MODERATOR' | 'ADMIN' | 'SUPERADMIN';
+  account_status: 'ACTIVE';
+  capabilities: string[];
+};
+
+export type AdminAccountSummary = {
+  id: string;
+  username: string;
+  name: string;
+  staff_role: AdminSessionUser['staff_role'];
+  account_status: 'ACTIVE' | 'SUSPENDED';
+};
+
+export type AdminSession = {
+  admin: AdminSessionUser;
+  session: { id: string; expires_at: string };
 };
 
 type ClaimProfileDetails = {
@@ -253,6 +278,49 @@ export type DonationShareDraftInput = {
 };
 
 export const api = {
+  async getAdminSession(): Promise<AdminSession> {
+    const res = await fetch(`${API_BASE}/admin/session`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Administration session required');
+  },
+
+  async adminLogin(username: string, password: string): Promise<AdminSession> {
+    const res = await fetch(`${API_BASE}/admin/auth/login`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ username, password })
+    });
+    return readJsonOrThrow(res, 'Could not sign in to administration');
+  },
+
+  async adminLogout() {
+    const res = await fetch(`${API_BASE}/admin/auth/logout`, { method: 'POST', headers: getHeaders() });
+    return readJsonOrThrow(res, 'Could not sign out of administration');
+  },
+
+  async changeAdminPassword(currentPassword: string, newPassword: string) {
+    const res = await fetch(`${API_BASE}/admin/account/password`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+    });
+    return readJsonOrThrow(res, 'Could not change the administration password');
+  },
+
+  async getAdminAccounts(): Promise<{ accounts: AdminAccountSummary[] }> {
+    const res = await fetch(`${API_BASE}/admin/accounts`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Could not load administration accounts');
+  },
+
+  async createAdminAccount(input: { username: string; name: string; staff_role: AdminSessionUser['staff_role']; initial_password: string }): Promise<{ admin: AdminAccountSummary }> {
+    const res = await fetch(`${API_BASE}/admin/accounts`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(input) });
+    return readJsonOrThrow(res, 'Could not create the administration account');
+  },
+
+  async updateAdminAccount(id: string, input: Partial<Pick<AdminAccountSummary, 'name' | 'staff_role' | 'account_status'>>): Promise<{ admin: AdminAccountSummary; revoked_sessions: number }> {
+    const res = await fetch(`${API_BASE}/admin/accounts/${encodeURIComponent(id)}`, { method: 'PATCH', headers: getHeaders(), body: JSON.stringify(input) });
+    return readJsonOrThrow(res, 'Could not update the administration account');
+  },
+
+  async resetAdminAccountPassword(id: string, newPassword: string): Promise<{ success: true; revoked_sessions: number }> {
+    const res = await fetch(`${API_BASE}/admin/accounts/${encodeURIComponent(id)}/reset-password`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ new_password: newPassword }) });
+    return readJsonOrThrow(res, 'Could not reset the administration password');
+  },
   async getDonorDistrictMeta(bloodGroup: string, signal?: AbortSignal): Promise<DonorDistrictMeta> {
     const query = new URLSearchParams();
     if (bloodGroup) query.set('blood_group', bloodGroup);
@@ -969,6 +1037,107 @@ export const api = {
       method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
     });
     return readJsonOrThrow(res, 'Failed to create a private donor suggestion');
+  },
+
+  async createMyDonorContribution(body: {
+    name: string;
+    phone: string;
+    blood_group?: string;
+    district?: string;
+    upazila?: string;
+  }) {
+    const res = await fetch(`${API_BASE}/me/donor-contributions`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to send the private invitation');
+  },
+
+  async getMyContributionBatches(): Promise<{ batches: ContributionBatch[] }> {
+    const res = await fetch(`${API_BASE}/me/donor-contribution-batches`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load your donor-list submissions');
+  },
+
+  async createMyContributionBatch(body: {
+    pasted_text?: string;
+    note?: string;
+    files: Array<{ name: string; content_type: string; size_bytes: number }>;
+  }): Promise<{ batch: ContributionBatch }> {
+    const res = await fetch(`${API_BASE}/me/donor-contribution-batches`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to prepare the donor-list submission');
+  },
+
+  async uploadMyContributionBatchFile(batchId: string, fileId: string, file: File, fingerprint: string, contentType = file.type || 'application/octet-stream') {
+    const res = await fetch(`${API_BASE}/me/donor-contribution-batches/${encodeURIComponent(batchId)}/files/${encodeURIComponent(fileId)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': contentType,
+        'X-File-Name': encodeURIComponent(file.name),
+        'X-Content-Fingerprint': fingerprint,
+        'x-fingerprint': BROWSER_FINGERPRINT!
+      },
+      body: file
+    });
+    return readJsonOrThrow(res, 'Failed to upload a donor-list file');
+  },
+
+  async submitMyContributionBatch(id: string): Promise<{ batch: ContributionBatch }> {
+    const res = await fetch(`${API_BASE}/me/donor-contribution-batches/${encodeURIComponent(id)}/submit`, {
+      method: 'POST', headers: getHeaders(), body: '{}'
+    });
+    return readJsonOrThrow(res, 'Failed to submit the donor list for review');
+  },
+
+  async getAdminContributionBatches(): Promise<{ batches: ContributionBatch[] }> {
+    const res = await fetch(`${API_BASE}/admin/donor-contribution-batches`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load donor-list submissions');
+  },
+
+  async getAdminContributionBatch(id: string): Promise<{ batch: ContributionBatch }> {
+    const res = await fetch(`${API_BASE}/admin/donor-contribution-batches/${encodeURIComponent(id)}`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to open that donor-list submission');
+  },
+
+  async reviewAdminContributionBatch(id: string, body: { action: 'APPROVE' | 'REJECT'; note: string; donors?: ReviewedDonorInput[] }) {
+    const res = await fetch(`${API_BASE}/admin/donor-contribution-batches/${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to save the donor-list review');
+  },
+
+  async getAdminInvitationCampaigns(): Promise<{ campaigns: InvitationCampaign[] }> {
+    const res = await fetch(`${API_BASE}/admin/invitation-campaigns`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load invitation campaigns');
+  },
+
+  async createAdminInvitationCampaign(body: { label: string; count: number; mode: 'INSTANT' | 'RAMPED'; pacing?: InvitationPacing }) {
+    const res = await fetch(`${API_BASE}/admin/invitation-campaigns`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to prepare the invitation campaign');
+  },
+
+  async actionAdminInvitationCampaign(id: string, action: 'start' | 'pause' | 'cancel') {
+    const res = await fetch(`${API_BASE}/admin/invitation-campaigns/${encodeURIComponent(id)}/${action}`, {
+      method: 'POST', headers: getHeaders(), body: '{}'
+    });
+    return readJsonOrThrow(res, `Failed to ${action} the invitation campaign`);
+  },
+
+  async getAdminInvitations(filters: { delivery_status?: string; outcome?: string; campaign_id?: string } = {}) {
+    const query = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => { if (value) query.set(key, value); });
+    const suffix = query.size ? `?${query}` : '';
+    const res = await fetch(`${API_BASE}/admin/invitations${suffix}`, { headers: getHeaders(), cache: 'no-store' });
+    return readJsonOrThrow(res, 'Failed to load invitations');
+  },
+
+  async resendAdminInvitations(body: { invitation_ids?: string[]; filter?: 'NO_RESPONSE'; campaign_id?: string }) {
+    const res = await fetch(`${API_BASE}/admin/invitations/resend`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    return readJsonOrThrow(res, 'Failed to resend invitations');
   },
 
   async claimDirectoryProfile(id: string, body: { name?: string; blood_group?: string; location?: { lat: number; lng: number; area_name: string } }) {

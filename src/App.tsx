@@ -33,10 +33,13 @@ import PartnersPage from './pages/PartnersPage';
 import ClaimProfilePage, { LegacyClaimRedirect } from './pages/ClaimProfilePage';
 import RemoveListingPage from './pages/RemoveListingPage';
 import ContributeDonorPage from './pages/ContributeDonorPage';
+import AddDonorsPage from './pages/AddDonorsPage';
 import DonorSearchPage from './pages/DonorSearchPage';
 import CallOutcomeGate from './components/CallOutcomeGate';
 import DonationFollowUpPage from './pages/DonationFollowUpPage';
 import { getSafeReturnTo } from './lib/navigation';
+import AdminAuthGate from './components/AdminAuthGate';
+import AdminLoginPage from './pages/AdminLoginPage';
 
 const CommunityEditorPage = lazy(() => import('./pages/CommunityEditorPage'));
 const CommunityPage = lazy(() => import('./pages/CommunityPage'));
@@ -86,11 +89,6 @@ export default function App() {
     : user
       ? element
       : <Navigate to="/login" replace />;
-  const isStaff = Boolean(
-    user?.staff_role ||
-    user?.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role))
-  );
-
   return (
     <BrowserRouter>
       <ErrorBoundary>
@@ -117,7 +115,7 @@ export default function App() {
             <Route path="/directory/imported/:id" element={<LegacyClaimRedirect />} />
             <Route path="/directory/:id" element={<LegacyClaimRedirect />} />
             <Route path="/c/:slug" element={<ClaimProfilePage user={user} onUpdate={fetchUser} />} />
-            <Route path="/contribute" element={<ContributeDonorPage />} />
+            <Route path="/contribute" element={loading ? <RouteLoading /> : user ? <AddDonorsPage /> : <ContributeDonorPage />} />
             <Route path="/follow-up" element={<DonationFollowUpPage onAuthUpdate={fetchUser} />} />
             <Route path="/login" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile"><LoginPage onLogin={fetchUser} /></GuestOnlyRoute>} />
             <Route path="/register" element={<GuestOnlyRoute user={user} loading={loading} fallback="/profile/donor"><RegisterPage onLogin={fetchUser} /></GuestOnlyRoute>} />
@@ -142,7 +140,8 @@ export default function App() {
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/safety" element={<SafetyPage />} />
             <Route path="/partners" element={<PartnersPage user={user} />} />
-            <Route path="/admin" element={loading ? <RouteLoading /> : isStaff ? <DeferredRoute label="Loading operations…"><AdminPage user={user} onOtpBypassChange={setOtpBypassEnabled} /></DeferredRoute> : <Navigate to="/" replace />} />
+            <Route path="/admin/login" element={<AdminLoginPage />} />
+            <Route path="/admin" element={<AdminAuthGate>{admin => <DeferredRoute label="Loading operations…"><AdminPage user={{ ...admin, name: admin.name || admin.username, phone: '' }} onOtpBypassChange={setOtpBypassEnabled} onSignedOut={() => window.location.assign('/admin/login')} /></DeferredRoute>}</AdminAuthGate>} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
           {!mobileBrowser && <CallOutcomeGate user={user} />}

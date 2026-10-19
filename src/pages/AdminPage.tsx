@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   LockKeyhole,
   MessageSquare,
+  MailCheck,
   Pencil,
   Plus,
   RefreshCw,
@@ -37,6 +38,9 @@ import {
 import { api, type AdminCommunityPost, type CommunityPostStatus } from '../lib/api';
 import ModalPortal from '../components/ModalPortal';
 import { useSearchParams } from 'react-router';
+import AdminInvitationsPanel from '../components/AdminInvitationsPanel';
+import AdminAccountPanel from '../components/AdminAccountPanel';
+import AdminStaffPanel from '../components/AdminStaffPanel';
 
 type Capability =
   | 'DASHBOARD'
@@ -47,6 +51,7 @@ type Capability =
   | 'REVOKE_SESSIONS'
   | 'MANAGE_SUPPORT'
   | 'MANAGE_ORGANIZATIONS'
+  | 'MANAGE_INVITATIONS'
   | 'VIEW_AUDIT'
   | 'MANAGE_SMS'
   | 'MANAGE_STAFF'
@@ -57,6 +62,7 @@ type StaffRole = 'MODERATOR' | 'ADMIN' | 'SUPERADMIN';
 type AdminViewer = {
   id: string;
   name: string;
+  username?: string;
   phone: string;
   staff_role?: StaffRole;
 };
@@ -80,7 +86,7 @@ type ContactReportData = {
   states: Record<string, { suspended: boolean; suspended_at?: string; suspension_count?: number }>;
 };
 
-type TabId = 'overview' | 'members' | 'requests' | 'community' | 'reports' | 'support' | 'organizations' | 'claims' | 'audit' | 'messavo' | 'system';
+type TabId = 'overview' | 'members' | 'requests' | 'community' | 'reports' | 'support' | 'organizations' | 'claims' | 'invitations' | 'audit' | 'messavo' | 'system' | 'staff' | 'account';
 
 type SmsProvider = {
   id: string;
@@ -113,8 +119,8 @@ type DialogState = {
 
 const roleCapabilities: Record<StaffRole, Capability[]> = {
   MODERATOR: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS'],
-  ADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_SMS'],
-  SUPERADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'VIEW_AUDIT', 'MANAGE_SMS', 'MANAGE_STAFF', 'MANAGE_SYSTEM']
+  ADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'MANAGE_INVITATIONS', 'VIEW_AUDIT', 'MANAGE_SMS'],
+  SUPERADMIN: ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS', 'EDIT_USERS', 'REVOKE_SESSIONS', 'MANAGE_SUPPORT', 'MANAGE_ORGANIZATIONS', 'MANAGE_INVITATIONS', 'VIEW_AUDIT', 'MANAGE_SMS', 'MANAGE_STAFF', 'MANAGE_SYSTEM']
 };
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capability?: Capability; countKey?: string }> = [
@@ -125,13 +131,17 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard; capa
   { id: 'reports', label: 'Reports', icon: ShieldAlert, capability: 'MODERATE_CONTENT', countKey: 'open_reports' },
   { id: 'support', label: 'Support', icon: ClipboardList, capability: 'MANAGE_SUPPORT', countKey: 'open_tickets' },
   { id: 'organizations', label: 'Partners', icon: Building2, capability: 'MANAGE_ORGANIZATIONS', countKey: 'pending_organizations' },
-  { id: 'claims', label: 'Claims', icon: UserCheck, capability: 'MANAGE_ORGANIZATIONS', countKey: 'pending_directory_claims' },
+  { id: 'claims', label: 'Claims', icon: UserCheck, capability: 'MODERATE_CONTENT', countKey: 'pending_directory_claims' },
+  { id: 'invitations', label: 'Invitations', icon: MailCheck, capability: 'MANAGE_INVITATIONS' },
   { id: 'audit', label: 'Activity', icon: LockKeyhole, capability: 'VIEW_AUDIT' },
   { id: 'messavo', label: 'Messavo SMS', icon: Smartphone, capability: 'MANAGE_SMS' },
-  { id: 'system', label: 'System', icon: Server }
+  { id: 'system', label: 'System', icon: Server },
+  { id: 'staff', label: 'Admin team', icon: UserCog, capability: 'MANAGE_STAFF' },
+  { id: 'account', label: 'My admin account', icon: UserCog }
 ];
 
 const countLabels: Record<string, string> = {
+  admin_accounts: 'Administration accounts',
   users: 'Members',
   verified_users: 'Verified members',
   suspended_users: 'Suspended',
@@ -149,11 +159,14 @@ const countLabels: Record<string, string> = {
   pending_directory_claims: 'Profile claims'
 };
 
-export default function AdminPage({ user, onOtpBypassChange }: { user: AdminViewer; onOtpBypassChange: (enabled: boolean) => void }) {
+export default function AdminPage({ user, onOtpBypassChange, onSignedOut }: { user: AdminViewer; onOtpBypassChange: (enabled: boolean) => void; onSignedOut: () => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('section') as TabId | null;
   const auditUserFilter = searchParams.get('user') || '';
-  const [activeTab, setActiveTab] = useState<TabId>(requestedTab && tabs.some(tab => tab.id === requestedTab) ? requestedTab : 'overview');
+  const requestedTabAllowed = Boolean(requestedTab && tabs.some(tab =>
+    tab.id === requestedTab && (!tab.capability || (user.staff_role && roleCapabilities[user.staff_role].includes(tab.capability)))
+  ));
+  const [activeTab, setActiveTab] = useState<TabId>(requestedTabAllowed ? requestedTab! : 'overview');
   const [overview, setOverview] = useState<Overview | null>(null);
   const [members, setMembers] = useState<AdminRecord[]>([]);
   const [requests, setRequests] = useState<AdminRecord[]>([]);
@@ -182,7 +195,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
   }, [overview?.viewer?.capabilities, user.staff_role]);
   const can = (capability: Capability) => capabilities.has(capability);
 
-  const visibleTabs = tabs.filter(tab => !tab.capability || can(tab.capability));
+  const visibleTabs = useMemo(() => tabs.filter(tab => !tab.capability || capabilities.has(tab.capability)), [capabilities]);
 
   const loadOverview = async () => {
     const next = await api.getAdminOverview();
@@ -258,9 +271,10 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
 
   useEffect(() => {
     const next = searchParams.get('section') as TabId | null;
-    if (next && tabs.some(tab => tab.id === next) && next !== activeTab) setActiveTab(next);
+    if (next && visibleTabs.some(tab => tab.id === next) && next !== activeTab) setActiveTab(next);
+    if (next && !visibleTabs.some(tab => tab.id === next) && activeTab !== 'overview') setActiveTab('overview');
     if (!next && activeTab !== 'overview') setActiveTab('overview');
-  }, [searchParams]);
+  }, [searchParams, visibleTabs, activeTab]);
 
   useEffect(() => {
     if (!focusNewSectionRef.current) return;
@@ -463,7 +477,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                   <PanelHeader
                     eyebrow="People and access"
                     title="Member management"
-                    description="Find accounts, inspect donor state, suspend unsafe access, revoke sessions, and manage staff hierarchy."
+                    description="Find member accounts, inspect donor state, suspend unsafe access, and revoke sessions. Administration credentials are managed separately."
                   />
                   <GuidedForm onSubmit={submitMemberSearch} className="admin-filter-bar">
                     <label className="search-field">
@@ -478,8 +492,6 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                   ) : (
                     <div className="admin-record-list">
                       {members.map(member => {
-                        const targetIsStaff = Boolean(member.staff_role);
-                        const canTouchTarget = member.id !== user.id && (user.staff_role === 'SUPERADMIN' || !targetIsStaff);
                         return (
                           <article key={member.id} className="admin-record">
                             <div className="record-primary">
@@ -488,7 +500,6 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                 <div className="record-title-row">
                                   <h3>{member.name}</h3>
                                   <StatusBadge value={member.deleted_at ? 'DELETED' : member.account_status || 'ACTIVE'} />
-                                  {member.staff_role && <StatusBadge value={member.staff_role} tone="purple" />}
                                   {member.is_verified && <span className="verified-label"><BadgeCheck className="h-3.5 w-3.5" /> Verified phone</span>}
                                 </div>
                                 <p>{member.phone} · Joined {formatDate(member.created_at)}</p>
@@ -509,7 +520,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                   setSearchParams(next);
                                 }}>Activity</button>
                               )}
-                              {can('EDIT_USERS') && canTouchTarget && !member.deleted_at && (
+                              {can('EDIT_USERS') && !member.deleted_at && (
                                 <button className="button button-secondary" onClick={() => setEditor({ kind: 'member', record: member })}>
                                   <Pencil className="h-3.5 w-3.5" /> Edit
                                 </button>
@@ -530,7 +541,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                   Revoke sessions
                                 </button>
                               )}
-                              {can('SUSPEND_MEMBER') && canTouchTarget && !member.deleted_at && (
+                              {can('SUSPEND_MEMBER') && !member.deleted_at && (
                                 <button
                                   className={`button ${member.account_status === 'SUSPENDED' ? 'button-secondary' : 'button-danger'}`}
                                   disabled={busy === `status-${member.id}`}
@@ -560,28 +571,7 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                                   {member.account_status === 'SUSPENDED' ? 'Reactivate' : 'Suspend'}
                                 </button>
                               )}
-                              {can('MANAGE_STAFF') && member.id !== user.id && !member.deleted_at && (
-                                <StaffRoleControl
-                                  value={member.staff_role || ''}
-                                  disabled={busy === `role-${member.id}`}
-                                  onChange={nextRole => openAction({
-                                    title: `Change staff access for ${member.name}?`,
-                                    description: nextRole
-                                      ? `This assigns the ${nextRole.toLowerCase()} role and its protected capabilities.`
-                                      : 'This removes access to the administration center.',
-                                    confirmLabel: nextRole ? 'Assign staff role' : 'Remove staff access',
-                                    tone: nextRole ? 'default' : 'danger',
-                                    reasonLabel: 'Reason for access change',
-                                    reasonRequired: true,
-                                    onConfirm: reason => run(
-                                      `role-${member.id}`,
-                                      () => api.updateAdminUser(member.id, { staff_role: nextRole || null, reason }),
-                                      'Staff access updated.'
-                                    )
-                                  })}
-                                />
-                              )}
-                              {can('EDIT_USERS') && canTouchTarget && (member.deleted_at ? (
+                              {can('EDIT_USERS') && (member.deleted_at ? (
                                 <button
                                   className="button button-secondary"
                                   onClick={() => openAction({
@@ -951,6 +941,12 @@ export default function AdminPage({ user, onOtpBypassChange }: { user: AdminView
                   )}
                 </section>
               )}
+
+              {activeTab === 'invitations' && <AdminInvitationsPanel />}
+
+              {activeTab === 'account' && <AdminAccountPanel admin={{ id: user.id, username: user.username || user.name, name: user.name, staff_role: user.staff_role || 'MODERATOR', account_status: 'ACTIVE', capabilities: [...capabilities] }} onSignedOut={onSignedOut} />}
+
+              {activeTab === 'staff' && <AdminStaffPanel viewerId={user.id} />}
 
               {activeTab === 'audit' && (
                 <section>
@@ -1338,7 +1334,7 @@ function OverviewPanel({ overview, can, onNavigate }: {
           <div className="capability-list">
             {(overview.viewer?.capabilities || []).map(capability => <span key={capability}><CheckCircle2 className="h-3.5 w-3.5" />{humanize(capability)}</span>)}
           </div>
-          <p className="panel-footnote">Your staff role determines your access. A superadmin can update these permissions.</p>
+          <p className="panel-footnote">Your administration role determines your access. It is separate from every donor and requester account.</p>
         </div>
       </div>
     </section>
@@ -1396,21 +1392,6 @@ function StatusBadge({ value, tone }: { value: string; tone?: 'purple' }) {
 
 function ActionButton({ label, onClick, disabled, danger }: { label: string; onClick: () => void; disabled?: boolean; danger?: boolean }) {
   return <button onClick={onClick} disabled={disabled} className={`button ${danger ? 'button-danger' : 'button-secondary'}`}>{label}</button>;
-}
-
-function StaffRoleControl({ value, disabled, onChange }: { value: string; disabled?: boolean; onChange: (value: string) => void }) {
-  return (
-    <label className="compact-select">
-      <span className="sr-only">Staff role</span>
-      <UserCog className="h-4 w-4" />
-      <Select value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
-        <option value="">Member only</option>
-        <option value="MODERATOR">Moderator</option>
-        <option value="ADMIN">Admin</option>
-        <option value="SUPERADMIN">Superadmin</option>
-      </Select>
-    </label>
-  );
 }
 
 function EmptyState({ icon: Icon, title, description }: { icon: typeof Users; title: string; description: string }) {

@@ -34,11 +34,12 @@ const metadata: Record<string, [string, string]> = {
   '/directory/imported': ['Claim an imported donor profile — drop.', 'Verify ownership of an imported donor record and bring it under your control.'],
   '/directory/call': ['Report a donor call — drop.', 'Complete the required outcome for a previously revealed donor contact.'],
   '/directory/remove': ['Remove your number from the directory — drop.', 'Take a publicly imported donor listing off drop. by verifying the number. No account needed.'],
-  '/contribute': ['Suggest a blood donor privately — drop.', 'Create a private, expiring claim link that only the verified phone owner can publish.'],
+  '/contribute': ['Add blood donors — drop.', 'Invite one donor privately or send a larger donor list for careful staff review.'],
   '/claim': ['Claim a donor profile — drop.', 'Verify your phone, confirm every detail, and control your drop. donor profile.'],
   '/profile': ['My drop. account', 'Manage your donor profile, requests, responses, follow-ups, history, security, and privacy settings.'],
   '/follow-up': ['Donation follow-up', 'Privately update whether a planned blood donation was completed.'],
-  '/admin': ['drop. operations workspace', 'Role-aware administration for drop. operations.']
+  '/admin': ['drop. operations workspace', 'Role-aware administration for drop. operations.'],
+  '/admin/login': ['Administration sign in — drop.', 'Sign in with separate Drop administration credentials.']
 };
 
 export default function RouteMetadata() {

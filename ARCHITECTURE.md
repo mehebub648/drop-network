@@ -1,9 +1,14 @@
 # Drop Network Architecture
 
-Current application version: `0.0.168` (unreleased source; live code is `0.0.164`)
+Current application version: `0.0.169`
 
-The live website and API use `https://findadrop.org`. The domain was connected
-through configuration only; the unreleased source changes remain separate.
+The website and API use `https://findadrop.org`. Administration and invitation
+changes passed isolated type checking, 190 unit tests, protected-flow integration
+and production bundle validation before release.
+
+Administrator credentials and sessions are separate from member accounts.
+Invitation campaigns and reviewed donor submissions use private LanceDB tables;
+attachments remain in the existing persistent media volume behind authorization.
 
 Website color tokens in `src/index.css` use a white canvas, cherry primary actions
 and blush, mint, sky and lilac accents. `src/styles/website.css` applies them to

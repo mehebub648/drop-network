@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
-import { ArrowUpRight, Bell, BookOpen, Droplet, FileText, Heart, Home, LifeBuoy, LogOut, Menu, MessagesSquare, Search, ShieldCheck, UserRound, X } from 'lucide-react';
+import { ArrowUpRight, Bell, BookOpen, Droplet, FileText, Heart, Home, LifeBuoy, LogOut, Menu, MessagesSquare, Search, ShieldCheck, UserRound, UserRoundPlus, X } from 'lucide-react';
 import Footer from './Footer';
 import { api } from '../lib/api';
 
@@ -9,6 +9,7 @@ const navigation = [
   { label: 'Find donors', to: '/directory', icon: Search },
   { label: 'Blood requests', to: '/requests', icon: Droplet },
   { label: 'Community', to: '/community', icon: MessagesSquare },
+  { label: 'Add donors', to: '/contribute', icon: UserRoundPlus },
   { label: 'My device requests', to: '/device-requests', icon: FileText }
 ];
 const resources = [
@@ -25,7 +26,6 @@ export default function Layout({ children, user, onLogout, otpBypassEnabled }: {
   const menuButton = useRef<HTMLButtonElement>(null);
   const { pathname } = useLocation();
   const embedded = document.documentElement.dataset.dropAndroid === 'true';
-  const isStaff = Boolean(user?.staff_role || user?.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role)));
   const section = pathname.startsWith('/admin') ? 'Administration' : pathname.startsWith('/profile') ? 'My account' : navigation.find(item => item.end ? pathname === item.to : pathname.startsWith(item.to))?.label || resources.find(item => pathname === item.to)?.label || ({ '/login': 'Sign in', '/register': 'Create account', '/forgot-password': 'Account recovery', '/privacy': 'Privacy', '/terms': 'Terms', '/partners': 'Partners' } as Record<string, string>)[pathname] || (pathname.startsWith('/request/') ? 'Blood request' : 'drop.');
 
   useEffect(() => {
@@ -61,9 +61,9 @@ export default function Layout({ children, user, onLogout, otpBypassEnabled }: {
           <p className="web-nav-label">Discover</p>
           {navigation.map(({ label, to, icon: Icon, end }) => <NavLink key={to} to={to} end={end} className="web-nav-link"><Icon aria-hidden="true" /><span>{label}</span></NavLink>)}
           {user && <><p className="web-nav-label">Your space</p><NavLink to="/profile" className="web-nav-link"><UserRound aria-hidden="true" /><span>My account</span></NavLink></>}
-          {isStaff && <NavLink to="/admin" className="web-nav-link"><ShieldCheck aria-hidden="true" /><span>Administration</span></NavLink>}
           <p className="web-nav-label">Resources</p>
           {resources.map(({ label, to, icon: Icon }) => <NavLink key={to} to={to} className="web-nav-link"><Icon aria-hidden="true" /><span>{label}</span></NavLink>)}
+          <NavLink to="/admin" className="web-nav-link"><ShieldCheck aria-hidden="true" /><span>Administration</span></NavLink>
         </nav>
         <div className="web-sidebar-bottom">
           <div className="web-donor-invite"><Heart aria-hidden="true" /><strong>A little of you.<br />A lot more life.</strong><p>Be there when someone needs a donor.</p><Link to={user ? '/profile/donor' : '/register'}>{user ? 'Your donor profile' : 'Become a donor'}<ArrowUpRight aria-hidden="true" /></Link></div>

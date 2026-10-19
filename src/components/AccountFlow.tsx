@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { api, experienceApi, type OtpDelivery } from '../lib/api';
 import { BLOOD_GROUPS } from '../lib/blood';
@@ -11,8 +11,8 @@ import DateInput from './DateInput';
 import StepFlow from './StepFlow';
 import BloodHelpNotice from './BloodHelpNotice';
 
-type Stage = 'phone' | 'code' | 'password' | 'identity' | 'location' | 'donor' | 'blood' | 'history' | 'availability' | 'finish';
-const titles: Record<Stage, string> = { phone: 'Your private account number', code: 'Check your phone', password: 'Welcome back', identity: 'A little about you', location: 'Where are you based?', donor: 'Would you like to help others?', blood: 'Your donor details', history: 'Your donation experience', availability: 'Are you available to donate?', finish: 'Secure your account' };
+type Stage = 'phone' | 'code' | 'paused' | 'password' | 'identity' | 'location' | 'donor' | 'blood' | 'history' | 'availability' | 'finish';
+const titles: Record<Stage, string> = { phone: 'Your private account number', code: 'Check your phone', paused: 'Your progress is safe', password: 'Welcome back', identity: 'A little about you', location: 'Where are you based?', donor: 'Would you like to help others?', blood: 'Your donor details', history: 'Your donation experience', availability: 'Are you available to donate?', finish: 'Secure your account' };
 const empty = { phone: '', name: '', dob: '', district: '', upazila: '', donor: true, blood: '', lastKind: '', lastDate: '', lastValue: '', lastUnit: 'MONTHS', count: '', availability: '', reason: '' };
 function savedProfile() {
   try { const saved = JSON.parse(localStorage.getItem('drop_account_flow_v2') || 'null'); return saved?.until > Date.now() ? { ...empty, ...saved.fields } : empty; } catch { return empty; }
@@ -48,8 +48,12 @@ export default function AccountFlow({ onComplete, onBloodHelp, initialPhone, ver
     const result = await api.requestOtp(fields.phone, 'REGISTER');
     setDelivery(result); setCode('');
     if (result.bypass && result.verification_token) await afterCode(result);
-    else setStage('code');
+    else setStage(result.verification_deferred || result.registration_pending ? 'paused' : 'code');
   };
+  const updateDelivery = useCallback((next: OtpDelivery) => {
+    setDelivery(next);
+    if (next.verification_deferred || next.registration_pending) setStage('paused');
+  }, []);
   const run = async (work: () => Promise<void>) => {
     setBusy(true); setError('');
     try { await work(); } catch (cause: any) { setError(cause.message || 'Please try again. Your published request is still saved.'); } finally { setBusy(false); }
@@ -79,10 +83,11 @@ export default function AccountFlow({ onComplete, onBloodHelp, initialPhone, ver
   };
   const back = () => { setError(''); if (steps.includes(stage)) setStage(steps[Math.max(0, steps.indexOf(stage) - 1)]); else setStage('phone'); };
   const profile = steps.includes(stage);
-  return <><BloodHelpNotice onContinue={onBloodHelp} /><StepFlow title={titles[stage]} step={profile ? steps.indexOf(stage) + 1 : stage === 'phone' ? 1 : 2} total={profile ? steps.length : 2} onNext={submit} onBack={stage !== 'phone' && stage !== 'identity' ? back : undefined} busy={busy} error={error} nextLabel={stage === 'finish' ? 'Create account and continue' : stage === 'password' ? 'Sign in and continue' : 'Continue'}>
+  return <><BloodHelpNotice onContinue={onBloodHelp} /><StepFlow title={titles[stage]} step={profile ? steps.indexOf(stage) + 1 : stage === 'phone' ? 1 : 2} total={profile ? steps.length : 2} onNext={submit} onBack={stage !== 'phone' && stage !== 'identity' ? back : undefined} busy={busy} error={error} hideNext={stage === 'paused'} nextLabel={stage === 'finish' ? 'Create account and continue' : stage === 'password' ? 'Sign in and continue' : 'Continue'}>
     {stage === 'phone' && <><p>{signIn ? 'Sign in with your phone and password to keep your requests together.' : 'Verify your phone to create an account. Your account number stays private on your blood request.'}</p><label>Account phone<input className="input" type="tel" autoComplete="tel" required placeholder="01XXXXXXXXX" value={fields.phone} readOnly={verifyOnly} onChange={event => set({ phone: event.target.value })} /></label>{!verifyOnly && <button type="button" className="auth-text-link" onClick={() => { setSignIn(!signIn); setError(''); }}>{signIn ? 'New to Drop? Create an account' : 'Already have an account? Sign in with a password'}</button>}</>}
     {stage === 'password' && <><label>Password<input className="input" autoComplete="current-password" type="password" required value={password} onChange={event => setPassword(event.target.value)} /></label><Link className="auth-text-link" to="/forgot-password">Forgot your password? Reset it with SMS</Link></>}
-    {stage === 'code' && <><p>Enter the code sent to {fields.phone} to verify your phone.</p><OtpDeliveryStatus delivery={delivery} onDeliveryChange={setDelivery} onResend={() => void run(sendCode)} busy={busy} /><label>Verification code<input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label></>}
+    {stage === 'code' && <><p>Enter the code sent to {fields.phone} to verify your phone.</p><OtpDeliveryStatus delivery={delivery} onDeliveryChange={updateDelivery} onResend={() => void run(sendCode)} busy={busy} /><label>Verification code<input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label></>}
+    {stage === 'paused' && <div className="space-y-4"><OtpDeliveryStatus delivery={delivery} onDeliveryChange={updateDelivery} onResend={() => void run(sendCode)} busy={busy} /><p>We could not send a verification code right now. Your phone number and answers stay saved on this device for 30 minutes.</p><div className="flex flex-wrap gap-3"><button type="button" className="button button-primary" disabled={busy} onClick={() => void run(sendCode)}>{busy ? 'Trying SMS…' : 'Retry SMS'}</button>{onBloodHelp ? <button type="button" className="button button-secondary" onClick={onBloodHelp}>Continue finding blood</button> : <Link className="button button-secondary" to="/directory">Continue finding blood</Link>}</div></div>}
     {stage === 'identity' && <><label>Your full name<input className="input" autoComplete="name" required maxLength={100} value={fields.name} onChange={event => set({ name: event.target.value })} /></label><label>Date of birth<DateInput className="input" required min="1900-01-01" max={dhakaDate()} value={fields.dob} onChange={event => set({ dob: event.target.value })} /></label><p className="text-sm text-slate-600">Your date of birth stays private.</p></>}
     {stage === 'location' && <><label>District<Select required value={fields.district} onChange={event => set({ district: event.target.value, upazila: '' })}><option value="">Choose district</option>{BD_LOCATION_NAMES.map(item => <option key={item}>{item}</option>)}</Select></label><label>Upazila / thana<Select required disabled={!fields.district} value={fields.upazila} onChange={event => set({ upazila: event.target.value })}><option value="">Choose upazila</option>{getUpazilasForDistrict(fields.district).map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</Select></label></>}
     {stage === 'donor' && <><label className="!flex items-center gap-3"><input type="checkbox" checked={fields.donor} onChange={event => set({ donor: event.target.checked })} />Save me as a donor</label><p>You can switch this off and continue as a requester. If you join as a donor, requesters with verified or temporary blood-help access may receive your account phone through Drop’s protected contact flow. It is never added to your blood request.</p></>}

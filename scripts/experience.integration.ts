@@ -51,6 +51,9 @@ for (const [id, phone, donorProfile] of [
 const expiredDevice = 'a'.repeat(64);
 await saveToTable('common_users', { id: 'qa-staff', phone: '+8801700000006', name: 'Isolated moderator',
   password: await bcrypt.hash(password, 4), is_verified: true, staff_role: 'MODERATOR', roles: ['MEMBER'], created_at: new Date().toISOString() });
+await saveToTable('common_admin_accounts', { id: 'qa-staff-admin', username: 'qa-moderator', name: 'Isolated moderator',
+  password_hash: await bcrypt.hash(password, 4), staff_role: 'MODERATOR', account_status: 'ACTIVE',
+  created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
 for (const [id, phone, verified] of [['qa-legacy', '+8801700000004', false], ['qa-passwordless', '+8801700000005', true]] as const) {
   await saveToTable('common_users', { id, phone, name: 'Isolated legacy fixture', is_verified: verified, roles: ['MEMBER'], created_at: new Date().toISOString(), ...(verified ? {} : { password: await bcrypt.hash(password, 4) }) });
 }
@@ -117,10 +120,22 @@ const idleToken = 'b'.repeat(64);
 await saveToTable('common_guest_devices', { id: guestTokenHash(idleToken), created_at: new Date(Date.now() - 16 * DAY_MS).toISOString(), last_seen_at: new Date(Date.now() - 16 * DAY_MS).toISOString(), request_count: 1 });
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-idle-guest', user_id: '', ownership: 'GUEST', guest_token_hash: guestTokenHash(idleToken), needed_by: new Date(Date.now() + DAY_MS).toISOString(), expires_at: new Date(Date.now() + DAY_MS).toISOString() });
 const codes = new Map<string, string>();
+let smsJob = 0;
 const sms = createServer(async (req, res) => {
+  const url = new URL(req.url || '/', 'http://127.0.0.1');
+  res.setHeader('content-type', 'application/json');
+  if (req.method === 'GET' && /^\/api\/v1\/messages\/fixture-job-\d+$/.test(url.pathname)) {
+    return res.end(JSON.stringify({ message: { status: 'scheduled' } }));
+  }
+  if (req.method !== 'POST' || url.pathname !== '/api/v1/messages') {
+    res.statusCode = 404; return res.end('{"error":"not_found"}');
+  }
   let raw = ''; for await (const chunk of req) raw += chunk;
-  const body = JSON.parse(raw); if (body.code) codes.set(body.phone, body.code);
-  res.end('{}');
+  const body = JSON.parse(raw) as { to?: unknown; message?: unknown };
+  const match = typeof body.message === 'string' ? body.message.match(/verification code is (\d{6})\b/) : null;
+  if (typeof body.to === 'string' && match) codes.set(body.to, match[1]);
+  smsJob += 1; res.statusCode = 202;
+  res.end(JSON.stringify({ id: `fixture-job-${smsJob}`, status: 'scheduled' }));
 }).listen(18551, '127.0.0.1');
 await once(sms, 'listening');
 let logs = '';
@@ -128,7 +143,7 @@ const server = spawn(process.execPath, ['--import', 'tsx', 'server/server.ts'], 
   env: { ...process.env, PORT: '18550', NODE_ENV: 'test', APP_URL: 'http://127.0.0.1:18550',
     COMMUNITY_MEDIA_PATH: path.join(directory, 'media'),
     FOLLOW_UP_LINK_SECRET: followUpSecret,
-    SMS_PROVIDER: 'http', SMS_HTTP_ENDPOINT: 'http://127.0.0.1:18551', SMS_HTTP_TOKEN: 'isolated-only' },
+    SMS_PROVIDER: 'messavo', SMS_API_BASE_URL: 'http://127.0.0.1:18551', SMS_API_TOKEN: 'isolated-only' },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 server.stdout.on('data', chunk => { logs = (logs + chunk).slice(-10000); });
@@ -448,7 +463,8 @@ try {
   assert.equal((await limited.call('/api/auth/start', { phone: '+8801700000099' })).next_step, 'PASSWORD');
   await newcomer.call('/api/v1/admin/overview', undefined, 'GET', 403);
   const moderator = new Device('192.0.2.61');
-  await moderator.call('/api/v1/auth/login', { phone: '+8801700000006', password });
+  await moderator.call('/api/v1/admin/auth/login', { username: 'qa-moderator', password });
+  await moderator.call('/api/v1/me', undefined, 'GET', 401);
   const operations = await moderator.call('/api/v1/admin/overview');
   assert.ok(operations.viewer.capabilities.includes('MODERATE_CONTENT'));
   assert.equal(operations.viewer.capabilities.includes('MANAGE_STAFF'), false);

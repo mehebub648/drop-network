@@ -1,7 +1,7 @@
 {
   "name": "drop-network",
   "private": true,
-  "version": "0.0.168",
+  "version": "0.0.169",
   "type": "module",
   "engines": {
     "node": ">=22.22.0"
@@ -14,6 +14,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "tsx --test src/lib/*.test.ts server/*.test.ts",
+    "qa:invitations": "tsx scripts/invitations.integration.ts",
     "scrape": "tsx scripts/scrape/index.ts",
     "import-donors": "tsx scripts/import-donors.ts",
     "generate-upazilas": "tsx scripts/generate-upazilas.ts",

@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.168`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.169`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -13,9 +13,9 @@ delivered.
 
 ### Code quality / polish
 
-- [ ] Verify the 0.0.168 website palette in the supported app build and hosted
-  browser after release authorization. Color-only homepage/sign-in snapshots,
-  keyboard focus and palette contrast checks pass; local Docker was not authorized.
+- [ ] Confirm real Messavo invitation receipt and response history with a
+  consented isolated recipient before starting a bulk campaign. Version 0.0.169
+  isolated role, file/50 MB, delivery, pacing/resend and OTP-outage checks pass.
 
 - [ ] Finish physical-device password recovery inside request/account continuation
   for Android 1.0.43. Purpose-bound reset and preserved-answer regressions pass;

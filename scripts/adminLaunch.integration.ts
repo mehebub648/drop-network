@@ -21,13 +21,14 @@ const now = new Date();
 const later = new Date(now.getTime() + 24 * 60 * 60_000).toISOString();
 const password = 'Disposable-admin-password-123';
 const fullMemberPhone = '+8801700000004';
-const { saveToTable } = await import('../server/db');
+const { saveToTable, addImportedDonors } = await import('../server/db');
+const { publicIdForImportedDonor, toImportedDonorRow } = await import('../server/importedDonors');
 const { saveCommunityPost } = await import('../server/communityPosts');
 
 const users = [
-  { id: 'qa-superadmin', phone: '+8801700000001', name: 'QA Superadmin', staff_role: 'SUPERADMIN' },
-  { id: 'qa-admin', phone: '+8801700000002', name: 'QA Admin', staff_role: 'ADMIN' },
-  { id: 'qa-moderator', phone: '+8801700000003', name: 'QA Moderator', staff_role: 'MODERATOR' },
+  { id: 'qa-superadmin', phone: '+8801700000001', name: 'Legacy QA Superadmin Member', staff_role: 'SUPERADMIN' },
+  { id: 'qa-admin', phone: '+8801700000002', name: 'Legacy QA Admin Member', staff_role: 'ADMIN' },
+  { id: 'qa-moderator', phone: '+8801700000003', name: 'Legacy QA Moderator Member', staff_role: 'MODERATOR' },
   { id: 'qa-member', phone: fullMemberPhone, name: 'QA Member' },
   { id: 'qa-delegated', phone: '+8801700000005', name: 'QA Delegated Account' },
   { id: 'qa-viewer', phone: '+8801700000006', name: 'QA Community Viewer' }
@@ -47,6 +48,20 @@ for (const user of users) {
         availability_status: 'NOT_AVAILABLE', availability_reason: 'ISOLATED QA fixture'
       }
     } : {})
+  });
+}
+
+for (const account of [
+  { id: 'qa-superadmin-account', username: 'qa.superadmin', name: 'QA Superadmin', staff_role: 'SUPERADMIN' },
+  { id: 'qa-admin-account', username: 'qa.admin', name: 'QA Admin', staff_role: 'ADMIN' },
+  { id: 'qa-moderator-account', username: 'qa.moderator', name: 'QA Moderator', staff_role: 'MODERATOR' }
+] as const) {
+  await saveToTable('common_admin_accounts', {
+    ...account,
+    password_hash: await bcrypt.hash(password, 4),
+    account_status: 'ACTIVE',
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
   });
 }
 
@@ -82,6 +97,32 @@ await saveToTable('common_sms_providers', {
   priority: 1, enabled: false, created_at: now.toISOString(), updated_at: now.toISOString(), updated_by: 'qa-superadmin'
 });
 
+await saveToTable('common_reports', {
+  id: 'qa-report', reporter_id: 'qa-viewer', target_type: 'USER', target_id: 'qa-member',
+  reason: 'PRIVACY', details: 'ISOLATED QA report', status: 'OPEN', created_at: now.toISOString(), updated_at: now.toISOString()
+});
+await saveToTable('common_support_tickets', {
+  id: 'qa-ticket', name: 'QA Support Fixture', phone: '+8801700000007', category: 'SUPPORT',
+  message: 'ISOLATED QA support request', status: 'OPEN', created_at: now.toISOString(), updated_at: now.toISOString()
+});
+await saveToTable('common_organizations', {
+  id: 'qa-organization', owner_id: 'qa-viewer', name: 'QA Blood Support', type: 'NGO', district: 'Dhaka',
+  address: 'ISOLATED QA address', phone: '+8801700000006', registration_reference: 'QA-ONLY',
+  status: 'PENDING', created_at: now.toISOString(), updated_at: now.toISOString(), campaigns: []
+});
+const pendingClaimSource = { id: 'qa-admin', organization: 'ISOLATED QA', url: 'https://example.invalid', scraped_at: now.toISOString() };
+const pendingClaimPublicId = publicIdForImportedDonor({
+  phone: '+8801700000008', source: pendingClaimSource, source_ref: 'qa-pending-claim'
+});
+await addImportedDonors([toImportedDonorRow({
+  id: 'qa-pending-claim', public_id: pendingClaimPublicId, claim_slug: 'QAPENDING001',
+  source: pendingClaimSource,
+  source_ref: 'qa-pending-claim', name: 'QA Pending Claim', phone: '+8801700000008',
+  blood_group: 'B+', district: 'Dhaka', upazila: 'Savar', location: { area_name: 'Dhaka', lat: 23.8103, lng: 90.4125 },
+  claim_status: 'PENDING_REVIEW', claimed_by: 'qa-delegated', claimed_at: now.toISOString(), claim_note: 'ISOLATED QA review',
+  publication_state: 'PUBLIC', imported_at: now.toISOString()
+})]);
+
 const failedSms = createServer(async (request, response) => {
   for await (const _chunk of request) { /* Consume without logging OTP or phone. */ }
   response.statusCode = 503;
@@ -110,9 +151,9 @@ async function startServer() {
       COMMUNITY_MEDIA_PATH: path.join(directory, 'media'),
       SETTINGS_ENCRYPTION_KEY: encryptionSecret,
       FOLLOW_UP_LINK_SECRET: encryptionSecret,
-      SMS_PROVIDER: 'http',
-      SMS_HTTP_ENDPOINT: 'http://127.0.0.1:18561',
-      SMS_HTTP_TOKEN: 'isolated-http-token'
+      SMS_PROVIDER: 'messavo',
+      SMS_API_BASE_URL: 'http://127.0.0.1:18561',
+      SMS_API_TOKEN: 'isolated-messavo-token'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -159,6 +200,10 @@ class Device {
     assert.equal(response.status, options.expected ?? 200, `${method} ${route}: ${text}`);
     return value;
   }
+
+  async adminLogin(username: string, expected = 200) {
+    return this.call('/admin/auth/login', { body: { username, password }, expected });
+  }
 }
 
 function latest(events: any[], action: string, targetId?: string) {
@@ -167,14 +212,68 @@ function latest(events: any[], action: string, targetId?: string) {
   return event;
 }
 
+function assertNoAdminSecret(value: unknown, context: string) {
+  const serialized = JSON.stringify(value);
+  for (const secret of ['qa-secret-token-never-return', 'isolated-http-token', encryptionSecret]) {
+    assert.equal(serialized.includes(secret), false, `${context} exposed a configured secret`);
+  }
+  for (const key of ['password_hash', 'api_token_encrypted', 'verification_token', 'code_hash']) {
+    assert.equal(serialized.includes(`"${key}"`), false, `${context} exposed ${key}`);
+  }
+}
+
 try {
   await startServer();
   const anonymous = new Device('192.0.2.10');
   const member = new Device('192.0.2.11', 'qa-member');
-  const moderator = new Device('192.0.2.12', 'qa-moderator');
-  const admin = new Device('192.0.2.13', 'qa-admin');
-  const superadmin = new Device('192.0.2.14', 'qa-superadmin');
+  const legacyStaff = new Device('192.0.2.12', 'qa-superadmin');
+  const moderator = new Device('192.0.2.13');
+  const admin = new Device('192.0.2.14');
+  const superadmin = new Device('192.0.2.15');
   const viewer = new Device('192.0.2.15', 'qa-viewer');
+
+  await anonymous.call('/admin/auth/login', { body: { username: 'qa.superadmin', password: 'wrong-password' }, expected: 401 });
+  assertNoAdminSecret(await moderator.adminLogin('qa.moderator'), 'moderator login');
+  assertNoAdminSecret(await admin.adminLogin('qa.admin'), 'admin login');
+  assertNoAdminSecret(await superadmin.adminLogin('qa.superadmin'), 'superadmin login');
+  const browserAdminSession = await superadmin.call('/admin/session');
+  assertNoAdminSecret(browserAdminSession, 'admin session');
+  assert.equal(browserAdminSession.session_token, undefined);
+
+  const adminSections = [
+    { route: '/admin/overview', moderator: 200, admin: 200, superadmin: 200 },
+    { route: '/admin/users', moderator: 200, admin: 200, superadmin: 200 },
+    { route: '/admin/requests', moderator: 200, admin: 200, superadmin: 200 },
+    { route: '/admin/community', moderator: 200, admin: 200, superadmin: 200 },
+    { route: '/admin/reports', moderator: 200, admin: 200, superadmin: 200 },
+    { route: '/admin/call-reports', moderator: 200, admin: 200, superadmin: 200 },
+    { route: '/admin/directory/claims', moderator: 200, admin: 200, superadmin: 200 },
+    { route: '/admin/tickets', moderator: 403, admin: 200, superadmin: 200 },
+    { route: '/admin/organizations', moderator: 403, admin: 200, superadmin: 200 },
+    { route: '/admin/audit', moderator: 403, admin: 200, superadmin: 200 },
+    { route: '/admin/sms-providers', moderator: 403, admin: 200, superadmin: 200 },
+    { route: '/admin/accounts', moderator: 403, admin: 403, superadmin: 200 }
+  ];
+  for (const section of adminSections) {
+    await anonymous.call(section.route, { expected: 403 });
+    await member.call(section.route, { expected: 403 });
+    await legacyStaff.call(section.route, { expected: 403 });
+    assertNoAdminSecret(await moderator.call(section.route, { expected: section.moderator }), `moderator ${section.route}`);
+    assertNoAdminSecret(await admin.call(section.route, { expected: section.admin }), `admin ${section.route}`);
+    assertNoAdminSecret(await superadmin.call(section.route, { expected: section.superadmin }), `superadmin ${section.route}`);
+  }
+  const moderatorOverview = await moderator.call('/admin/overview');
+  assert.deepEqual(moderatorOverview.viewer.capabilities.sort(), ['DASHBOARD', 'MODERATE_CONTENT', 'SUSPEND_MEMBER', 'VIEW_USERS'].sort());
+  assert.deepEqual(moderatorOverview.tickets, []);
+  const adminOverview = await admin.call('/admin/overview');
+  assert.ok(adminOverview.viewer.capabilities.includes('MANAGE_SUPPORT'));
+  assert.ok(adminOverview.viewer.capabilities.includes('MANAGE_INVITATIONS'));
+  assert.equal(adminOverview.system.otp_bypass_enabled, false);
+  await moderator.call('/admin/settings/otp-bypass', { method: 'PATCH', body: { enabled: false, reason: 'QA forbidden setting' }, expected: 403 });
+  await admin.call('/admin/settings/otp-bypass', { method: 'PATCH', body: { enabled: false, reason: 'QA forbidden setting' }, expected: 403 });
+  const systemSetting = await superadmin.call('/admin/settings/otp-bypass', { method: 'PATCH', body: { enabled: false, reason: 'QA confirms secure default' } });
+  assert.equal(systemSetting.otp_bypass_enabled, false);
+  console.log('PASS: every existing admin resource enforces dedicated moderator/admin/superadmin scopes and denies member, legacy staff, and anonymous callers');
 
   const publicCommunity = await viewer.call('/community');
   const memberPost = publicCommunity.posts.find((item: any) => item.id === 'qa-post');
@@ -206,18 +305,37 @@ try {
   await anonymous.call('/admin/users/qa-member', { method: 'PATCH', body: { name: 'Forbidden', reason: 'QA forbidden' }, expected: 403 });
   await member.call('/admin/users/qa-member', { method: 'PATCH', body: { name: 'Forbidden', reason: 'QA forbidden' }, expected: 403 });
   await moderator.call('/admin/users/qa-member', { method: 'PATCH', body: { name: 'Forbidden', reason: 'QA forbidden' }, expected: 403 });
-  await admin.call('/admin/users/qa-admin', { method: 'PATCH', body: { name: 'Self edit forbidden', reason: 'QA self protection' }, expected: 403 });
-  await superadmin.call('/admin/users/qa-superadmin', { method: 'PATCH', body: { staff_role: 'ADMIN', reason: 'QA last superadmin protection' }, expected: 409 });
-  console.log('PASS: unauthenticated, member, moderator, self-edit, and last-superadmin protections');
+  await superadmin.call('/admin/users/qa-member', { method: 'PATCH', body: { staff_role: 'ADMIN', reason: 'QA member promotion forbidden' }, expected: 400 });
+  const suspended = await moderator.call('/admin/users/qa-delegated', { method: 'PATCH', body: { account_status: 'SUSPENDED', suspension_reason: 'QA scoped moderation', reason: 'QA scoped moderation' } });
+  assert.equal(suspended.account_status, 'SUSPENDED');
+  const reactivated = await moderator.call('/admin/users/qa-delegated', { method: 'PATCH', body: { account_status: 'ACTIVE', reason: 'QA moderation complete' } });
+  assert.equal(reactivated.account_status, 'ACTIVE');
+  console.log('PASS: unauthenticated and member updates are denied, moderators remain scoped, and members cannot be promoted into administration');
 
-  await superadmin.call('/admin/users/qa-delegated', { method: 'PATCH', body: { staff_role: 'SUPERADMIN', reason: 'QA temporary staff fixture' } });
-  await superadmin.call('/admin/users/qa-delegated', { method: 'PATCH', body: { staff_role: null, reason: 'QA staff demotion fixture' } });
-  const staffEvents = await admin.call('/admin/audit?activity=USER_ADMIN_UPDATED&user_id=qa-delegated');
-  const demotionEvent = latest(staffEvents, 'USER_ADMIN_UPDATED', 'qa-delegated');
-  await admin.call(`/admin/audit/${demotionEvent.id}/undo`, { body: { reason: 'QA forbidden privilege escalation' }, expected: 403 });
-  const restoredStaff = await superadmin.call(`/admin/audit/${demotionEvent.id}/undo`, { body: { reason: 'QA authorized staff restoration' } });
-  assert.equal(restoredStaff.result.staff_role, 'SUPERADMIN');
-  console.log('PASS: audit undo cannot escalate an administrator into staff-management privileges');
+  await anonymous.call('/admin/accounts', { expected: 403 });
+  await member.call('/admin/accounts', { expected: 403 });
+  await admin.call('/admin/accounts', { expected: 403 });
+  const accountList = await superadmin.call('/admin/accounts');
+  assert.equal(accountList.accounts.length, 3);
+  await superadmin.call('/admin/accounts/qa-superadmin-account', { method: 'PATCH', body: { staff_role: 'ADMIN' }, expected: 409 });
+  const createdAdmin = await superadmin.call('/admin/accounts', {
+    body: { username: 'qa.reviewer', name: 'QA Reviewer', staff_role: 'MODERATOR', initial_password: 'Disposable-reviewer-password-123' },
+    expected: 201
+  });
+  assert.equal(createdAdmin.admin.staff_role, 'MODERATOR');
+  assertNoAdminSecret(createdAdmin, 'created admin');
+  const promotedAdmin = await superadmin.call(`/admin/accounts/${createdAdmin.admin.id}`, { method: 'PATCH', body: { staff_role: 'ADMIN' } });
+  assert.equal(promotedAdmin.admin.staff_role, 'ADMIN');
+  const suspendedAdmin = await superadmin.call(`/admin/accounts/${createdAdmin.admin.id}`, { method: 'PATCH', body: { account_status: 'SUSPENDED' } });
+  assert.equal(suspendedAdmin.admin.account_status, 'SUSPENDED');
+  await superadmin.call(`/admin/accounts/${createdAdmin.admin.id}`, { method: 'PATCH', body: { account_status: 'ACTIVE' } });
+  await superadmin.call(`/admin/accounts/${createdAdmin.admin.id}/reset-password`, { body: { new_password: 'Disposable-reviewer-reset-456' } });
+  const reviewer = new Device('192.0.2.18');
+  await reviewer.call('/admin/auth/login', { body: { username: 'qa.reviewer', password: 'Disposable-reviewer-password-123' }, expected: 401 });
+  await reviewer.call('/admin/auth/login', { body: { username: 'qa.reviewer', password: 'Disposable-reviewer-reset-456' } });
+  await reviewer.call('/admin/auth/logout', { method: 'POST' });
+  await reviewer.call('/admin/session', { expected: 401 });
+  console.log('PASS: dedicated administration accounts are superadmin-managed, guarded, resettable, and independent from member sessions');
 
   const renamed = await admin.call('/admin/users/qa-member', {
     method: 'PATCH', body: { name: 'QA Member Updated', reason: 'QA reversible account edit' }
@@ -238,6 +356,8 @@ try {
   await admin.call(`/admin/audit/${firstEvent.id}/undo`, { body: { reason: 'QA stale undo rejection' }, expected: 409 });
   console.log('PASS: account update, readable audit, successful undo, duplicate and stale undo conflicts');
 
+  const revoked = await admin.call('/admin/users/qa-member/revoke-sessions', { body: { reason: 'QA explicit session revocation' } });
+  assert.ok(revoked.revoked_sessions >= 1);
   const removed = await admin.call('/admin/users/qa-member', { method: 'DELETE', body: { reason: 'QA reversible account deletion' } });
   assert.ok(removed.deleted_at);
   await member.call('/me', { expected: 401 });
@@ -279,6 +399,18 @@ try {
   assert.equal(post.status, 'PUBLISHED');
   console.log('PASS: request, comment, and community content edit/delete/restore workflows');
 
+  const report = await moderator.call('/admin/reports/qa-report', { method: 'PATCH', body: { status: 'RESOLVED', resolution_note: 'QA reviewed' } });
+  assert.equal(report.status, 'RESOLVED');
+  const ticket = await admin.call('/admin/tickets/qa-ticket', { method: 'PATCH', body: { status: 'IN_PROGRESS' } });
+  assert.equal(ticket.status, 'IN_PROGRESS');
+  const organization = await admin.call('/admin/organizations/qa-organization', { method: 'PATCH', body: { status: 'VERIFIED', note: 'QA verified' } });
+  assert.equal(organization.status, 'VERIFIED');
+  const claims = await moderator.call('/admin/directory/claims');
+  assert.ok(claims.claims.some((item: any) => item.id === pendingClaimPublicId));
+  const claimResult = await moderator.call(`/admin/directory/claims/${pendingClaimPublicId}`, { method: 'PATCH', body: { approve: false, note: 'QA claim declined' } });
+  assert.equal(claimResult.status, 'UNCLAIMED');
+  console.log('PASS: report, support, organization, and profile-claim queues support their scoped review actions');
+
   const memberEvents = await admin.call('/admin/audit?user_id=qa-member&limit=500');
   assert.ok(memberEvents.length > 0);
   assert.ok(memberEvents.every((event: any) => event.actor_id === 'qa-member' || (event.target_type === 'USER' && event.target_id === 'qa-member')));
@@ -300,6 +432,7 @@ try {
   console.log('PASS: filtered member, anonymous login, OTP request, and failed SMS activity are readable and redacted');
 
   await moderator.call('/admin/sms-providers', { expected: 403 });
+  await admin.call('/admin/sms-providers', { body: { name: 'Invalid provider', base_url: 'https://example.invalid', reason: 'QA missing token' }, expected: 400 });
   const providers = await admin.call('/admin/sms-providers');
   assert.equal(providers.length, 1);
   assert.equal(providers[0].has_api_token, true);
@@ -323,6 +456,12 @@ try {
   assert.equal(persistedRequest.comments[0].moderation_status, 'VISIBLE');
   assert.equal((await admin.call('/admin/community/qa-post')).status, 'PUBLISHED');
   console.log('PASS: admin account, content, audit, and provider state survived server restart');
+
+  await admin.call('/admin/account/password', { body: { current_password: password, new_password: 'Disposable-admin-reset-password-456' } });
+  await admin.call('/admin/session', { expected: 401 });
+  await admin.call('/admin/auth/login', { body: { username: 'qa.admin', password }, expected: 401 });
+  await admin.call('/admin/auth/login', { body: { username: 'qa.admin', password: 'Disposable-admin-reset-password-456' } });
+  console.log('PASS: administration password change revokes sessions without changing member authentication');
 } finally {
   await stopServer();
   await new Promise<void>(resolve => failedSms.close(() => resolve()));
