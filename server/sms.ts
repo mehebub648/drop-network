@@ -67,7 +67,7 @@ export type SmsProviderAttempt = {
 };
 
 function otpMessage(code: string) {
-  return `Your Drop verification code is ${code}. It expires in 10 minutes.`;
+  return `Your drop. verification code is ${code}. It expires in 10 minutes.`;
 }
 
 /**

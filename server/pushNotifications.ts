@@ -50,7 +50,7 @@ async function send(device: Device, notificationId: string) {
   }
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(credentials.project_id)}/messages:send`, {
     method: 'POST', headers: { Authorization: `Bearer ${access.token}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000),
-    body: JSON.stringify({ message: { token: device.token, notification: { title: 'Drop update', body: 'You have a new update. Open Drop to view it.' }, data: { notification_id: notificationId }, android: { ttl: '86400s', collapse_key: notificationId, notification: { channel_id: 'drop_updates', tag: notificationId } } } }),
+    body: JSON.stringify({ message: { token: device.token, notification: { title: 'drop. update', body: 'Open drop. to view it.' }, data: { notification_id: notificationId }, android: { ttl: '86400s', collapse_key: notificationId, notification: { channel_id: 'drop_updates', tag: notificationId } } } }),
   });
   if (response.ok) return 'SENT' as const;
   const error = await response.json().catch(() => ({}));

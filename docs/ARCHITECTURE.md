@@ -1,6 +1,6 @@
 # Drop Network Architecture
 
-Current application version: `0.0.163`
+Current application version: `0.0.164`
 
 ### Password authentication and launch privacy (0.0.163)
 

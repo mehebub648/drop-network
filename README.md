@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.163`
+Current version: `0.0.164`
 
 The desktop website uses a shared navigation rail and consistent workspace
 across donor search, requests, community, accounts and administration. Phones
