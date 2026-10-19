@@ -151,8 +151,19 @@ try {
 
   const batchOwner = new Client('192.0.2.20'); await batchOwner.json('/api/auth/login', { phone: users[0].phone, password });
   const boundaryText = 'manual review';
-  const exactBoundary = await batchOwner.json('/api/me/donor-contribution-batches', { pasted_text: boundaryText, files: [{ name: 'large.pdf', content_type: 'application/pdf', size_bytes: 50 * 1024 * 1024 - Buffer.byteLength(boundaryText) }] }, 'POST', 201);
+  const boundaryFileBytes = 50 * 1024 * 1024 - Buffer.byteLength(boundaryText);
+  const exactBoundary = await batchOwner.json('/api/me/donor-contribution-batches', { pasted_text: boundaryText, files: [{ name: 'large.pdf', content_type: 'application/pdf', size_bytes: boundaryFileBytes }] }, 'POST', 201);
   assert.equal(exactBoundary.batch.total_bytes, 50 * 1024 * 1024);
+  {
+    const boundaryBytes = Buffer.alloc(boundaryFileBytes);
+    boundaryBytes.write('%PDF-1.7\n% isolated invitation QA boundary\n');
+    const boundaryFile = exactBoundary.batch.files[0];
+    await batchOwner.raw(`/api/me/donor-contribution-batches/${exactBoundary.batch.id}/files/${boundaryFile.id}`, boundaryBytes, {
+      'content-type': 'application/pdf', 'x-file-name': encodeURIComponent('large.pdf'),
+      'x-content-fingerprint': createHash('sha256').update(boundaryBytes).digest('hex')
+    });
+  }
+  assert.equal((await batchOwner.json(`/api/me/donor-contribution-batches/${exactBoundary.batch.id}/submit`, {})).batch.status, 'SUBMITTED');
   await batchOwner.json('/api/me/donor-contribution-batches', { files: [{ name: 'too-large.pdf', content_type: 'application/pdf', size_bytes: 50 * 1024 * 1024 + 1 }] }, 'POST', 413);
   const bytes = Buffer.from('name,phone\nFixture,+8801911222333\n');
   const draft = await batchOwner.json('/api/me/donor-contribution-batches', { pasted_text: 'image notes', files: [{ name: 'দাতা.csv', content_type: 'text/csv', size_bytes: bytes.length }] }, 'POST', 201);
