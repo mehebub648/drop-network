@@ -24,6 +24,7 @@ const columns = [
     title: 'Support',
     links: [
       { label: 'Contact operations', to: '/contact' },
+      { label: 'Delete my account', to: '/delete-account' },
       { label: 'Remove my listing', to: '/directory/remove' },
       { label: 'Terms of use', to: '/terms' }
     ]
@@ -35,12 +36,13 @@ export default function Footer({ compact = false }: { compact?: boolean }) {
     return (
       <footer className="site-footer site-footer-compact">
         <div className="site-footer-inner mx-auto flex flex-col items-center justify-between gap-3 px-4 py-4 text-xs text-slate-500 sm:flex-row sm:px-6">
-          <p>© {new Date().getFullYear()} Drop Network</p>
+          <p>© {new Date().getFullYear()} drop<span className="text-primary">.</span></p>
           <nav className="flex flex-wrap items-center justify-center gap-x-4" aria-label="Help and legal">
             <Link to="/about">About</Link>
             <Link to="/safety">Safety</Link>
             <Link to="/contact">Contact</Link>
             <Link to="/privacy">Privacy</Link>
+            <Link to="/delete-account">Delete account</Link>
             <Link to="/terms">Terms</Link>
           </nav>
         </div>
@@ -53,11 +55,11 @@ export default function Footer({ compact = false }: { compact?: boolean }) {
       <div className="site-footer-inner mx-auto px-4 py-9 sm:px-6 sm:py-11">
         <div className="grid gap-10 md:grid-cols-[1.1fr_2fr] lg:gap-16">
           <div className="footer-story">
-            <Link to="/" className="inline-flex min-h-11 items-center gap-3 rounded-xl" aria-label="Drop Network home">
+            <Link to="/" className="inline-flex min-h-11 items-center gap-3 rounded-xl" aria-label="drop. home">
               <span className="footer-logo relative flex h-11 w-11 items-center justify-center rounded-2xl bg-primary">
                 <Droplet className="relative h-5 w-5 text-white" aria-hidden="true" />
               </span>
-              <span className="text-xl font-extrabold tracking-tight text-slate-950">Drop<span className="text-primary">.</span></span>
+              <span className="text-xl font-extrabold tracking-tight text-slate-950">drop<span className="text-primary">.</span></span>
             </Link>
             <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">
               A community blood-donor matching service helping people across Bangladesh find compatible,
@@ -89,7 +91,7 @@ export default function Footer({ compact = false }: { compact?: boolean }) {
         </div>
 
         <div className="footer-bottom flex flex-col gap-3 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Drop Network. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} drop<span className="text-primary">.</span> All rights reserved.</p>
           <div className="flex flex-wrap gap-x-5 gap-y-2">
             <Link to="/safety" className="inline-flex min-h-10 items-center gap-1.5 hover:text-primary">
               <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> Safety first

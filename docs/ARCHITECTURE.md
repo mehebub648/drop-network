@@ -1,6 +1,34 @@
 # Drop Network Architecture
 
-Current application version: `0.0.162`
+Current application version: `0.0.163`
+
+### Password authentication and launch privacy (0.0.163)
+
+Account login uses phone and password. `REGISTER` challenges verify a new
+registration or the same phone on an authenticated, unverified legacy account;
+the latter consumes its proof at `POST /auth/verify-phone`. `RESET_PASSWORD`
+challenges reset a password and revoke all sessions. `SIGN_IN` challenges are
+rejected, and the retired OTP session endpoint returns 410. The compatibility
+`POST /auth/start` always returns `PASSWORD` without disclosing account existence.
+
+The public `/delete-account` page remains reachable through the mobile app
+cover and provides both a settings route and a privacy-ticket path. Account
+deletion removes private birth date, account location and phone verification
+fields, authored comment text, push-device/delivery rows and notification inbox
+entries in addition to the existing donor, patient/contact and community cleanup.
+Retained coordination and audit history is described in the Privacy Policy.
+
+Community publication requires both publication consent and explicit Terms and
+conduct acceptance. Public post projections include an opaque author ID for
+blocking; authenticated feeds, post detail and request comments respect bilateral
+blocks. Authenticated community responses are private and not cacheable.
+
+Theme tokens remain in `src/index.css`; the shared website stylesheet applies
+the warm palette, rounded Nunito type and open illustrated scenes. Each home
+blood drop navigates directly to donor search with its group; there is no
+persistent selected state or extra Find button. The wordmark is `drop.` with a
+red full stop. Android remains native and mobile product routes keep their app
+download cover.
 
 ### Desktop website redesign (0.0.162)
 
@@ -197,9 +225,8 @@ server. Public responses are allowlisted and never contain account phone, DOB,
 credential hashes or private ownership IDs. Explicit closure reasons remove
 posts from the public feed without manufacturing donation confirmation.
 
-`POST /auth/start` intentionally returns password-versus-OTP account branching.
-It exposes limited account existence, with phone/device/IP throttles and no
-profile data. `/api` and `/api/v1` both use the same handlers and privacy checks.
+`POST /auth/start` is retained for compatibility and returns only the generic
+password next step. `/api` and `/api/v1` use the same handlers and privacy checks.
 
 `Select`, `DateInput`, `StepFlow`, `GuidedForm` and `QuestionPages` provide custom
 keyboard-accessible controls and one-to-three-field pages. Browser request and
@@ -325,8 +352,8 @@ Routes:
 - Member pages use a desktop side rail and an accessible mobile section sheet.
   The Android application renders its corresponding member journeys as native
   Flutter screens and authenticates through bearer sessions on `/api/v1`.
-- `/login` logs in an existing user by password or a purpose-bound Messavo
-  verification code, including passwordless accounts created by a claim.
+- `/login` logs in an existing user by phone and password. Legacy accounts
+  without a password must first use the separate forgotten-password flow.
 - `/register` verifies a Bangladesh mobile by OTP before creating an account.
 - `/request/new` no longer exists and redirects to `/directory`. Posting a blood
   request is not a separate form any more: searching for donors is how a request
@@ -350,8 +377,8 @@ Routes:
   patient, and contact answers are summarized rather than requested again and
   remain editable. Separate patient identity, blood requirement, contact, and
   review stages carry explicit publication consent before inline requester verification.
-  Existing password accounts use password or OTP recovery; passwordless accounts
-  use OTP. New verified phones continue through private DOB/location, optional
+  Existing accounts use a password, with separate password reset by SMS when
+  needed. New verified phones continue through private DOB/location, optional
   donor enrollment and conditional donation/availability details, then password.
   Only the chosen call contact is published, while the request owner remains private.
   Copy Phone Number performs an explicit recorded reveal and copies the number.
@@ -395,9 +422,10 @@ Routes:
   donation follow-up timeline. `/profile/invitations` remains a compatible
   alias.
 - `/follow-up` opens fragment-token reminder links without sending the token to
-  the server during initial navigation. Registered donors authenticate normally
-  or with `DONATION_FOLLOW_UP` OTP; imported donors verify the listed number and
-  continue through the existing claim/create-account flow.
+  the server during initial navigation. A `DONATION_FOLLOW_UP` OTP proves that
+  the recipient controls the donor phone but never creates an account session;
+  registered donors then sign in with their password. Imported donors verify
+  the listed number and continue through the claim/create-account flow.
 - `/profile/contact-reports` is the donor's private remediation inbox. It shows
   aggregate categories without reporter identities or notes, supports current-
   phone Messavo reverification, links to corrective profile actions, and accepts
@@ -405,14 +433,16 @@ Routes:
 - `/profile/history` adds, edits, and deletes validated donation records.
 - `/profile/security` changes the password and manages signed-in devices.
 - `/profile/settings` stores device-local preferences, downloads the complete
-  server-side account export, and starts password-confirmed anonymization.
+  server-side account export, and starts confirmed account anonymization.
 - `/forgot-password` resets a password after registered-phone OTP verification.
 - `/directory/imported` redirects to search; there is no browsable donor
   directory.
 - `/c/:slug` is the short, masked, no-index owner claim flow. The owner may
   change the phone before OTP; a matching phone claims the imported stub while
-  a different unique phone creates or updates a separate passwordless donor
-  profile and leaves the stub unclaimed. `/directory/imported/:id` and
+  a different unique phone may create a separate password-protected account and
+  donor profile and leave the stub unclaimed. Updating a profile attached to an
+  existing account never establishes a session; the member signs in with the
+  existing password afterward. `/directory/imported/:id` and
   `/directory/:id` redirect old opaque-ID links to the short route.
 - `/contribute` accepts a private donor suggestion from any visitor and returns
   a 30-day claim link. It sends no SMS and the entry remains unsearchable until
@@ -528,7 +558,7 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   `drop_session` cookie, and returns the sanitized user.
 - `POST /api/auth/otp/request` and `/api/auth/otp/verify` create purpose-bound,
   expiring phone-verification tokens for `REGISTER`, `RESET_PASSWORD`,
-  `CHANGE_PHONE`, `SIGN_IN`, and `REMOVE_LISTING`. The request response includes
+  `CHANGE_PHONE`, `REMOVE_LISTING`, `CLAIM_PROFILE`, and `DONATION_FOLLOW_UP`. The request response includes
   the challenge ID, delivery state, and expiry. `GET /api/auth/otp/:challengeId/status`
   polls an enumeration-safe state without returning the phone, purpose, code, or
   message. This read-only status route uses the global API budget rather than
@@ -539,22 +569,17 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   cooldown. Wrong codes return a validation error for the first five attempts;
   the sixth and later wrong attempts on that challenge return `429`. A newly
   issued challenge starts with a fresh wrong-code count.
-- `SIGN_IN` exists for the blood request flow, where someone gives a phone
-  number without first saying whether they have an account. It is the only
-  purpose that works either way, and verification returns `account_exists` -
-  after the caller has entered the code sent to that number, so they learn
-  about their own phone and nobody else's. There is deliberately no endpoint
-  that answers "is this number registered?" on its own.
-- `POST /api/auth/otp/login` exchanges a verified `SIGN_IN` challenge for a
-  session, so a requester is not blocked by a forgotten password. The password
-  path is unchanged and still offered.
-- `POST /api/auth/register` consumes a registration or `SIGN_IN` token. Standard
+- `SIGN_IN` is no longer supported. OTP verification returns only the scoped
+  verification token, never account-existence or profile information.
+- `POST /api/auth/otp/login` returns 410 and does not issue a session.
+- `POST /api/auth/register` consumes a registration token and requires an
+  eight-character or longer password in every registration context. Standard
   donor registration creates a verified user with a donor profile and requires
   blood group, an explicit available/not-available choice, and either the
   browser's legacy location object or a canonical `district` name that the
   backend resolves to its trusted district-centre coordinates. The
   request workflow sends `registration_context: REQUEST` after OTP verification
-  to create a minimal passwordless member account without a donor profile; the
+  to create a minimal password-protected member account without a donor profile; the
   new member may add a donor profile later.
 - `POST /api/auth/logout` revokes the current session and clears the cookie.
 - `POST /api/auth/reset-password` consumes a verified recovery challenge,
@@ -658,7 +683,9 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
 - `GET /api/requests/:id/contacted-donors` returns the owner's masked contact
   ledger. `POST /api/donation-follow-ups/open`, `/verify`, and
   `/:id/outcome` handle fragment tokens, purpose-bound OTP, and independent
-  donor/requester outcomes.
+  donor/requester outcomes. Follow-up verification may bind the verified donor
+  to the record, but it never creates an existing-account session. The donor
+  must already have the matching authenticated session or sign in by password.
 - `POST /api/me/donations/:id/share-draft` creates or refreshes the private,
   deterministic story draft for an owned donation record. It ignores private
   notes and request data, and never publishes. `GET /api/me/community/:id`
@@ -703,7 +730,11 @@ native-facing `/api/v1/*` compatibility prefix. Versioned responses include
   or active staff.
 - `GET /api/claims/:slug` returns one masked claim stub and
   `POST /api/claims/:slug/complete` accepts only a `CLAIM_PROFILE` verification
-  token for the submitted phone. Knowing the slug is never authorization.
+  token for the submitted phone. A new account also requires and stores an
+  eight-character or longer password. A claim for an existing account may save
+  the ownership/profile result but creates no session and returns
+  `sign_in_required`; the member must use password login. Knowing the slug is
+  never authorization.
 - `POST /api/contributions` stores an owner-unverified suggestion privately,
   collapses duplicate phones, and returns the same neutral response shape.
   Honeypot, IP, browser-fingerprint, and phone controls limit intake; it never
@@ -891,8 +922,9 @@ account:
   chooses and verifies a phone through Messavo, then confirms name, blood group,
   district, upazila, availability, and explicit consent with no guessed default.
   If the number matches the imported phone the stub is claimed automatically.
-  If it differs, Drop creates or updates the verified number's own profile and
-  leaves the original stub unclaimed.
+  If it differs, Drop creates a password-protected account and profile for a new
+  verified number, or updates the existing number's profile without creating a
+  session, and leaves the original stub unclaimed.
 - `/contribute` writes a `PRIVATE_PENDING` stub with a 30-day expiry. It never
   enters search and never triggers SMS at intake. Only the phone owner's
   verified claim and availability consent create a searchable registered donor.
@@ -976,8 +1008,10 @@ Environment:
   `SMS_PROVIDER=http`; an incomplete explicit configuration fails closed.
 - `common_app_settings` persists the superadmin-controlled OTP bypass switch.
   Bypass mode creates short-lived, purpose-bound bypass challenges without
-  sending or accepting a code; registration, sign-in, password reset, phone
-  changes, and imported-listing removal can then proceed for controlled tests.
+  sending or accepting a code; registration, password reset, phone changes,
+  imported-listing removal, profile claims, and donation follow-ups can then
+  proceed for controlled tests. A bypass challenge never creates an
+  existing-account session; password login remains required.
   Bypass challenges become unusable as soon as the switch is disabled and do
   not revive after a later re-enable. The public config and every rendered page
   expose the active warning state, and each switch change is reason-gated and

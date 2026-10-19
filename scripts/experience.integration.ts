@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
+import { createHmac } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import bcrypt from 'bcryptjs';
@@ -13,7 +14,8 @@ import { guestTokenHash } from '../server/guestRequests';
 if (process.env.DROP_ISOLATED_QA !== '1') throw new Error('Run in the isolated QA container only');
 const directory = await mkdtemp(path.join(tmpdir(), 'drop-experience-'));
 process.env.LANCEDB_PATH = path.join(directory, 'db');
-const { saveToTable } = await import('../server/db');
+const { saveToTable, getAllFromTable, addImportedDonors } = await import('../server/db');
+const { toImportedDonorRow } = await import('../server/importedDonors');
 const password = 'Isolated-test-password-123';
 const privatePhone = '+8801700000001';
 await saveToTable('common_users', {
@@ -38,6 +40,20 @@ const seededRequest = {
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-expired-guest', user_id: '', ownership: 'GUEST', guest_token_hash: guestTokenHash(expiredDevice), expires_at: seededRequest.needed_by });
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-overdue-owned', user_id: 'qa-existing', ownership: 'USER', expires_at: requestExpiry(seededRequest.needed_by, 'USER') });
 await saveToTable('common_requests', { ...seededRequest, id: 'qa-expired-owned', user_id: 'qa-existing', ownership: 'USER', expires_at: seededRequest.needed_by });
+const importedSource = { id: 'isolated-qa', organization: 'ISOLATED QA', url: 'https://example.invalid', scraped_at: new Date().toISOString() };
+await addImportedDonors([
+  toImportedDonorRow({ id: 'qa-claim-existing', public_id: 'qa-claim-existing', claim_slug: 'QACLAIMEXIST', source: importedSource, source_ref: 'qa-existing', name: 'Existing claim fixture', phone: privatePhone, blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PUBLIC', imported_at: new Date().toISOString() }),
+  toImportedDonorRow({ id: 'qa-claim-new', public_id: 'qa-claim-new', claim_slug: 'QACLAIMNEW01', source: importedSource, source_ref: 'qa-new', name: 'New claim fixture', phone: '+8801700000007', blood_group: 'AB+', district: 'Dhaka', upazila: 'Savar', location: seededRequest.location, claim_status: 'UNCLAIMED', publication_state: 'PUBLIC', imported_at: new Date().toISOString() })
+]);
+const followUpSecret = 'isolated-follow-up-secret';
+await saveToTable('common_donation_followups', {
+  id: 'qa-auth-follow-up', request_id: 'qa-overdue-owned', requester_id: 'qa-existing', donor_ref: 'reg:qa-existing', donor_kind: 'REGISTERED',
+  agreed_at: new Date().toISOString(), sms_consent: false, due_at: new Date().toISOString(), delivery: { status: 'NOT_REQUESTED', attempts: 0 },
+  reminder_count: 0, state: 'FOLLOW_UP_DUE', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+});
+for (const token of ['qa-follow-up-proof-1', 'qa-follow-up-proof-2']) {
+  await saveToTable('common_otps', { id: token, phone: privatePhone, purpose: 'DONATION_FOLLOW_UP', code_hash: 'fixture', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + DAY_MS).toISOString(), attempts: 0, verified_at: new Date().toISOString(), verification_token: token, verification_expires_at: new Date(Date.now() + DAY_MS).toISOString() });
+}
 for (let i = 0; i < 34; i++) {
   await saveToTable('common_users', { id: `qa-donor-${i}`, name: `Fixture Donor ${i}`, phone: `+8801900000${String(i).padStart(3, '0')}`, is_verified: true, roles: ['MEMBER'], created_at: new Date().toISOString(), donor_profile: { blood_group: 'B+', upazila: i < 4 ? 'Savar' : 'Dhamrai', location: { area_name: 'Dhaka', lat: 23.8, lng: 90.4 }, last_donation: { kind: 'NEVER' } } });
 }
@@ -55,6 +71,7 @@ let logs = '';
 const server = spawn(process.execPath, ['--import', 'tsx', 'server/server.ts'], {
   env: { ...process.env, PORT: '18550', NODE_ENV: 'test', APP_URL: 'http://127.0.0.1:18550',
     COMMUNITY_MEDIA_PATH: path.join(directory, 'media'),
+    FOLLOW_UP_LINK_SECRET: followUpSecret,
     SMS_PROVIDER: 'http', SMS_HTTP_ENDPOINT: 'http://127.0.0.1:18551', SMS_HTTP_TOKEN: 'isolated-only' },
   stdio: ['ignore', 'pipe', 'pipe']
 });
@@ -102,20 +119,64 @@ try {
   assert.equal((await expired.call('/api/guest/requests')).items.length, 0);
   await guest.call('/api/guest/session', {});
   await stranger.call('/api/v1/guest/session', {});
+  const followUpPayload = Buffer.from(JSON.stringify({ id: 'qa-auth-follow-up', exp: Date.now() + DAY_MS })).toString('base64url');
+  const followUpToken = `${followUpPayload}.${createHmac('sha256', followUpSecret).update(followUpPayload).digest('base64url')}`;
+  const sessionsBeforeFollowUp = (await getAllFromTable('common_sessions')).length;
+  const verifiedFollowUp = await stranger.call('/api/donation-follow-ups/verify', { token: followUpToken, phone: privatePhone, verification_token: 'qa-follow-up-proof-1' });
+  assert.equal(verifiedFollowUp.sign_in_required, true);
+  assert.equal(verifiedFollowUp.user, undefined);
+  assert.equal(stranger.cookies.has('drop_session'), false);
+  assert.equal((await getAllFromTable('common_sessions')).length, sessionsBeforeFollowUp);
+  const followUpMember = new Device('192.0.2.15');
+  await followUpMember.call('/api/auth/login', { phone: privatePhone, password });
+  const sessionsAfterPasswordLogin = (await getAllFromTable('common_sessions')).length;
+  const authenticatedFollowUp = await followUpMember.call('/api/donation-follow-ups/verify', { token: followUpToken, phone: privatePhone, verification_token: 'qa-follow-up-proof-2' });
+  assert.equal(authenticatedFollowUp.user.id, 'qa-existing');
+  assert.equal(authenticatedFollowUp.sign_in_required, undefined);
+  assert.equal((await getAllFromTable('common_sessions')).length, sessionsAfterPasswordLogin);
+  console.log('PASS: follow-up phone verification never creates an existing-account session');
+  const existingClaim = new Device('192.0.2.16');
+  await existingClaim.call('/api/auth/otp/request', { phone: privatePhone, purpose: 'CLAIM_PROFILE' });
+  const existingClaimProof = await existingClaim.call('/api/auth/otp/verify', { phone: privatePhone, purpose: 'CLAIM_PROFILE', code: codes.get(privatePhone) });
+  const sessionsBeforeExistingClaim = (await getAllFromTable('common_sessions')).length;
+  const existingClaimResult = await existingClaim.call('/api/claims/QACLAIMEXIST/complete', {
+    phone: privatePhone, verification_token: existingClaimProof.verification_token, name: 'Existing claim fixture', blood_group: 'AB+',
+    district: 'Dhaka', upazila: 'Savar', availability_status: 'NOT_AVAILABLE', availability_reason: 'ISOLATED QA', availability_consent: true
+  });
+  assert.equal(existingClaimResult.account_created, false);
+  assert.equal(existingClaimResult.sign_in_required, true);
+  assert.equal(existingClaim.cookies.has('drop_session'), false);
+  assert.equal((await getAllFromTable('common_sessions')).length, sessionsBeforeExistingClaim);
+
+  const newClaim = new Device('192.0.2.17');
+  const newClaimPhone = '+8801700000007';
+  await newClaim.call('/api/auth/otp/request', { phone: newClaimPhone, purpose: 'CLAIM_PROFILE' });
+  const newClaimProof = await newClaim.call('/api/auth/otp/verify', { phone: newClaimPhone, purpose: 'CLAIM_PROFILE', code: codes.get(newClaimPhone) });
+  const newClaimBody = {
+    phone: newClaimPhone, verification_token: newClaimProof.verification_token, name: 'New claim fixture', blood_group: 'AB+',
+    district: 'Dhaka', upazila: 'Savar', availability_status: 'AVAILABLE', availability_consent: true
+  };
+  await newClaim.call('/api/claims/QACLAIMNEW01/complete', newClaimBody, 'POST', 400);
+  const sessionsBeforeNewClaim = (await getAllFromTable('common_sessions')).length;
+  const newClaimResult = await newClaim.call('/api/claims/QACLAIMNEW01/complete', { ...newClaimBody, password });
+  assert.equal(newClaimResult.account_created, true);
+  assert.equal(newClaim.cookies.has('drop_session'), true);
+  assert.equal((await getAllFromTable('common_sessions')).length, sessionsBeforeNewClaim + 1);
+  console.log('PASS: existing claims require password sign-in while new claim accounts set a password');
   await guest.call('/api/search/requests', { ...payload('01800000001'), consent: false }, 'POST', 400);
   await guest.call('/api/search/requests', payload('01800000001', dhakaDate(Date.now() - DAY_MS)), 'POST', 400);
   await guest.call('/api/search/requests', payload('01800000001', dhakaDate(Date.now() + 16 * DAY_MS)), 'POST', 400);
   const published = await guest.call('/api/search/requests', payload('01800000001'), 'POST', 201);
   const id = published.request.id;
   assert.equal(published.request.verification_state, 'UNVERIFIED');
-  assert.equal(published.request.permitted_actions.reveal, true);
+  assert.equal(published.request.permitted_actions.reveal, false);
   assert.equal(published.request.expires_at, published.request.needed_by);
   assert.equal('guest_token_hash' in published.request, false);
   const duplicate = await guest.call('/api/search/requests', payload('01800000001'));
   assert.equal(duplicate.request.id, id);
   assert.equal(duplicate.reused, true);
   await stranger.call(`/api/requests/${id}/close`, { reason: 'RECEIVED' }, 'POST', 404);
-  await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'registered:any' }, 'POST', 400);
+  await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'registered:any' }, 'POST', 401);
   const publicDetail = await stranger.call(`/api/requests/${id}`);
   assert.equal(publicDetail.request.permitted_actions.manage, false);
   assert.equal('user_id' in publicDetail.request, false);
@@ -133,25 +194,21 @@ try {
   assert.equal(district.local_total, 30);
   assert.equal(district.includes_district, false);
   assert.equal(district.items.every((item: any) => item.upazila === 'Dhamrai'), true);
-  await stranger.call(`/api/requests/${id}/reveals`, { donor_ref: 'reg:qa-donor-0' }, 'POST', 403);
-  for (let i = 0; i < 3; i++) {
-    const reveal = await guest.call(`/api/requests/${id}/reveals`, { donor_ref: `reg:qa-donor-${i}` });
-    assert.ok(reveal.phone);
-    await guest.call(`/api/requests/${id}/call-reports`, { reveal_id: reveal.reveal_id, outcome: 'NOT_CALLED' }, 'POST', 201);
-  }
-  const contactLimited = await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'reg:qa-donor-3' }, 'POST', 428);
-  assert.equal(contactLimited.reason, 'GUEST_CONTACT_LIMIT');
-  const separate = await guest.call(`/api/requests/${second.request.id}/reveals`, { donor_ref: 'reg:qa-donor-3' });
-  await guest.call(`/api/requests/${second.request.id}/call-reports`, { reveal_id: separate.reveal_id, outcome: 'NOT_CALLED' }, 'POST', 201);
+  await stranger.call(`/api/requests/${id}/reveals`, { donor_ref: 'reg:qa-donor-0' }, 'POST', 401);
+  await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'reg:qa-donor-0' }, 'POST', 401);
   const third = await guest.call('/api/search/requests', { ...payload('01800000008'), needed_when: 'THIS_WEEK', collection_facility: '' }, 'POST', 201);
   assert.equal(third.request.needed_date, dhakaDate(Date.now() + 7 * DAY_MS));
   await guest.call(`/api/requests/${third.request.id}/close`, { reason: 'CANCELLED' });
   const full = await guest.call('/api/search/requests', payload('01800000009'), 'POST', 428);
   assert.equal(full.reason, 'GUEST_REQUEST_LIMIT');
-  console.log('PASS: distinct per-request contact quotas, total request quota after closure, 15-day idle purge, optional facility, timing and upazila fallback threshold');
+  console.log('PASS: account-gated donor contact, total request quota after closure, 15-day idle purge, optional facility, timing and upazila fallback threshold');
   console.log('PASS: guest privacy, consent, deadline bounds, device isolation and duplicate publication');
   assert.equal((await guest.call('/api/auth/start', { phone: privatePhone })).next_step, 'PASSWORD');
+  const guestComment = await guest.call(`/api/requests/${id}/comments`, { text: 'ISOLATED guest adoption regression', anonymous_name: 'ISOLATED guest', client_id: 'isolated-adoption-comment' });
   await guest.call('/api/auth/login', { phone: privatePhone, password });
+  const adoptedComment = (await guest.call(`/api/requests/${id}`)).request.comments.find((comment: any) => comment.id === guestComment.id);
+  assert.equal(adoptedComment.is_mine, true);
+  assert.equal('user_id' in adoptedComment, false);
   const overdue = (await guest.call('/api/requests/qa-overdue-owned')).request;
   assert.equal(overdue.past_deadline, true);
   assert.equal(overdue.verification_state, 'ACCOUNT_OWNED');
@@ -166,7 +223,7 @@ try {
   assert.equal((await guest.call('/api/guest/requests')).items.length, 0);
   const fourth = await guest.call(`/api/requests/${id}/reveals`, { donor_ref: 'reg:qa-donor-3' });
   await guest.call(`/api/requests/${id}/call-reports`, { reveal_id: fourth.reveal_id, outcome: 'NOT_CALLED' }, 'POST', 201);
-  console.log('PASS: password login adopted guest requests and contact history, and unlocked the fourth donor');
+  console.log('PASS: password login adopted guest requests and unlocked protected donor contact');
   const replay = new Device('192.0.2.13'); replay.cookies.set('drop_guest', guestCredential);
   await replay.call(`/api/requests/${id}/close`, { reason: 'CANCELLED' }, 'POST', 404);
   await guest.call('/api/guest/requests/adopt', {});
@@ -179,10 +236,17 @@ try {
   const newPhone = '+8801700000002';
   await newcomer.call('/api/guest/session', {});
   const newPost = await newcomer.call('/api/search/requests', payload('01800000003'), 'POST', 201);
-  assert.equal((await newcomer.call('/api/auth/start', { phone: newPhone })).next_step, 'OTP');
-  await newcomer.call('/api/auth/otp/request', { phone: newPhone, purpose: 'SIGN_IN' });
+  assert.equal((await newcomer.call('/api/auth/start', { phone: newPhone })).next_step, 'PASSWORD');
+  await newcomer.call('/api/auth/otp/request', { phone: newPhone, purpose: 'SIGN_IN' }, 'POST', 400);
+  await newcomer.call('/api/auth/otp/request', { phone: newPhone, purpose: 'REGISTER' });
   assert.ok(codes.get(newPhone), 'test SMS adapter captured OTP');
-  const verified = await newcomer.call('/api/auth/otp/verify', { phone: newPhone, purpose: 'SIGN_IN', code: codes.get(newPhone) });
+  const verified = await newcomer.call('/api/auth/otp/verify', { phone: newPhone, purpose: 'REGISTER', code: codes.get(newPhone) });
+  assert.deepEqual(Object.keys(verified), ['verification_token']);
+  await stranger.call('/api/auth/verify-phone', { verification_token: verified.verification_token }, 'POST', 401);
+  await newcomer.call('/api/auth/register', {
+    registration_context: 'REQUEST', phone: newPhone, verification_token: verified.verification_token,
+    name: 'Passwordless account must fail'
+  }, 'POST', 400);
   const account = await newcomer.call('/api/auth/register', {
     registration_context: 'GUIDED', phone: newPhone, verification_token: verified.verification_token,
     name: 'Isolated new account', date_of_birth: '1995-02-03', district: 'Dhaka', upazila: 'Savar',
@@ -197,9 +261,9 @@ try {
   const volunteer = new Device('192.0.2.31');
   const donorPhone = '+8801700000003';
   await volunteer.call('/api/guest/session', {});
-  await volunteer.call('/api/auth/otp/request', { phone: donorPhone, purpose: 'SIGN_IN' });
-  await volunteer.call('/api/auth/otp/verify', { phone: donorPhone, purpose: 'SIGN_IN', code: '000000' }, 'POST', 400);
-  const donorProof = await volunteer.call('/api/auth/otp/verify', { phone: donorPhone, purpose: 'SIGN_IN', code: codes.get(donorPhone) });
+  await volunteer.call('/api/auth/otp/request', { phone: donorPhone, purpose: 'REGISTER' });
+  await volunteer.call('/api/auth/otp/verify', { phone: donorPhone, purpose: 'REGISTER', code: '000000' }, 'POST', 400);
+  const donorProof = await volunteer.call('/api/auth/otp/verify', { phone: donorPhone, purpose: 'REGISTER', code: codes.get(donorPhone) });
   const donorRegistration = {
     registration_context: 'GUIDED', phone: donorPhone, verification_token: donorProof.verification_token,
     name: 'Isolated donor', date_of_birth: '1995-02-03', district: 'Dhaka', upazila: 'Savar',
@@ -209,7 +273,7 @@ try {
   const enrolled = await volunteer.call('/api/auth/register', { ...donorRegistration, availability_status: 'AVAILABLE' });
   assert.equal(enrolled.user.donor_profile.availability_status, 'AVAILABLE');
   assert.equal(enrolled.user.donor_profile.donation_count, 0);
-  const { getPartitionName, getAllFromTable } = await import('../server/db');
+  const { getPartitionName } = await import('../server/db');
   const cachedDonor = (await getAllFromTable(await getPartitionName('Dhaka', 'O-'))).find(item => item.id === enrolled.user.id);
   assert.ok(cachedDonor);
   assert.equal('date_of_birth' in cachedDonor, false);
@@ -217,36 +281,52 @@ try {
   assert.equal('password' in cachedDonor, false);
   const overdueReveal = await guest.call('/api/requests/qa-overdue-owned/reveals', { donor_ref: `reg:${enrolled.user.id}` });
   assert.equal(overdueReveal.phone, donorPhone, 'Owned overdue requests retain protected contact access');
-  await volunteer.call('/api/auth/otp/login', { phone: donorPhone, verification_token: donorProof.verification_token }, 'POST', 403);
+  await volunteer.call('/api/auth/otp/login', { phone: donorPhone, verification_token: donorProof.verification_token }, 'POST', 410);
   const recovery = new Device('192.0.2.32');
   await recovery.call('/api/guest/session', {});
   const recoveryPost = await recovery.call('/api/search/requests', payload('01800000004'), 'POST', 201);
-  await recovery.call('/api/auth/otp/request', { phone: privatePhone, purpose: 'SIGN_IN' });
-  const recoveryProof = await recovery.call('/api/auth/otp/verify', { phone: privatePhone, purpose: 'SIGN_IN', code: codes.get(privatePhone) });
-  await recovery.call('/api/auth/otp/login', { phone: privatePhone, verification_token: recoveryProof.verification_token });
+  const existingSession = new Device('192.0.2.33');
+  await recovery.call('/api/auth/login', { phone: privatePhone, password });
+  await existingSession.call('/api/auth/login', { phone: privatePhone, password });
+  await recovery.call('/api/auth/otp/request', { phone: privatePhone, purpose: 'RESET_PASSWORD' });
+  const recoveryProof = await recovery.call('/api/auth/otp/verify', { phone: privatePhone, purpose: 'RESET_PASSWORD', code: codes.get(privatePhone) });
+  const recoveredPassword = 'Recovered-test-password-456';
+  await recovery.call('/api/auth/reset-password', { phone: privatePhone, new_password: recoveredPassword, verification_token: recoveryProof.verification_token });
+  await recovery.call('/api/me', undefined, 'GET', 401);
+  await existingSession.call('/api/me', undefined, 'GET', 401);
+  await recovery.call('/api/auth/login', { phone: privatePhone, password: recoveredPassword });
   assert.equal((await recovery.call(`/api/requests/${recoveryPost.request.id}`)).request.verification_state, 'ACCOUNT_OWNED');
-  console.log('PASS: explicit donor availability, private donor search cache, OTP errors/replay and OTP-login adoption');
+  console.log('PASS: explicit donor availability, private donor search cache, password recovery and session revocation');
   for (const [phone, suffix, hasPassword] of [['+8801700000004', '41', true], ['+8801700000005', '42', false]] as const) {
     const device = new Device(`192.0.2.${suffix}`);
     await device.call('/api/v1/guest/session', {});
     const post = await device.call('/api/v1/search/requests', payload(`018000000${suffix}`), 'POST', 201);
     const challenge = await device.call('/api/v1/auth/start', { phone });
-    assert.equal(challenge.next_step, hasPassword ? 'PASSWORD' : 'OTP');
+    assert.equal(challenge.next_step, 'PASSWORD');
     assert.equal('user' in challenge, false);
     if (hasPassword) {
       await device.call('/api/v1/auth/login', { phone, password });
       assert.equal((await device.call(`/api/v1/requests/${post.request.id}`)).request.permitted_actions.reveal, false);
+      await device.call('/api/v1/me/contact-reports/confirm-phone', {}, 'POST', 403);
+      await device.call('/api/v1/auth/otp/request', { phone, purpose: 'REGISTER' });
+      const proof = await device.call('/api/v1/auth/otp/verify', { phone, purpose: 'REGISTER', code: codes.get(phone) });
+      const verifiedUser = await device.call('/api/v1/auth/verify-phone', { verification_token: proof.verification_token });
+      assert.equal(verifiedUser.user.is_verified, true);
+      await device.call('/api/v1/me/contact-reports/confirm-phone', {});
+    } else {
+      await device.call('/api/v1/auth/login', { phone, password }, 'POST', 401);
+      await device.call('/api/v1/auth/otp/request', { phone, purpose: 'RESET_PASSWORD' });
+      const proof = await device.call('/api/v1/auth/otp/verify', { phone, purpose: 'RESET_PASSWORD', code: codes.get(phone) });
+      await device.call('/api/v1/auth/reset-password', { phone, new_password: password, verification_token: proof.verification_token });
+      await device.call('/api/v1/auth/login', { phone, password });
     }
-    await device.call('/api/v1/auth/otp/request', { phone, purpose: 'SIGN_IN' });
-    const proof = await device.call('/api/v1/auth/otp/verify', { phone, purpose: 'SIGN_IN', code: codes.get(phone) });
-    await device.call('/api/v1/auth/otp/login', { phone, verification_token: proof.verification_token });
     const owned = (await device.call(`/api/v1/requests/${post.request.id}`)).request;
     assert.equal(owned.verification_state, 'ACCOUNT_OWNED');
     assert.equal(owned.permitted_actions.reveal, true);
   }
   const limited = new Device('192.0.2.51');
   for (let i = 0; i < 5; i++) await limited.call('/api/auth/start', { phone: '+8801700000099' });
-  await limited.call('/api/auth/start', { phone: '+8801700000099' }, 'POST', 429);
+  assert.equal((await limited.call('/api/auth/start', { phone: '+8801700000099' })).next_step, 'PASSWORD');
   await newcomer.call('/api/v1/admin/overview', undefined, 'GET', 403);
   const moderator = new Device('192.0.2.61');
   await moderator.call('/api/v1/auth/login', { phone: '+8801700000006', password });
@@ -260,7 +340,27 @@ try {
   await moderator.call(`/api/v1/admin/requests/${second.request.id}`, { status: 'REJECTED', note: 'Isolated moderation check' }, 'PATCH');
   await stranger.call(`/api/requests/${second.request.id}`, undefined, 'GET', 404);
   console.log('PASS: native-versioned staff permissions, moderation, guest expiry and forbidden resurrection');
-  console.log('PASS: legacy verification-only, passwordless OTP, versioned API adoption and phone challenge throttling');
+  await newcomer.call('/api/me/push/devices', { token: 'isolated-deletion-device-token', enabled: true });
+  await newcomer.call(`/api/requests/${newPost.request.id}/comments`, { text: 'ISOLATED QA personal comment to remove' });
+  await newcomer.call('/api/me', undefined, 'DELETE');
+  await newcomer.call('/api/me', undefined, 'GET', 401);
+  const deletedUser = (await getAllFromTable('common_users')).find(item => item.id === account.user.id);
+  assert.ok(deletedUser.deleted_at);
+  for (const field of ['date_of_birth', 'account_location', 'phone_verified_at', 'password', 'donor_profile', 'recipient_profile']) {
+    assert.equal(deletedUser[field], undefined, `deleted account clears ${field}`);
+  }
+  assert.equal(deletedUser.phone.startsWith('deleted-'), true);
+  assert.equal((await getAllFromTable('common_push_devices')).some(item => item.user_id === account.user.id), false);
+  assert.equal((await getAllFromTable('common_push_deliveries')).some(item => item.user_id === account.user.id), false);
+  assert.equal((await getAllFromTable('common_notifications')).some(item => item.user_id === account.user.id), false);
+  const deletedRequest = (await getAllFromTable('common_requests')).find(item => item.id === newPost.request.id);
+  assert.equal(deletedRequest.status, 'CANCELLED');
+  assert.deepEqual(deletedRequest.contacts, []);
+  const deletedComment = deletedRequest.comments.find(item => item.user_id === account.user.id);
+  assert.equal(deletedComment.text, '');
+  assert.ok(deletedComment.deleted_at);
+  console.log('PASS: account deletion removes private profile fields, push tokens, notifications, request contacts and authored comments');
+  console.log('PASS: legacy phone verification, passwordless recovery, versioned API adoption and generic password routing');
   console.log('PASS: isolated publication, date bounds, consent, privacy, device isolation, retry, adoption, closure and guided opt-out registration');
 } finally {
   server.kill('SIGTERM');

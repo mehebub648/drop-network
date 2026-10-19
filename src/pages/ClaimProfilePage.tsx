@@ -44,6 +44,9 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
   const [availability, setAvailability] = useState<RegistrationAvailability>('');
   const [availabilityReason, setAvailabilityReason] = useState('');
   const [consent, setConsent] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordRequired, setPasswordRequired] = useState(false);
+  const [signInRequired, setSignInRequired] = useState(false);
   const [result, setResult] = useState<'CLAIMED' | 'SEPARATE_PROFILE_CREATED' | ''>('');
   const upazilas = useMemo(() => getUpazilasForDistrict(district), [district]);
 
@@ -103,20 +106,30 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
     event.preventDefault();
     if (!consent) return setError('Confirm that these details and availability choice are yours.');
     void run(async () => {
-      const response = await api.completeClaimProfile(slug, {
-        phone,
-        verification_token: verificationToken,
-        name,
-        blood_group: bloodGroup,
-        district,
-        upazila,
-        availability_status: availability as 'AVAILABLE' | 'NOT_AVAILABLE',
-        availability_reason: availability === 'NOT_AVAILABLE' ? availabilityReason : undefined,
-        availability_consent: true
-      });
+      let response;
+      try {
+        response = await api.completeClaimProfile(slug, {
+          phone,
+          verification_token: verificationToken,
+          name,
+          blood_group: bloodGroup,
+          district,
+          upazila,
+          availability_status: availability as 'AVAILABLE' | 'NOT_AVAILABLE',
+          availability_reason: availability === 'NOT_AVAILABLE' ? availabilityReason : undefined,
+          availability_consent: true,
+          ...(password ? { password } : {})
+        });
+      } catch (cause) {
+        if (cause instanceof Error && cause.message.includes('Create a password with at least 8 characters')) {
+          setPasswordRequired(true);
+        }
+        throw cause;
+      }
       setResult(response.result);
+      setSignInRequired(response.sign_in_required === true);
       setStep('done');
-      onUpdate();
+      if (response.sign_in_required !== true) onUpdate();
     });
   };
 
@@ -135,6 +148,7 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
   if (step === 'done') {
     const claimed = result === 'CLAIMED';
     const followUpToken = sessionStorage.getItem('drop_follow_up_token') || '';
+    const nextPath = followUpToken ? `/follow-up#token=${followUpToken}` : '/profile/donor';
     return (
       <Surface className="mx-auto max-w-2xl border-green-200 bg-green-50/60 p-8 text-center">
         <CheckCircle2 className="mx-auto h-12 w-12 text-green-700" aria-hidden="true" />
@@ -144,7 +158,8 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
             ? 'The verified number matched this listing, so it now belongs to your Drop account.'
             : 'This number belongs to a different person, so we created or updated your own profile and left the original listing unclaimed.'}
         </p>
-        <Link to={followUpToken ? `/follow-up#token=${followUpToken}` : '/profile/donor'} onClick={() => sessionStorage.removeItem('drop_follow_up_token')} className="primary-button mt-6">{followUpToken ? 'Continue donation update' : 'Open my donor profile'}</Link>
+        {signInRequired && <p className="mt-3 text-sm font-semibold text-slate-700">Your phone is verified and the profile update is saved. Sign in with your password to open account details.</p>}
+        <Link to={signInRequired ? `/login?returnTo=${encodeURIComponent(nextPath)}` : nextPath} onClick={() => { if (!signInRequired) sessionStorage.removeItem('drop_follow_up_token'); }} className="primary-button mt-6">{signInRequired ? 'Sign in to continue' : followUpToken ? 'Continue donation update' : 'Open my donor profile'}</Link>
       </Surface>
     );
   }
@@ -211,8 +226,11 @@ export default function ClaimProfilePage({ user, onUpdate }: { user: any; onUpda
             <label className="sm:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Upazila</span><Select required value={upazila} onChange={event => setUpazila(event.target.value)} className="input"><option value="">Choose upazila</option>{upazilas.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</Select></label>
           </div>
           <DonorAvailabilityFields idPrefix="claim" value={availability} onChange={setAvailability} reason={availabilityReason} onReasonChange={setAvailabilityReason} />
+          {passwordRequired && (
+            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Create a password</span><input required autoFocus type="password" minLength={8} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} className="input" /><span className="mt-2 block text-xs leading-5 text-slate-500">This number does not have a Drop account yet. Use at least 8 characters to secure the new account.</span></label>
+          )}
           <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-700"><input required type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} className="mt-1 h-5 w-5 shrink-0" /><span>I control the verified number, these details describe me, and I consent to this availability choice on Drop.</span></label>
-          <button disabled={busy || !availability || !consent} className="primary-button">{busy ? 'Saving…' : 'Save my verified profile'}</button>
+          <button disabled={busy || !availability || !consent || (passwordRequired && password.length < 8)} className="primary-button">{busy ? 'Saving…' : 'Save my verified profile'}</button>
         </GuidedForm>
       )}
 

@@ -14,6 +14,7 @@ export default function ForgotPasswordPage() {
   const [code, setCode] = useState('');
   const [token, setToken] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -37,8 +38,9 @@ export default function ForgotPasswordPage() {
         setToken(result.verification_token);
         setStep(3);
       } else {
+        if (password !== confirmPassword) throw new Error('Enter the same new password twice.');
         await api.resetPassword(phone, password, token);
-        navigate('/login', { replace: true });
+        navigate('/login?reset=1', { replace: true });
       }
     } catch (error: any) {
       setMessage(error.message || 'Password recovery could not be completed.');
@@ -51,7 +53,7 @@ export default function ForgotPasswordPage() {
     <AuthShell
       eyebrow="Account recovery"
       title="Reset your password"
-      description="Verify the registered Bangladesh mobile, choose a new password, and automatically revoke every existing session."
+      description="One code. A fresh start. Resetting signs out all devices."
     >
       <div className="mb-7 flex items-center gap-3" aria-label={`Step ${step} of 3`}>
         {[1, 2, 3].map(value => <span key={value} className={`h-2 flex-1 rounded-full ${value <= step ? 'bg-primary' : 'bg-slate-100'}`} />)}
@@ -97,6 +99,10 @@ export default function ForgotPasswordPage() {
               <span className="mb-2 block text-sm font-bold text-slate-800">New password</span>
               <input required autoFocus autoComplete="new-password" type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 8 characters" className="input min-h-12" />
             </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-800">Confirm new password</span>
+              <input required autoComplete="new-password" type="password" minLength={8} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} className="input min-h-12" />
+            </label>
             <p className="text-xs leading-5 text-slate-500">Saving the new password signs out every device currently connected to this account.</p>
           </>
         )}
@@ -105,6 +111,7 @@ export default function ForgotPasswordPage() {
           {busy ? 'Please wait…' : step === 1 ? <>Send recovery code <ArrowRight className="h-5 w-5" /></> : step === 2 ? <>Verify code <KeyRound className="h-5 w-5" /></> : <>Save new password <CheckCircle2 className="h-5 w-5" /></>}
         </button>
       </GuidedForm>
+      {step === 2 && <button type="button" disabled={busy} className="auth-text-link mt-4" onClick={() => { setStep(1); setDelivery(null); setCode(''); setToken(''); setMessage(''); }}>Use a different phone number</button>}
       <Link to="/login" className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-primary"><ArrowLeft className="h-4 w-4" />Back to sign in</Link>
     </AuthShell>
   );

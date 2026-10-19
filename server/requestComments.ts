@@ -4,16 +4,34 @@ export type RequestComment = {
   moderation_status?: 'VISIBLE' | 'HIDDEN';
 };
 
-export function publicComments(comments: RequestComment[], actor: string, manage: boolean) {
+export function publicComments(
+  comments: RequestComment[],
+  actor: string,
+  manage: boolean,
+  publicAuthorId: (comment: RequestComment) => string | undefined = () => undefined
+) {
   return comments.map(comment => {
     const removed = Boolean(comment.deleted_at || comment.moderation_status === 'HIDDEN');
+    const authorId = removed ? undefined : publicAuthorId(comment);
     return {
       id: comment.id, user_name: removed ? '' : comment.user_name,
       text: removed ? 'Comment deleted' : comment.text, created_at: comment.created_at,
       parent_id: comment.parent_id || null, deleted: removed,
-      can_delete: !removed && (manage || Boolean(actor && actor === comment.user_id)),
-      is_mine: Boolean(actor && actor === comment.user_id),
+      ...(authorId ? { author_id: authorId } : {}),
+      can_delete: !removed && (manage || Boolean(actor && (actor === comment.user_id || actor === authorId))),
+      is_mine: Boolean(actor && (actor === comment.user_id || actor === authorId)),
     };
+  });
+}
+
+export function commentsVisibleToBlockedAuthors(
+  comments: RequestComment[],
+  blockedAuthorIds: Set<string>,
+  publicAuthorId: (comment: RequestComment) => string | undefined
+) {
+  return comments.filter(comment => {
+    const authorId = publicAuthorId(comment);
+    return !authorId || !blockedAuthorIds.has(authorId);
   });
 }
 

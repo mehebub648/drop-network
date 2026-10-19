@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.162`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.163`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -15,7 +15,7 @@ delivered.
 
 - [ ] Finish Android physical-device notification acceptance: FCM foreground/background/cold-start, token refresh, logout/account switching and denied permissions. The private sender is active as of 0.0.160; authentication and validation-only FCM passed without delivery. Emulator installation/cold launch and canonical desktop/mobile/admin acceptance passed; see `design-qa.md`.
 
-- [ ] Complete real-device SMS provider failover acceptance and Play Store publication for Android 1.0.38+39. The signed direct-download APK is live and checksum-verified; no real SMS was sent during release validation.
+- [ ] Complete real-device SMS provider failover acceptance and Play Store publication for Android 1.0.39+40. Messavo registration verification and password-reset SMS delivery passed with consented isolated data on 19 October 2026; outage/failover and final Play review remain.
 
 
 - [ ] Release backend 0.0.157 with Android 1.0.35 and verify optional decline reasons on the hosted API. Android analysis, 26 focused tests, native layout captures, and release APK build passed; backend checks were skipped under the local Docker policy. Physical keyboard/dialer checks need a connected device.
@@ -29,6 +29,9 @@ delivered.
   Isolated API and Flutter fixture checks pass; no device was connected.
 - [ ] Repair Panelavo file backups for container-owned LanceDB files.
   A private stopped-table backup was verified before deploying v0.0.155.
+  Panelavo still fails on container-owned files, but an approved site-scoped
+  rootless fallback captured all private runtime data on 19 October 2026 and
+  passed archive integrity, file-count, and full scratch-restore checks.
 
 - [ ] **Approved experience restoration:** shared accessible controls and all-form
   wizards; guest publication and expiring device ownership; phone-first guided

@@ -176,19 +176,19 @@ test('public queries return newest published posts and exclude hidden or draft r
   assert.equal(ownerPosts.some(post => post.status === 'HIDDEN'), true);
 });
 
-test('public projections expose only supplied author display data', async () => {
+test('public projections expose only the stable author id and supplied display name', async () => {
   const post = await community.getCommunityPostById('post-00000003');
   assert.ok(post);
   const summary = community.toPublicCommunityPostSummary(post, 'Helpful Member');
   const detail = community.toPublicCommunityPostDetail(post, '+8801712345678');
 
-  assert.deepEqual(summary.author, { name: 'Helpful Member' });
+  assert.deepEqual(summary.author, { id: post.author_id, name: 'Helpful Member' });
   assert.equal('author_id' in summary, false);
   assert.equal('status' in summary, false);
   assert.equal('body_markdown' in summary, false);
   assert.equal('source_donation_id' in summary, false);
   assert.equal('source_donation_id' in detail, false);
-  assert.equal(detail.author.name, 'Drop member');
+  assert.deepEqual(detail.author, { id: post.author_id, name: 'Drop member' });
   assert.equal(detail.body_markdown, post.body_markdown);
 });
 
@@ -196,5 +196,9 @@ test('query filters escape caller-supplied values', () => {
   assert.equal(
     community.buildCommunityPostFilter({ authorId: "member'o", statuses: ['PUBLISHED'], type: 'DONATION_STORY' }),
     `status IN ('PUBLISHED') AND type = 'DONATION_STORY' AND author_id = 'member''o'`
+  );
+  assert.equal(
+    community.buildCommunityPostFilter({ statuses: ['PUBLISHED'], excludeAuthorIds: ["member'o", 'member-safe', 'member-safe', 'invalid id'] }),
+    `status IN ('PUBLISHED') AND author_id NOT IN ('member-safe')`
   );
 });

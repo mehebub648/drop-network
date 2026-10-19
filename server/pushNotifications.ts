@@ -1,7 +1,7 @@
 import { createHash, createSign } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { getAllFromTable, saveToTable } from './db';
+import { deleteStoredDocument, getAllFromTable, saveToTable } from './db';
 
 type Device = { id: string; user_id: string; session_id: string; token: string; enabled: boolean; updated_at: string };
 type Delivery = { id: string; notification_id: string; device_id: string; user_id: string; session_id: string; attempts: number; next_at: number; state: 'PENDING' | 'SENT' | 'FAILED' };
@@ -22,6 +22,15 @@ export async function removePush(userId: string, token?: string, sessionId?: str
   const devices = await getAllFromTable('common_push_devices') as Device[];
   for (const item of devices.filter(item => item.user_id === userId && (!token || item.id === digest(token)) && (!sessionId || item.session_id === sessionId))) {
     await saveToTable('common_push_devices', { ...item, enabled: false, token: '' });
+  }
+}
+
+export async function deleteAccountPush(userId: string) {
+  for (const table of ['common_push_devices', 'common_push_deliveries']) {
+    const records = await getAllFromTable(table) as { id: string; user_id: string }[];
+    for (const record of records.filter(item => item.user_id === userId)) {
+      await deleteStoredDocument(table, record.id);
+    }
   }
 }
 

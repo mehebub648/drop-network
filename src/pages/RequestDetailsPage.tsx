@@ -5,7 +5,7 @@ import { dhakaDate, DAY_MS } from '../../server/requestLifecycle';
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
-import { AlertCircle, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, HeartPulse, MapPin, MessageCircle, Phone, Plus, Share2, Trash2, User as UserIcon, Users } from 'lucide-react';
+import { AlertCircle, Ban, Calendar, CheckCircle2, ChevronLeft, Copy, Droplet, Edit2, Flag, HeartPulse, MapPin, MessageCircle, Phone, Plus, Share2, Trash2, User as UserIcon, Users } from 'lucide-react';
 import { api, experienceApi, type ContactedDonorSummary, type SearchDonorCard } from '../lib/api';
 import RequestVerification from '../components/RequestVerification';
 import { compatibleDonorsFor } from '../lib/blood';
@@ -19,6 +19,7 @@ import { cn } from '../lib/utils';
 import { UrgencyBadge } from '../components/UrgencyBadge';
 import VerifiedBadge from '../components/VerifiedBadge';
 import ModalPortal from '../components/ModalPortal';
+import BlockAuthorDialog from '../components/BlockAuthorDialog';
 import { announcePendingCall } from '../lib/callOutcome';
 import BloodHelpNotice from '../components/BloodHelpNotice';
 
@@ -63,7 +64,9 @@ export default function RequestDetailsPage({ user }: { user: any }) {
   const [anonName, setAnonName] = useState('');
   const [copied, setCopied] = useState(false);
   const [copiedContact, setCopiedContact] = useState<string | null>(null);
-  const [reportTarget, setReportTarget] = useState<{ type: 'REQUEST' | 'COMMENT', id: string } | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ type: 'REQUEST' | 'COMMENT' | 'USER', id: string } | null>(null);
+  const [blockTarget, setBlockTarget] = useState<{ author_id: string; user_name?: string } | null>(null);
+  const [blockBusy, setBlockBusy] = useState(false);
   const [reportReason, setReportReason] = useState('OTHER');
   const [reportDetails, setReportDetails] = useState('');
 
@@ -240,6 +243,20 @@ export default function RequestDetailsPage({ user }: { user: any }) {
     } catch (error: any) { setActionMessage({ type: 'error', text: error.message || 'Could not submit the report.' }); }
   };
 
+  const blockCommentAuthor = async (comment: any) => {
+    if (!comment.author_id || blockBusy) return;
+    setBlockBusy(true);
+    try {
+      await api.blockUser(comment.author_id);
+      setData(current => current && ({
+        ...current,
+        request: { ...current.request, comments: current.request.comments.filter((item: any) => item.author_id !== comment.author_id) }
+      }));
+      setActionMessage({ type: 'success', text: 'Author blocked. Their comments and community posts are now hidden.' });
+    } catch (error: any) { setActionMessage({ type: 'error', text: error.message || 'Could not block this author.' }); }
+    finally { setBlockBusy(false); setBlockTarget(null); }
+  };
+
   if (loading) return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex min-w-0 items-center gap-3">
@@ -308,6 +325,7 @@ export default function RequestDetailsPage({ user }: { user: any }) {
         {user && !isOwner && <button onClick={() => setReportTarget({ type: 'REQUEST', id: request.id })} className="inline-flex h-11 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"><Flag className="w-4 h-4" /> Report</button>}
       </div>
 
+      {blockTarget && <BlockAuthorDialog name={blockTarget.user_name || 'this author'} busy={blockBusy} onClose={() => setBlockTarget(null)} onConfirm={() => void blockCommentAuthor(blockTarget)} />}
       {reportTarget && (
         <ModalPortal onClose={() => setReportTarget(null)}>
           <div className="dialog-backdrop" role="presentation" onMouseDown={event => {
@@ -745,7 +763,13 @@ export default function RequestDetailsPage({ user }: { user: any }) {
                     </button>
                   )}
                   {!c.deleted && <button onClick={() => { setReplyTo(c); document.getElementById('comment-composer')?.focus(); }} className="min-h-11 px-3 text-sm font-bold text-primary">Reply</button>}
-                  {user && !c.is_mine && !c.deleted && <button onClick={() => setReportTarget({ type: 'COMMENT', id: c.id })} className="mt-2 text-xs font-bold text-slate-400 hover:text-red-600"><Flag className="inline w-3 h-3 mr-1" />Report</button>}
+                  {user && !c.is_mine && !c.deleted && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button onClick={() => setReportTarget({ type: 'COMMENT', id: c.id })} className="min-h-11 px-3 text-xs font-bold text-slate-500 hover:text-red-600"><Flag className="mr-1 inline h-3 w-3" />Report comment</button>
+                      {c.author_id && <button onClick={() => setReportTarget({ type: 'USER', id: c.author_id })} className="min-h-11 px-3 text-xs font-bold text-slate-500 hover:text-red-600"><Flag className="mr-1 inline h-3 w-3" />Report author</button>}
+                      {c.author_id && <button onClick={() => setBlockTarget(c)} className="min-h-11 px-3 text-xs font-bold text-slate-500 hover:text-red-600"><Ban className="mr-1 inline h-3 w-3" />Block author</button>}
+                    </div>
+                  )}
                 </div>
               </div>
             ))

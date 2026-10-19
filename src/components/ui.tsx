@@ -1,6 +1,7 @@
 import type { ElementType, HTMLAttributes, ReactNode } from 'react';
 import { ArrowRight, Inbox } from 'lucide-react';
 import { cn } from '../lib/utils';
+import Doodle from './Doodle';
 
 type Tone = 'brand' | 'neutral' | 'success' | 'warning' | 'danger';
 
@@ -19,7 +20,8 @@ export function PageHeader({
   icon: Icon,
   actions,
   aside,
-  className
+  className,
+  illustration
 }: {
   eyebrow: string;
   title: string;
@@ -28,9 +30,11 @@ export function PageHeader({
   actions?: ReactNode;
   aside?: ReactNode;
   className?: string;
+  illustration?: 'welcome' | 'search' | 'community';
 }) {
   return (
-    <header className={cn('web-page-heading', aside && 'web-page-heading-with-aside', className)}>
+    <header className={cn('web-page-heading', aside && 'web-page-heading-with-aside', illustration && 'web-page-heading-illustrated', className)}>
+      {illustration && <Doodle kind={illustration} className="page-heading-doodle" />}
       <div className="min-w-0 max-w-3xl">
         <div className="eyebrow-chip">
           {Icon && <Icon className="h-4 w-4" aria-hidden="true" />}
@@ -168,8 +172,8 @@ export function EmptyState({
 }) {
   return (
     <Surface className="empty-state">
-      <span className="empty-state-icon"><Icon className="h-7 w-7" aria-hidden="true" /></span>
-      <h2>{title}</h2>
+      <Doodle kind="welcome" className="empty-state-doodle" />
+      <h2 className="flex items-center justify-center gap-2"><Icon className="h-5 w-5 shrink-0" aria-hidden="true" />{title}</h2>
       <p>{description}</p>
       {action && <div className="mt-5">{action}</div>}
     </Surface>

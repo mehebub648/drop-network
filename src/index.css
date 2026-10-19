@@ -3,17 +3,17 @@
 @import "./styles/website.css" layer(components);
 
 @theme {
-  --color-primary: #bd2540;
-  --color-primary-dark: #9f1731;
-  --color-bg: #f6f7f9;
+  --color-primary: #b92c49;
+  --color-primary-dark: #932039;
+  --color-bg: #faf7f0;
   --color-surface: #ffffff;
-  --color-text: #202733;
-  --color-text-muted: #667085;
+  --color-text: #30272e;
+  --color-text-muted: #625a63;
   --color-metadata: #525f70;
   --color-field-boundary: #98a2b3;
-  --color-border: #e3e7ed;
+  --color-border: #ded7d2;
   --color-teal-300: #fda4af;
-  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "Nunito", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-weight-extrabold: 700;
   --font-weight-black: 750;
 }
@@ -22,12 +22,12 @@
   :root {
     color-scheme: light;
     --cartoon-ink: var(--color-text);
-    --cartoon-paper: #fff;
+    --cartoon-paper: #fffdf8;
     --cartoon-paper-strong: #fff;
     --cartoon-red-soft: #fff1f3;
     --cartoon-red: var(--color-primary);
     --cartoon-red-dark: var(--color-primary-dark);
-    --cartoon-shadow: none;
+    --cartoon-shadow: 3px 3px 0 #30272e;
     --launch-canvas: var(--color-bg);
     --launch-paper: #fff;
     --launch-ink: var(--color-text);
@@ -43,4 +43,11 @@
   button:not(:disabled), summary { cursor: pointer; }
   input[type="checkbox"], input[type="radio"] { accent-color: var(--color-primary); }
   ::selection { background: #fce1e7; color: #86152b; }
+}
+@font-face {
+  font-family: Nunito;
+  src: url('/fonts/Nunito-Variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 1000;
+  font-display: swap;
 }

@@ -3,7 +3,7 @@ import { InfoPage } from './InfoPage';
 
 export default function AboutPage() {
   return (
-    <InfoPage eyebrow="About Drop" title="Neighbors helping neighbors, faster." intro="Drop connects people who need blood with compatible, available donors in the same district. It is designed for urgent coordination, honest information, and community action.">
+    <InfoPage eyebrow="About drop." title="Neighbors helping neighbors, faster." intro="Drop connects people who need blood with compatible, available donors in the same district. It is designed for urgent coordination, honest information, and community action.">
       <section>
         <h2>Our mission</h2>
         <p>Finding blood in an emergency should not depend on how large someone’s personal network is. Drop lets anyone search available, opted-in donors nearby without an account. A verified account is only required before a participating donor’s phone number can be shown.</p>
@@ -18,7 +18,7 @@ export default function AboutPage() {
         </ul>
       </section>
       <section>
-        <h2>What Drop is — and is not</h2>
+        <h2>What drop. is — and is not</h2>
         <p>Drop is a community-run matching and coordination service. It is not a hospital, blood bank, government registry, emergency service, or medical provider. We do not test blood, confirm donor eligibility, guarantee a match, arrange transport, or replace advice from qualified clinicians.</p>
       </section>
       <section>

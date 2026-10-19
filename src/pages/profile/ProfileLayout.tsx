@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BellRing, ChevronDown, Clock3, FileClock, HeartPulse, KeyRound, Settings, ShieldAlert, ShieldCheck, Siren, UserRound, X } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import VerifiedBadge from '../../components/VerifiedBadge';
+import Doodle from '../../components/Doodle';
 import { cn } from '../../lib/utils';
 import type { ProfileUser } from './types';
 
@@ -111,9 +112,12 @@ export default function ProfileLayout({ user }: { user: ProfileUser }) {
             </span>
           </div>
         </div>
-        <div className="profile-privacy-note">
-          <span><ShieldCheck className="h-5 w-5" aria-hidden="true" /></span>
-          <p><strong>Private by default.</strong> Health and account details stay out of donor search.</p>
+        <div className="profile-overview-companion">
+          <Doodle kind={user.donor_profile ? 'welcome' : 'search'} className="profile-overview-doodle" />
+          <div className="profile-privacy-note">
+            <span><ShieldCheck className="h-5 w-5" aria-hidden="true" /></span>
+            <p><strong>Your space.</strong> You choose what donors see.</p>
+          </div>
         </div>
       </header>
 

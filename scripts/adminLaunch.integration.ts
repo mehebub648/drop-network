@@ -29,7 +29,8 @@ const users = [
   { id: 'qa-admin', phone: '+8801700000002', name: 'QA Admin', staff_role: 'ADMIN' },
   { id: 'qa-moderator', phone: '+8801700000003', name: 'QA Moderator', staff_role: 'MODERATOR' },
   { id: 'qa-member', phone: fullMemberPhone, name: 'QA Member' },
-  { id: 'qa-delegated', phone: '+8801700000005', name: 'QA Delegated Account' }
+  { id: 'qa-delegated', phone: '+8801700000005', name: 'QA Delegated Account' },
+  { id: 'qa-viewer', phone: '+8801700000006', name: 'QA Community Viewer' }
 ] as const;
 
 for (const user of users) {
@@ -173,6 +174,34 @@ try {
   const moderator = new Device('192.0.2.12', 'qa-moderator');
   const admin = new Device('192.0.2.13', 'qa-admin');
   const superadmin = new Device('192.0.2.14', 'qa-superadmin');
+  const viewer = new Device('192.0.2.15', 'qa-viewer');
+
+  const publicCommunity = await viewer.call('/community');
+  const memberPost = publicCommunity.posts.find((item: any) => item.id === 'qa-post');
+  assert.equal(memberPost.author.id, 'qa-member');
+  const draft = await viewer.call('/community', {
+    body: {
+      type: 'HEALTH_SUGGESTION',
+      title: 'Safe community publishing acceptance',
+      body_markdown: 'This disposable guidance is long enough to verify that every public community publication requires current conduct acceptance.'
+    },
+    expected: 201
+  });
+  await viewer.call(`/community/${draft.id}/publish`, { body: { consent: true }, expected: 400 });
+  const published = await viewer.call(`/community/${draft.id}/publish`, {
+    body: { consent: true, terms_and_conduct_accepted: true }
+  });
+  assert.equal(published.author.id, 'qa-viewer');
+
+  const requestBeforeBlock = await viewer.call('/requests/qa-request');
+  assert.ok(requestBeforeBlock.request.comments.some((item: any) => item.id === 'qa-comment'));
+  await viewer.call('/me/blocks/qa-member', { method: 'POST' });
+  const filteredCommunity = await viewer.call('/community');
+  assert.equal(filteredCommunity.posts.some((item: any) => item.author.id === 'qa-member'), false);
+  await viewer.call(`/community/${memberPost.slug}`, { expected: 404 });
+  const requestAfterBlock = await viewer.call('/requests/qa-request');
+  assert.equal(requestAfterBlock.request.comments.some((item: any) => item.id === 'qa-comment'), false);
+  console.log('PASS: community publishing requires conduct acceptance and blocks hide author posts and comments');
 
   await anonymous.call('/admin/users/qa-member', { method: 'PATCH', body: { name: 'Forbidden', reason: 'QA forbidden' }, expected: 403 });
   await member.call('/admin/users/qa-member', { method: 'PATCH', body: { name: 'Forbidden', reason: 'QA forbidden' }, expected: 403 });
@@ -256,7 +285,7 @@ try {
   assert.ok(memberEvents.every((event: any) => typeof event.summary === 'string' && typeof event.category === 'string'));
 
   await anonymous.call('/auth/login', { body: { phone: fullMemberPhone, password: 'wrong-password-never-log' }, expected: 401 });
-  const otpFailure = await anonymous.call('/auth/otp/request', { body: { phone: fullMemberPhone, purpose: 'SIGN_IN' }, expected: 502 });
+  const otpFailure = await anonymous.call('/auth/otp/request', { body: { phone: fullMemberPhone, purpose: 'RESET_PASSWORD' }, expected: 502 });
   assert.equal(otpFailure.verification_token, undefined);
   const authEvents = await admin.call('/admin/audit?activity=LOGIN_FAILED&limit=20');
   const failedLogin = latest(authEvents, 'LOGIN_FAILED');

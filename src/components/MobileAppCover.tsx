@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router';
-import { ArrowDownToLine, ArrowUpRight, Monitor, Smartphone } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpRight } from 'lucide-react';
+import Doodle from './Doodle';
 
 export function isMobileBrowser() {
   if (typeof navigator === 'undefined') return false;
@@ -10,7 +11,7 @@ export function isMobileBrowser() {
 }
 
 // Privacy, support and listing removal must remain reachable from any device.
-const publicHelpRoutes = new Set(['/privacy', '/terms', '/safety', '/contact', '/directory/remove']);
+const publicHelpRoutes = new Set(['/privacy', '/terms', '/safety', '/contact', '/delete-account', '/directory/remove']);
 
 export default function MobileAppCover({ children, mobile, downloadUrl }: {
   children: ReactNode;
@@ -21,33 +22,33 @@ export default function MobileAppCover({ children, mobile, downloadUrl }: {
   if (!mobile || publicHelpRoutes.has(pathname)) return children;
 
   return (
-    <main id="main-content" className="min-h-dvh bg-[#faf9f7] px-6 py-8 text-slate-900">
-      <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-md flex-col">
-        <Link to="/" aria-label="Drop Network home" className="flex w-fit items-center gap-2.5 text-2xl font-bold tracking-tight">
-          <img src="/drop-icon.svg" alt="" className="h-9 w-9" />Drop
+    <main id="main-content" className="mobile-app-cover">
+      <div className="mobile-app-cover-inner">
+        <Link to="/" aria-label="drop. home" className="mobile-app-cover-brand">
+          <img src="/drop-icon.svg" alt="" className="h-9 w-9" /><span>drop<span className="text-primary">.</span></span>
         </Link>
-        <section className="flex flex-1 flex-col justify-center py-14">
-          <div className="mb-7 flex h-16 w-16 items-center justify-center rounded-2xl border border-rose-100 bg-white text-primary">
-            <Smartphone size={30} strokeWidth={1.6} aria-hidden="true" />
+        <section className="mobile-app-cover-card">
+          <div className="mobile-app-cover-art" aria-hidden="true">
+            <span className="mobile-app-spark mobile-app-spark-one">✦</span>
+            <Doodle kind="welcome" className="mobile-app-cover-doodle" />
+            <span className="mobile-app-spark mobile-app-spark-two">♡</span>
           </div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[.16em] text-primary">A little help. A life changed.</p>
-          <h1 className="text-[clamp(2rem,9vw,3rem)] font-bold leading-[1.12] tracking-[-.045em]">Blood help,<br />wherever you are.</h1>
-          <p className="mt-5 text-base leading-7 text-slate-600">Find donors, follow blood requests, and stay connected with your community in the Drop app.</p>
+          <p className="eyebrow">drop<span className="text-primary">.</span> for Android</p>
+          <h1>Help is closer<br />in the app.</h1>
+          <p>Find donors. Follow requests. Share hope.</p>
           {downloadUrl ? (
-            <a href={downloadUrl} className="mt-8 inline-flex min-h-14 items-center justify-center gap-3 rounded-xl bg-primary px-5 font-semibold text-white transition hover:bg-primary-dark">
-              <ArrowDownToLine size={20} aria-hidden="true" />Download for Android
+            <a href={downloadUrl} className="mobile-app-download-button">
+              <ArrowDownToLine size={20} aria-hidden="true" />Get the Android app
             </a>
           ) : (
-            <p role="status" className="mt-8 rounded-xl border border-rose-100 bg-white p-4 text-sm leading-6 text-slate-600">The Android download is being prepared. You can use Drop now from a desktop browser.</p>
+            <p role="status" className="mobile-app-download-status">Almost ready for your phone.</p>
           )}
-          <div className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
-            <Monitor className="mt-0.5 shrink-0 text-slate-500" size={20} aria-hidden="true" />
-            <div><h2 className="text-sm font-semibold">Using a computer?</h2><p className="mt-1 text-sm leading-6 text-slate-600">Open this website on a desktop browser for the full web experience.</p></div>
-          </div>
+          <p className="mobile-app-desktop-note">On a computer? Open drop<span className="text-primary">.</span> there for the full website.</p>
         </section>
-        <footer className="flex flex-wrap gap-x-6 gap-y-3 border-t border-slate-200 pt-5 text-sm text-slate-600">
+        <footer className="mobile-app-cover-footer">
           <Link to="/privacy" className="inline-flex min-h-11 items-center gap-1.5">Privacy<ArrowUpRight size={14} aria-hidden="true" /></Link>
           <Link to="/contact" className="inline-flex min-h-11 items-center gap-1.5">Get help<ArrowUpRight size={14} aria-hidden="true" /></Link>
+          <Link to="/delete-account" className="inline-flex min-h-11 items-center gap-1.5">Delete account<ArrowUpRight size={14} aria-hidden="true" /></Link>
           <Link to="/directory/remove" className="inline-flex min-h-11 items-center gap-1.5">Remove a listing<ArrowUpRight size={14} aria-hidden="true" /></Link>
         </footer>
       </div>

@@ -57,7 +57,7 @@ export default function CommunityPage({ user }: { user: any }) {
 
   return (
     <div className="space-y-7">
-      <PageHeader eyebrow="The Drop community" title="Small acts. Shared stories." description="Experiences, encouragement, and practical guidance from our donor community." aside={
+      <PageHeader illustration="community" eyebrow="Better together" title="Good hearts. Happy stories." description="A little encouragement from your community." aside={
         <Link
           to={user ? '/community/new' : '/login?returnTo=%2Fcommunity%2Fnew'}
           className="button button-primary"

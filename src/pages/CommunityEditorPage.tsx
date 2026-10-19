@@ -44,6 +44,7 @@ export default function CommunityEditorPage() {
   const [imageAlt, setImageAlt] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
   const [consent, setConsent] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [createdDraft, setCreatedDraft] = useState<CommunityOwnerPost | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'info'; text: string } | null>(null);
@@ -96,6 +97,7 @@ export default function CommunityEditorPage() {
         setImage(null);
         setImageAlt('');
         setConsent(false);
+        setTermsAccepted(false);
         setCreatedDraft(post);
         setMessage({ type: 'info', text: 'Donation story draft reopened. Review every public detail and explicitly consent before publishing.' });
       })
@@ -133,6 +135,7 @@ export default function CommunityEditorPage() {
       return `Describe the image in 1-${COMMUNITY_IMAGE_ALT_MAX_LENGTH} characters.`;
     }
     if (!consent) return 'Confirm the public-post consent before publishing.';
+    if (!termsAccepted) return 'Accept the Terms and community conduct rules before publishing.';
     return null;
   };
 
@@ -159,7 +162,7 @@ export default function CommunityEditorPage() {
         setImage(null);
         setImageAlt('');
       }
-      const published = await api.publishCommunityPost(draft.id);
+      const published = await api.publishCommunityPost(draft.id, termsAccepted);
       if (!published.slug) throw new Error('The post was published without a public address.');
       navigate(`/community/${published.slug}`);
     } catch (reason) {
@@ -199,6 +202,7 @@ export default function CommunityEditorPage() {
     setImage(null);
     setImageAlt('');
     setConsent(false);
+    setTermsAccepted(false);
     setCreatedDraft(post);
     setMessage({ type: 'info', text: 'Draft reopened. Review the preview and consent before publishing.' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -336,6 +340,12 @@ export default function CommunityEditorPage() {
                 I have permission to publish this content publicly. It contains no phone number, patient record or private personal detail, and I understand it may appear in search engines.
               </span>
             </label>
+            <div className="mt-3 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+              <input id="community-conduct" type="checkbox" required checked={termsAccepted} onChange={event => setTermsAccepted(event.target.checked)} className="mt-1 h-4 w-4 rounded border-rose-400 text-primary focus:ring-primary" />
+              <label htmlFor="community-conduct" className="text-sm leading-6 text-rose-950">
+                I agree to the <Link to="/terms" className="font-extrabold underline underline-offset-2">Terms</Link> and <Link to="/safety" className="font-extrabold underline underline-offset-2">community safety rules</Link>. I will not post harassment, spam or fraud, requests to buy or sell blood, phone numbers or private medical details, or unsafe individualized medical advice.
+              </label>
+            </div>
           </fieldset>
 
           {createdDraft && (

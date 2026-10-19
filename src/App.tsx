@@ -15,6 +15,7 @@ import DeviceRequestsPage from './pages/DeviceRequestsPage';
 import AboutPage from './pages/info/AboutPage';
 import ContactPage from './pages/info/ContactPage';
 import PrivacyPage from './pages/info/PrivacyPage';
+import DeleteAccountPage from './pages/info/DeleteAccountPage';
 import SafetyPage from './pages/info/SafetyPage';
 import TermsPage from './pages/info/TermsPage';
 import AccountPage from './pages/profile/AccountPage';
@@ -137,6 +138,7 @@ export default function App() {
             <Route path="/about" element={<AboutPage />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/delete-account" element={loading ? <RouteLoading /> : <DeleteAccountPage user={user} />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/safety" element={<SafetyPage />} />
             <Route path="/partners" element={<PartnersPage user={user} />} />

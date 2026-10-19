@@ -12,7 +12,7 @@ const navigation = [
   { label: 'My device requests', to: '/device-requests', icon: FileText }
 ];
 const resources = [
-  { label: 'How Drop works', to: '/about', icon: BookOpen },
+  { label: 'How drop. works', to: '/about', icon: BookOpen },
   { label: 'Donation safety', to: '/safety', icon: ShieldCheck },
   { label: 'Help & support', to: '/contact', icon: LifeBuoy }
 ];
@@ -26,7 +26,7 @@ export default function Layout({ children, user, onLogout, otpBypassEnabled }: {
   const { pathname } = useLocation();
   const embedded = document.documentElement.dataset.dropAndroid === 'true';
   const isStaff = Boolean(user?.staff_role || user?.roles?.some((role: string) => ['ADMIN', 'MODERATOR', 'SUPPORT', 'VERIFIER'].includes(role)));
-  const section = pathname.startsWith('/admin') ? 'Administration' : pathname.startsWith('/profile') ? 'My account' : navigation.find(item => item.end ? pathname === item.to : pathname.startsWith(item.to))?.label || resources.find(item => pathname === item.to)?.label || ({ '/login': 'Sign in', '/register': 'Create account', '/forgot-password': 'Account recovery', '/privacy': 'Privacy', '/terms': 'Terms', '/partners': 'Partners' } as Record<string, string>)[pathname] || (pathname.startsWith('/request/') ? 'Blood request' : 'Drop Network');
+  const section = pathname.startsWith('/admin') ? 'Administration' : pathname.startsWith('/profile') ? 'My account' : navigation.find(item => item.end ? pathname === item.to : pathname.startsWith(item.to))?.label || resources.find(item => pathname === item.to)?.label || ({ '/login': 'Sign in', '/register': 'Create account', '/forgot-password': 'Account recovery', '/privacy': 'Privacy', '/terms': 'Terms', '/partners': 'Partners' } as Record<string, string>)[pathname] || (pathname.startsWith('/request/') ? 'Blood request' : 'drop.');
 
   useEffect(() => {
     let active = true;
@@ -53,7 +53,7 @@ export default function Layout({ children, user, onLogout, otpBypassEnabled }: {
     <div className={`web-shell ${user ? 'web-shell-member' : ''} ${embedded ? 'web-shell-embedded' : ''}`}>
       <a href="#main-content" className="web-skip-link">Skip to main content</a>
       <aside id="website-navigation" className={`web-sidebar ${menuOpen ? 'is-open' : ''}`}>
-        <Link to="/" className="web-brand" aria-label="Drop Network home">
+        <Link to="/" className="web-brand" aria-label="drop. home">
           <span className="web-brand-mark"><Droplet fill="currentColor" aria-hidden="true" /></span>
           <span>drop<span className="web-brand-dot">.</span><small>Every donor matters</small></span>
         </Link>
@@ -73,7 +73,7 @@ export default function Layout({ children, user, onLogout, otpBypassEnabled }: {
       <div className="web-workspace">
         <header className="web-topbar">
           <button ref={menuButton} type="button" className="web-menu-toggle" aria-expanded={menuOpen} aria-controls="website-navigation" aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'} onClick={() => setMenuOpen(open => !open)}>{menuOpen ? <X /> : <Menu />}</button>
-          <div className="web-breadcrumb"><span>Drop Network</span><span aria-hidden="true">/</span><strong>{section}</strong></div>
+          <div className="web-breadcrumb"><span>drop<span className="web-brand-dot">.</span></span><span aria-hidden="true">/</span><strong>{section}</strong></div>
           <div className="web-topbar-actions">
             {user ? <>
               <Link to="/profile/responses" className="web-icon-button" aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}><Bell aria-hidden="true" />{unread > 0 && <span>{unread > 99 ? '99+' : unread}</span>}</Link>

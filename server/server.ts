@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { pushConfigured, registerPush, removePush, deliverPush } from './pushNotifications';
-import { publicComments, commentParent } from './requestComments';
+import { pushConfigured, registerPush, removePush, deleteAccountPush, deliverPush } from './pushNotifications';
+import { publicComments, commentsVisibleToBlockedAuthors, commentParent, type RequestComment } from './requestComments';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
@@ -166,13 +166,10 @@ const BLOOD_COMPONENTS = [
 ] as const;
 const REQUESTER_RELATIONSHIPS = ['SELF', 'FAMILY', 'FRIEND', 'HOSPITAL_STAFF', 'VOLUNTEER', 'OTHER'] as const;
 const DEFERRAL_STATUSES = ['NONE', 'TEMPORARY', 'PERMANENT'] as const;
-// SIGN_IN serves the blood request flow, where the requester gives a phone
-// number without first saying whether they have an account. It is the only
-// purpose that works for both an existing and a new account.
 // REMOVE_LISTING lets someone who never signed up take their scraped number off
 // the directory. It needs no account, which is the point: requiring one would
 // mean opting in to opt out.
-const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'SIGN_IN', 'REMOVE_LISTING', 'CLAIM_PROFILE', 'DONATION_FOLLOW_UP'] as const;
+const OTP_PURPOSES = ['REGISTER', 'RESET_PASSWORD', 'CHANGE_PHONE', 'REMOVE_LISTING', 'CLAIM_PROFILE', 'DONATION_FOLLOW_UP'] as const;
 const allowedCorsOrigins = new Set(
   (process.env.CORS_ORIGIN || process.env.APP_URL || '')
     .split(',')
@@ -356,8 +353,9 @@ app.post('/api/guest/requests/adopt', asyncRoute(async (req, res) => {
 app.post('/api/auth/start', (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
   if (!phone) return validationError(res, 'Enter a valid Bangladesh mobile number');
-  const user = users.find(item => item.phone === phone && !item.deleted_at);
-  res.set('Cache-Control', 'no-store').json({ next_step: user?.password ? 'PASSWORD' : 'OTP' });
+  // Retained for older clients, but deliberately does not reveal whether an
+  // account or password exists. Account sessions are password-only.
+  res.set('Cache-Control', 'no-store').json({ next_step: 'PASSWORD' });
 });
 
 const communityImageLimiter = rateLimit({
@@ -1093,6 +1091,28 @@ function communityImageUrl(key: string) {
 
 function communityAuthorName(authorId: string) {
   return users.find(user => user.id === authorId)?.name || 'Drop member';
+}
+
+function blockedCommunityAuthorIds(viewer: User | undefined) {
+  if (!viewer) return [];
+  const blocked = new Set(viewer.blocked_user_ids || []);
+  for (const user of users) {
+    if (user.blocked_user_ids?.includes(viewer.id)) blocked.add(user.id);
+  }
+  return [...blocked];
+}
+
+function publicCommentAuthorId(userId: string) {
+  if (users.some(user => user.id === userId)) return userId;
+  if (!userId.startsWith('guest:')) return undefined;
+  if ([...guestDevices.values()].some(device => device.actor_id === userId)) return userId;
+  return guestDevices.get(userId.slice('guest:'.length))?.actor_id;
+}
+
+function commentsVisibleTo(comments: RequestComment[], viewer: User | undefined) {
+  if (!viewer || isOperator(viewer)) return comments;
+  const blocked = new Set(blockedCommunityAuthorIds(viewer));
+  return commentsVisibleToBlockedAuthors(comments, blocked, comment => publicCommentAuthorId(comment.user_id));
 }
 
 function publicCommunitySummary(post: CommunityPost) {
@@ -1951,8 +1971,7 @@ function getActorId(req: express.Request) {
 function contactActorId(req: express.Request) {
   const auth = getCurrentAuth(req);
   if (auth) return auth.user.id;
-  const token = requestGuestToken(req);
-  return token ? `guest:${guestTokenHash(token)}` : '';
+  return requestGuestDevice(req)?.actor_id || '';
 }
 
 function isRequestOwner(request: BloodRequest, req: express.Request) {
@@ -2014,16 +2033,17 @@ async function adoptDeviceRequests(req: express.Request, user: User) {
     const device = guestDevices.get(guestTokenHash(token))!;
     if (device.user_id && device.user_id !== user.id) return;
     await adoptGuestCallReports(`guest:${device.id}`, user.id);
+    const guestCommentIds = new Set([`guest:${device.id}`, device.actor_id].filter((id): id is string => Boolean(id)));
     for (let index = 0; index < requests.length; index++) {
-      if (requests[index].comments?.some(comment => comment.user_id === `guest:${device.id}`)) {
-        requests[index].comments = requests[index].comments.map(comment => comment.user_id === `guest:${device.id}` ? { ...comment, user_id: user.id } : comment);
+      if (requests[index].comments?.some(comment => guestCommentIds.has(comment.user_id))) {
+        requests[index].comments = requests[index].comments.map(comment => guestCommentIds.has(comment.user_id) ? { ...comment, user_id: user.id, user_name: user.name } : comment);
         await saveToTable('common_requests', requests[index], [requests[index].location.lng, requests[index].location.lat]);
       }
       const adopted = adoptGuestRequest(requests[index], token, user.id);
       if (!adopted) continue;
-      const device = requestGuestDevice(req);
-      if (device?.actor_id) {
-        const reports = await requestCallReports(adopted.id, device.actor_id);
+      const contactDevice = requestGuestDevice(req);
+      if (contactDevice?.actor_id) {
+        const reports = await requestCallReports(adopted.id, contactDevice.actor_id);
         if (reports.length) await adoptCallReports(reports.map(report => ({ ...report, actor_id: user.id, actor_verified: false })));
       }
       await saveToTable('common_requests', adopted, [adopted.location.lng, adopted.location.lat]);
@@ -2123,15 +2143,8 @@ async function issueOtpBypass(phone: string, purpose: OtpChallenge['purpose']) {
   return challenge;
 }
 
-function otpVerificationPayload(phone: string, purpose: OtpChallenge['purpose'], verificationToken: string) {
-  if (purpose !== 'SIGN_IN') return { verification_token: verificationToken };
-  const existing = users.find(user => user.phone === phone && !user.deleted_at);
-  return {
-    verification_token: verificationToken,
-    account_exists: Boolean(existing),
-    name: existing?.name,
-    has_password: Boolean(existing?.password)
-  };
+function otpVerificationPayload(_phone: string, _purpose: OtpChallenge['purpose'], verificationToken: string) {
+  return { verification_token: verificationToken };
 }
 
 function registeredMatchesRequestSearch(
@@ -2650,12 +2663,15 @@ app.get('/api/community', asyncRoute(async (req, res) => {
   if (!page) return validationError(res, 'Page must be a positive integer');
   if (type === null) return validationError(res, 'Post type must be a donation story or health suggestion');
 
-  const query = { ...(type ? { type } : {}) };
+  const auth = getCurrentAuth(req);
+  const excludeAuthorIds = blockedCommunityAuthorIds(auth?.user);
+  const query = { ...(type ? { type } : {}), ...(excludeAuthorIds.length ? { excludeAuthorIds } : {}) };
   const [posts, total] = await Promise.all([
     queryPublishedCommunityPosts({ ...query, limit: COMMUNITY_PAGE_SIZE, offset: (page - 1) * COMMUNITY_PAGE_SIZE }),
     countCommunityPosts({ statuses: ['PUBLISHED'], ...query })
   ]);
-  res.set('Cache-Control', 'public, max-age=60, must-revalidate');
+  res.vary('Cookie').vary('Authorization');
+  res.set('Cache-Control', auth ? 'private, no-store' : 'public, max-age=60, must-revalidate');
   res.json({
     posts: posts.map(publicCommunitySummary),
     page,
@@ -2667,7 +2683,12 @@ app.get('/api/community', asyncRoute(async (req, res) => {
 app.get('/api/community/:slug', asyncRoute(async (req, res) => {
   const post = await getPublishedCommunityPostBySlug(req.params.slug);
   if (!post) return res.status(404).json({ error: 'Community post not found' });
-  res.set('Cache-Control', 'public, max-age=60, must-revalidate');
+  const auth = getCurrentAuth(req);
+  if (blockedCommunityAuthorIds(auth?.user).includes(post.author_id)) {
+    return res.status(404).json({ error: 'Community post not found' });
+  }
+  res.vary('Cookie').vary('Authorization');
+  res.set('Cache-Control', auth ? 'private, no-store' : 'public, max-age=60, must-revalidate');
   res.json(publicCommunityDetail(post));
 }));
 
@@ -2867,6 +2888,9 @@ app.post('/api/community/:id/publish', asyncRoute(async (req, res) => {
   if (!auth) return res.status(401).json({ error: 'Log in to publish a community post' });
   if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your phone before publishing' });
   if (req.body?.consent !== true) return validationError(res, 'Confirm that you have permission to publish this content');
+  if (req.body?.terms_and_conduct_accepted !== true) {
+    return validationError(res, 'Accept the Terms and community conduct rules before publishing');
+  }
   const post = await getCommunityPostById(req.params.id);
   if (!post || post.author_id !== auth.user.id) return res.status(404).json({ error: 'Community post not found' });
   if (post.status !== 'DRAFT') return res.status(409).json({ error: 'Only a draft can be published' });
@@ -2879,6 +2903,7 @@ app.post('/api/community/:id/publish', asyncRoute(async (req, res) => {
   });
   invalidateCommunitySitemap();
   await audit(auth.user.id, 'COMMUNITY_POST_PUBLISHED', 'POST', post.id, { type: post.type, slug: published.slug,
+    terms_and_conduct_accepted: true,
     before: { status: post.status, type: post.type, title: post.title, body_markdown: post.body_markdown, image_key: post.image_key, image_alt: post.image_alt },
     after: { status: published.status, type: published.type, title: published.title, body_markdown: published.body_markdown, image_key: published.image_key, image_alt: published.image_alt } });
   res.json(publicCommunityDetail(published));
@@ -3095,8 +3120,11 @@ app.post('/api/auth/otp/request', asyncRoute(async (req, res) => {
   if (!phone || !isOneOf(purpose, OTP_PURPOSES)) {
     return validationError(res, 'Valid Bangladesh phone and purpose are required');
   }
-  if (purpose === 'REGISTER' && users.some(user => user.phone === phone)) {
-    return res.status(409).json({ error: 'Phone already registered' });
+  if (purpose === 'REGISTER') {
+    const existing = users.find(user => user.phone === phone && !user.deleted_at);
+    const auth = getCurrentAuth(req);
+    const verifiesOwnLegacyAccount = existing && auth?.user.id === existing.id && !existing.is_verified;
+    if (existing && !verifiesOwnLegacyAccount) return res.status(409).json({ error: 'Phone already registered' });
   }
   if (isOtpBypassEnabled()) {
     try {
@@ -3116,10 +3144,6 @@ app.post('/api/auth/otp/request', asyncRoute(async (req, res) => {
   // Password recovery deliberately sends the same challenge and returns the
   // same shape whether or not an account exists. Account existence is checked
   // only after the caller proves control of the number.
-  // SIGN_IN takes neither branch on purpose. It has to work whether or not the
-  // number has an account, and the answer is only disclosed once the caller has
-  // entered the code sent to that number - so they learn about their own phone
-  // and nobody else's.
 
   const issued = await issueOtpChallenge(phone, purpose, provider, requestGuestDevice(req)?.id, req);
   if ('error' in issued) return res.status(issued.status).json({
@@ -3201,54 +3225,12 @@ app.post('/api/auth/otp/verify', asyncRoute(async (req, res) => {
   await saveToTable('common_otps', challenge);
   await activityAudit(req, 'OTP_VERIFIED', 'OTP_CHALLENGE', challenge.id, { purpose, phone: maskedPhone(phone) }, phone);
 
-  // Only now, having proven control of the number, is the caller told whether
-  // it already has an account - so the blood request flow can branch between
-  // signing in and registering without ever becoming an enumeration oracle.
-  if (purpose === 'SIGN_IN') {
-    return res.json(otpVerificationPayload(phone, purpose, challenge.verification_token!));
-  }
-
   res.json({ verification_token: challenge.verification_token });
 }));
 
-/**
- * Signs in with a verified `SIGN_IN` challenge instead of a password. The
- * password path below is unchanged and still offered; this exists so someone
- * arranging blood for a relative is not stopped by a password they set months
- * ago and cannot recall.
- */
-app.post('/api/auth/otp/login', asyncRoute((req, res) => accountWrites.run(async () => {
-  const phone = normalizeBangladeshPhone(req.body?.phone);
-  const bodyFingerprint = normalizeFingerprint(req.body?.fingerprint);
-  const fingerprint = bodyFingerprint && bodyFingerprint === getFingerprint(req) ? bodyFingerprint : '';
-  if (!phone) return validationError(res, 'Valid Bangladesh phone is required');
-
-  const challenge = verifiedChallenge(phone, 'SIGN_IN', req.body?.verification_token);
-  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before signing in' });
-
-  const user = users.find(item => item.phone === phone && !item.deleted_at);
-  if (!user) {
-    await activityAudit(req, 'OTP_LOGIN_FAILED', 'USER', `phone:${createHash('sha256').update(phone).digest('hex').slice(0, 16)}`, { phone: maskedPhone(phone), reason: 'Account unavailable' });
-    return res.status(404).json({ error: 'No account exists for this number' });
-  }
-  if (user.account_status === 'SUSPENDED') {
-    await activityAudit(req, 'OTP_LOGIN_FAILED', 'USER', user.id, { phone: maskedPhone(phone), reason: 'Account suspended' });
-    return res.status(403).json({ error: 'This account is suspended' });
-  }
-
-  if (challenge) await consumeChallenge(challenge);
-  if (!user.is_verified) {
-    user.is_verified = true;
-    user.phone_verified_at = new Date().toISOString();
-    await saveToTable('common_users', user);
-  }
-  if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
-
-  const token = await issueSession(user.id, req);
-  await audit(user.id, 'OTP_LOGIN_SUCCEEDED', 'USER', user.id, { phone: maskedPhone(phone) });
-  res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
-  res.json({ user: sanitizeUser(user) });
-})));
+app.post('/api/auth/otp/login', (_req, res) => {
+  res.status(410).json({ error: 'Code sign-in is no longer available. Sign in with your password or reset it.' });
+});
 
 app.post('/api/auth/login', passwordLoginLimiter, asyncRoute((req, res) => accountWrites.run(async () => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
@@ -3310,13 +3292,7 @@ app.post('/api/auth/register', asyncRoute((req, res) => accountWrites.run(async 
     req.body?.availability_status,
     req.body?.availability_reason
   );
-  // A SIGN_IN challenge is accepted too, so the blood request flow can send one
-  // code and then branch into signing in or registering depending on what the
-  // verification revealed.
-  const challenge = phone
-    ? verifiedChallenge(phone, 'REGISTER', req.body?.verification_token)
-      || verifiedChallenge(phone, 'SIGN_IN', req.body?.verification_token)
-    : null;
+  const challenge = phone ? verifiedChallenge(phone, 'REGISTER', req.body?.verification_token) : null;
   const upazila = location ? parseUpazila(location.area_name, req.body?.upazila) : undefined;
   if (guided && (typeof req.body?.donor_opt_in !== 'boolean' || !location || !upazila || !isCalendarDate(dateOfBirth) || dateOfBirth > dhakaDate() || dateOfBirth < '1900-01-01')) {
     return validationError(res, 'Enter your date of birth, district, upazila and donor choice');
@@ -3331,11 +3307,11 @@ app.post('/api/auth/register', asyncRoute((req, res) => accountWrites.run(async 
   );
   let donorProfile: DonorProfile | undefined;
 
-  if (!phone || !name || (!requesterOnly && !password)) {
-    return validationError(res, requesterOnly ? 'Phone and name are required' : 'Phone, name, and password are required');
+  if (!phone || !name || !password) {
+    return validationError(res, 'Phone, name, and password are required');
   }
   if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before registering' });
-  if (!requesterOnly && password.length < 8) return validationError(res, 'Password must be at least 8 characters');
+  if (password.length < 8) return validationError(res, 'Password must be at least 8 characters');
   if (!requesterOnly) {
     if (!isOneOf(blood_group, BLOOD_GROUPS)) return validationError(res, 'Valid blood group is required');
     if (!location) return validationError(res, 'Valid location is required');
@@ -3372,7 +3348,7 @@ app.post('/api/auth/register', asyncRoute((req, res) => accountWrites.run(async 
     id: uuidv4(),
     phone,
     name,
-    ...(password ? { password: await bcrypt.hash(password, BCRYPT_ROUNDS) } : {}),
+    password: await bcrypt.hash(password, BCRYPT_ROUNDS),
     ...(guided ? { date_of_birth: dateOfBirth, account_location: { district: location!.area_name, upazila: upazila! } } : {}),
     // Normal registration reaches this point after a purpose-bound OTP
     // challenge. Explicit superadmin-controlled test mode can bypass proof.
@@ -3405,6 +3381,21 @@ app.post('/api/auth/logout', async (req, res) => {
   res.clearCookie(SESSION_COOKIE, { path: '/' });
   res.json({ success: true });
 });
+
+app.post('/api/auth/verify-phone', asyncRoute((req, res) => accountWrites.run(async () => {
+  const auth = getCurrentAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Sign in with your password before verifying this phone' });
+  if (auth.user.is_verified) return res.status(409).json({ error: 'This account phone is already verified' });
+  const challenge = verifiedChallenge(auth.user.phone, 'REGISTER', req.body?.verification_token);
+  if (!challenge && !isOtpBypassEnabled()) return res.status(403).json({ error: 'Verify this phone before continuing' });
+
+  auth.user.is_verified = true;
+  auth.user.phone_verified_at = new Date().toISOString();
+  await saveToTable('common_users', auth.user);
+  if (challenge) await consumeChallenge(challenge);
+  await audit(auth.user.id, 'PHONE_VERIFIED', 'USER', auth.user.id, { phone: maskedPhone(auth.user.phone) });
+  res.json({ user: sanitizeUser(auth.user) });
+})));
 
 app.post('/api/auth/reset-password', async (req, res) => {
   const phone = normalizeBangladeshPhone(req.body?.phone);
@@ -3460,7 +3451,7 @@ app.get('/api/me/contact-reports', asyncRoute(async (req, res) => {
 app.post(['/api/me/contact-reports/confirm-phone', '/api/me/contact-reports/reverify-phone'], asyncRoute(async (req, res) => {
   const auth = getCurrentAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  auth.user.is_verified = true;
+  if (!auth.user.is_verified) return res.status(403).json({ error: 'Verify your account phone first' });
   auth.user.phone_verified_at = new Date().toISOString();
   await saveToTable('common_users', auth.user);
   await resolveRegisteredContactIssues(auth.user, ['WRONG_NUMBER', 'UNREACHABLE'], 'PHONE_REVERIFIED');
@@ -3638,7 +3629,7 @@ app.delete('/api/me', asyncRoute(async (req, res) => {
     let changed = false;
     request.comments = request.comments?.map(comment => {
       if (comment.user_id !== auth.user.id) return comment;
-      changed = true; return { ...comment, user_name: 'Deleted member' };
+      changed = true; return { ...comment, user_name: 'Deleted member', text: '', deleted_at: now };
     });
     if (changed) await saveToTable('common_requests', request, [request.location.lng, request.location.lat]);
   }
@@ -3649,10 +3640,16 @@ app.delete('/api/me', asyncRoute(async (req, res) => {
   }
   await removeDonorFromAllPartitions(auth.user.id);
   auth.user.name = 'Deleted member'; auth.user.phone = `deleted-${auth.user.id}`; auth.user.password = undefined;
+  auth.user.date_of_birth = undefined; auth.user.account_location = undefined; auth.user.phone_verified_at = undefined;
   auth.user.is_verified = false; auth.user.donor_profile = undefined; auth.user.recipient_profile = undefined;
   auth.user.blocked_user_ids = []; auth.user.account_status = 'SUSPENDED'; auth.user.deleted_at = now;
   await saveToTable('common_users', auth.user);
   for (const session of sessions.filter(item => item.user_id === auth.user.id && !item.revoked_at)) { session.revoked_at = now; await saveToTable('common_sessions', session); }
+  await deleteAccountPush(auth.user.id);
+  for (const notice of notifications.filter(item => item.user_id === auth.user.id)) {
+    await deleteStoredDocument('common_notifications', notice.id);
+  }
+  notifications = notifications.filter(item => item.user_id !== auth.user.id);
   await audit(auth.user.id, 'ACCOUNT_ANONYMIZED', 'USER', auth.user.id, {
     deleted_community_posts: communityPosts.length
   });
@@ -4398,10 +4395,12 @@ app.post('/api/donation-follow-ups/verify', asyncRoute(async (req, res) => {
   followUp.donor_user_id = target.user.id;
   followUp.updated_at = new Date().toISOString();
   await saveToTable('common_donation_followups', followUp);
-  const sessionToken = await issueSession(target.user.id, req);
   if (challenge) await consumeChallenge(challenge);
-  res.cookie(SESSION_COOKIE, sessionToken, sessionCookieOptions());
-  res.json({ follow_up: donationFollowUpPayload(followUp, 'DONOR'), user: sanitizeUser(target.user) });
+  const auth = getCurrentAuth(req);
+  if (auth?.user.id === target.user.id) {
+    return res.json({ follow_up: donationFollowUpPayload(followUp, 'DONOR'), user: sanitizeUser(target.user) });
+  }
+  res.json({ follow_up: donationFollowUpPayload(followUp, 'DONOR'), sign_in_required: true });
 }));
 
 app.post('/api/donation-follow-ups/:id/outcome', asyncRoute(async (req, res) => {
@@ -4815,10 +4814,11 @@ app.post('/api/reports', asyncRoute(async (req, res) => {
   if (!isOneOf(target_type, ['REQUEST', 'COMMENT', 'USER', 'POST'] as const) || !target_id) return validationError(res, 'Valid report target is required');
   if (!isOneOf(reason, ['SPAM', 'FRAUD', 'PAYMENT_REQUEST', 'HARASSMENT', 'PRIVACY', 'OTHER'] as const)) return validationError(res, 'Valid report reason is required');
   const reportedPost = target_type === 'POST' ? await getCommunityPostById(target_id) : null;
+  const guestTargetExists = target_id.startsWith('guest:') && [...guestDevices.values()].some(device => device.actor_id === target_id);
   const targetExists = target_type === 'REQUEST'
     ? requests.some(item => item.id === target_id)
     : target_type === 'USER'
-      ? users.some(item => item.id === target_id)
+      ? users.some(item => item.id === target_id) || guestTargetExists
       : target_type === 'POST'
         ? reportedPost?.status === 'PUBLISHED'
         : requests.some(item => item.comments?.some(comment => comment.id === target_id));
@@ -4837,11 +4837,13 @@ app.post('/api/reports', asyncRoute(async (req, res) => {
 app.post('/api/me/blocks/:userId', async (req, res) => {
   const auth = getCurrentAuth(req);
   const target = users.find(user => user.id === req.params.userId);
+  const guestTarget = req.params.userId.startsWith('guest:') && [...guestDevices.values()].some(device => device.actor_id === req.params.userId);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
-  if (!target || target.id === auth.user.id) return validationError(res, 'Valid user is required');
-  auth.user.blocked_user_ids = [...new Set([...(auth.user.blocked_user_ids || []), target.id])];
+  if ((!target && !guestTarget) || target?.id === auth.user.id) return validationError(res, 'Valid user is required');
+  const targetId = target?.id || req.params.userId;
+  auth.user.blocked_user_ids = [...new Set([...(auth.user.blocked_user_ids || []), targetId])];
   await saveToTable('common_users', auth.user);
-  await audit(auth.user.id, 'USER_BLOCKED', 'USER', target.id);
+  await audit(auth.user.id, 'USER_BLOCKED', 'USER', targetId);
   res.json({ success: true });
 });
 
@@ -6114,14 +6116,18 @@ app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
   }
   if ('error' in availability) return validationError(res, availability.error);
 
+  const auth = getCurrentAuth(req);
   let user = users.find(item => item.phone === phone && !item.deleted_at);
   const accountCreated = !user;
   if (user?.account_status === 'SUSPENDED') return res.status(403).json({ error: 'This account is suspended' });
   if (!user) {
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (password.length < 8) return validationError(res, 'Create a password with at least 8 characters to secure your new account');
     user = {
       id: uuidv4(),
       phone,
       name,
+      password: await bcrypt.hash(password, BCRYPT_ROUNDS),
       is_verified: true,
       phone_verified_at: new Date().toISOString(),
       roles: ['MEMBER'],
@@ -6154,10 +6160,13 @@ app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
   }
 
   const fingerprint = getFingerprint(req);
-  if (fingerprint) await adoptFingerprintOwnership(fingerprint, user);
-  const sessionToken = await issueSession(user.id, req);
+  const hasAccountAccess = accountCreated || auth?.user.id === user.id;
+  if (fingerprint && hasAccountAccess) await adoptFingerprintOwnership(fingerprint, user);
+  if (accountCreated) {
+    const sessionToken = await issueSession(user.id, req);
+    res.cookie(SESSION_COOKIE, sessionToken, sessionCookieOptions());
+  }
   if (challenge) await consumeChallenge(challenge);
-  res.cookie(SESSION_COOKIE, sessionToken, sessionCookieOptions());
   await audit(user.id, matchedImportedPhone ? 'DIRECTORY_CLAIM_APPROVED' : 'CLAIM_CREATED_SEPARATE_PROFILE', 'IMPORTED_DONOR', donor.id, {
     matched_imported_phone: matchedImportedPhone,
     account_created: accountCreated
@@ -6166,6 +6175,7 @@ app.post('/api/claims/:slug/complete', asyncRoute(async (req, res) => {
     success: true,
     result: matchedImportedPhone ? 'CLAIMED' : 'SEPARATE_PROFILE_CREATED',
     account_created: accountCreated,
+    ...(!hasAccountAccess ? { sign_in_required: true } : {}),
     user: sanitizeUser(user)
   });
 }));
@@ -6464,6 +6474,7 @@ app.get('/api/requests/:id', async (req, res) => {
   }
 
   const requester = users.find(u => u.id === request.user_id);
+  const viewerAuth = getCurrentAuth(req);
   const requestOwner = isRequestOwner(request, req);
   const viewerId = (requestOwner ? bloodHelpActor(req)?.id : getCurrentAuth(req)?.user.id) || '';
   const viewerResponses = donorResponses.filter(response =>
@@ -6496,7 +6507,7 @@ app.get('/api/requests/:id', async (req, res) => {
   const exposeRequesterIdentity = shouldExposeRequesterIdentity(request.flow_version, requestOwner);
   const enrichedRequest = {
     ...(requestOwner ? requestOwnerPayload(request, req) : publicRequestPayload(request)),
-    comments: publicComments(request.comments || [], getActorId(req), requestOwner || isOperator(getCurrentAuth(req)?.user)),
+    comments: publicComments(commentsVisibleTo(request.comments || [], viewerAuth?.user), getActorId(req), requestOwner || isOperator(viewerAuth?.user), comment => publicCommentAuthorId(comment.user_id)),
     ...(shouldExposeRequestContacts(request.status, privilegedViewer) ? { contacts: contacts || [] } : {}),
     ...((privilegedViewer || activePublicRequest) ? { patient_name } : {}),
     ...(privilegedViewer ? { patient_reference } : {}),
@@ -6603,8 +6614,8 @@ app.post('/api/requests/:id/comments', requestWriteRoute(async (req, res) => {
   if (!isRequestOwner(request, req) && !requestIsLive(request)) return res.status(404).json({ error: 'Request not found' });
   const actor = user?.id || fingerprint || '';
   const clientId = optionalCleanString(req.body?.client_id, 100);
-  const existing = clientId && actor ? request.comments?.find(item => item.user_id === actor && item.client_id === clientId) : undefined;
-  if (existing) return res.json(publicComments([existing], actor, false)[0]);
+  const existing = clientId && actor ? request.comments?.find(item => (publicCommentAuthorId(item.user_id) || item.user_id) === actor && item.client_id === clientId) : undefined;
+  if (existing) return res.json(publicComments([existing], actor, false, comment => publicCommentAuthorId(comment.user_id))[0]);
   let parentId: string | undefined;
   try { parentId = commentParent(request.comments || [], optionalCleanString(req.body?.parent_id, 100)); }
   catch (error) { return validationError(res, (error as Error).message); }
@@ -6652,7 +6663,7 @@ app.post('/api/requests/:id/comments', requestWriteRoute(async (req, res) => {
     try { await notify(recipient, 'REQUEST_COMMENT', parentId ? 'New reply on a blood request' : 'New update on your blood request', 'Open the request to read the update.', `/request/${id}#comment-${newComment.id}`); }
     catch { console.error('Could not create request comment notification'); }
   }
-  res.json(publicComments([newComment], actor, false)[0]);
+  res.json(publicComments([newComment], actor, false, comment => publicCommentAuthorId(comment.user_id))[0]);
 }));
 
 app.delete('/api/requests/:id/comments/:commentId', requestWriteRoute(async (req, res) => {
@@ -6665,7 +6676,7 @@ app.delete('/api/requests/:id/comments/:commentId', requestWriteRoute(async (req
   const comment = request.comments?.find(item => item.id === commentId);
   const auth = getCurrentAuth(req);
   if (!comment) return res.status(404).json({ error: 'Comment not found' });
-  if (!isRequestOwner(request, req) && (!userId || comment.user_id !== userId) && !isOperator(auth?.user)) {
+  if (!isRequestOwner(request, req) && (!userId || (publicCommentAuthorId(comment.user_id) || comment.user_id) !== userId) && !isOperator(auth?.user)) {
     return res.status(403).json({ error: 'Only the comment author, request owner, or moderator can delete it' });
   }
 

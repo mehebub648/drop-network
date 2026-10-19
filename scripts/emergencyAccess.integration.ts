@@ -76,7 +76,7 @@ try {
   const capped = await a.call('/search/requests', requestBody(4), 428);
   assert.equal(capped.code, 'ACCOUNT_REQUIRED');
   assert.equal(capped.reason, 'GUEST_REQUEST_LIMIT');
-  const outage = await a.call('/auth/otp/request', { phone: '+8801700000001', purpose: 'SIGN_IN' }, 502);
+  const outage = await a.call('/auth/otp/request', { phone: '+8801700000001', purpose: 'RESET_PASSWORD' }, 502);
   assert.equal(outage.blood_help_eligible, true);
   assert.equal(outage.verification_token, undefined);
   await b.call('/guest/emergency-access', { challenge_id: outage.challenge_id }, 403);
@@ -85,7 +85,7 @@ try {
   assert.equal((await a.call('/guest/emergency-access', { challenge_id: outage.challenge_id })).blood_help_access.expires_at, pass.blood_help_access.expires_at);
   await a.call('/search/requests', requestBody(4), 201);
   await a.call('/me', undefined, 401);
-  await a.call('/auth/otp/login', { phone: '+8801700000001', verification_token: outage.challenge_id }, 403);
+  await a.call('/auth/otp/login', { phone: '+8801700000001', verification_token: outage.challenge_id }, 410);
   await a.call('/auth/reset-password', { phone: '+8801700000001', new_password: 'Never-used-password', verification_token: outage.challenge_id }, 403);
   const reveal = await a.call(`/requests/${first}/reveals`, { donor_ref: 'reg:donor-1' });
   await a.call(`/requests/${first}/reveals`, { donor_ref: 'reg:donor-2' }, 409);

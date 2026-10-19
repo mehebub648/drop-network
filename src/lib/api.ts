@@ -43,7 +43,6 @@ async function postJson(path: string, body: unknown = {}) {
 
 export const experienceApi = {
   initializeGuest,
-  authStart: (phone: string) => postJson('/auth/start', { phone }),
   register: (details: Record<string, unknown>) => postJson('/auth/register', { ...details, registration_context: 'GUIDED' }),
   adopt: () => postJson('/guest/requests/adopt'),
   closeRequest: (id: string, reason: string) => postJson(`/requests/${encodeURIComponent(id)}/close`, { reason }),
@@ -86,7 +85,7 @@ async function readJsonOrThrow(res: Response, fallbackMessage: string) {
   return result;
 }
 
-export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'SIGN_IN' | 'REMOVE_LISTING' | 'CLAIM_PROFILE' | 'DONATION_FOLLOW_UP';
+export type OtpPurpose = 'REGISTER' | 'RESET_PASSWORD' | 'CHANGE_PHONE' | 'REMOVE_LISTING' | 'CLAIM_PROFILE' | 'DONATION_FOLLOW_UP';
 export type OtpDeliveryStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'canceled' | 'bypassed';
 export type OtpDelivery = {
   challenge_id: string;
@@ -165,7 +164,7 @@ export type PublicCommunityPostSummary = {
   title: string;
   excerpt: string;
   image?: CommunityPostImage;
-  author: { name: string };
+  author: { id: string; name: string };
   published_at: string;
   updated_at: string;
 };
@@ -269,16 +268,7 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to verify code');
   },
 
-  // Signs in with a verified SIGN_IN code instead of a password, for the blood
-  // request flow where someone may not remember a password they set long ago.
-  async otpLogin(phone: string, verificationToken: string) {
-    const res = await fetch(`${API_BASE}/auth/otp/login`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ phone, verification_token: verificationToken, fingerprint: BROWSER_FINGERPRINT })
-    });
-    return readJsonOrThrow(res, 'Failed to sign in');
-  },
+  verifyAccountPhone: (verificationToken: string) => postJson('/auth/verify-phone', { verification_token: verificationToken }),
 
   async getPublicConfig() {
     const res = await fetch(`${API_BASE}/config/public`, { headers: getHeaders() });
@@ -724,11 +714,11 @@ export const api = {
     return readJsonOrThrow(res, 'Failed to upload the story image');
   },
 
-  async publishCommunityPost(id: string): Promise<PublicCommunityPostDetail> {
+  async publishCommunityPost(id: string, termsAccepted: boolean): Promise<PublicCommunityPostDetail> {
     const res = await fetch(`${API_BASE}/community/${encodeURIComponent(id)}/publish`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ consent: true })
+      body: JSON.stringify({ consent: true, terms_and_conduct_accepted: termsAccepted })
     });
     return readJsonOrThrow(res, 'Failed to publish the community post');
   },
@@ -919,6 +909,7 @@ export const api = {
     availability_status: 'AVAILABLE' | 'NOT_AVAILABLE';
     availability_reason?: string;
     availability_consent: true;
+    password?: string;
   }) {
     const res = await fetch(`${API_BASE}/claims/${encodeURIComponent(slug)}/complete`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify(body)

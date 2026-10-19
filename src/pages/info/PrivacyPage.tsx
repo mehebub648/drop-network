@@ -3,7 +3,7 @@ import { InfoPage } from './InfoPage';
 
 export default function PrivacyPage() {
   return (
-    <InfoPage eyebrow="Legal" title="Privacy Policy" intro="Effective 7 October 2026. This policy explains what Drop currently collects, why it is used, where it is stored, and when another member can see it.">
+    <InfoPage eyebrow="Legal" title="Privacy Policy" intro="Effective 19 October 2026. This policy explains what Drop currently collects, why it is used, where it is stored, and when another member can see it.">
       <section>
         <h2>Information we collect</h2>
         <p>When you create or use an account, Drop can store your name, private account phone number, private date of birth and home location, password hash, optional donor blood group, district and approximate district coordinates, availability, an optional private reason when you are unavailable, optional self-reported age and weight, an optional private description of a medical condition or current sickness, verification status, your exact or approximate last-donation declaration, lifetime donation count, and private donation-history entries. Blood requests can include patient and requester names, blood group, blood component, units needed, a broad reason for the blood need, an optional short broad description when “Other” is selected, district, needed-by date, contact people, comments, status, and creation time. Community posts store the title, Markdown body, post type, author account, publication state and times, and one processed image for a donation story when you choose to upload it.</p>
@@ -27,12 +27,13 @@ export default function PrivacyPage() {
       <section>
         <h2>Storage and security</h2>
         <p>Guests may publish an explicitly consented patient-side contact without signing in. That number is not independently verified and is never filled from the private account phone. Guest posts expire at the end of the selected Bangladesh date; account-owned posts remain live for 30 more days unless closed. Signing in on the same device adopts its unexpired guest posts. Losing browser storage loses guest management access. Donor contacts require verified account ownership or temporary blood-help access on the device that owns the request; optional donor enrollment permits protected sharing of the account phone as a donor contact, never as requester contact.</p>
-        <p>Phone-first sign-in indicates whether a password account exists. Phone, device, and IP limits reduce abuse, but this is not an account-enumeration-proof flow.</p>
+        <p>Sign-in requires your phone number and password. SMS codes verify phone ownership during registration and allow a forgotten password to be reset; they cannot sign you in. A password reset signs out existing sessions. Phone, device, and IP limits reduce abuse. Ownership checks for changing a phone number, claiming or removing a directory listing, and donation follow-ups remain separate from account sign-in.</p>
         <p>Drop currently stores application records in a LanceDB datastore. Passwords and verification codes are bcrypt-hashed. Login state uses an httpOnly, SameSite session cookie that browser JavaScript cannot read. Guest posts use a separate server-issued secret device credential in an HttpOnly, Secure cookie, with only its hash stored on the server. Request management grants expire at each request deadline. After 15 days without active use, an unclaimed guest identity, its remaining request/contact activity, and comments are deleted from active storage. Signing in links its unexpired activity to the account. Local patient drafts expire after 15 days. Restricted historical backups may retain older records until those backups are retired. If Drop confirms an SMS service or sending-phone failure, this device can receive a 24-hour blood-help pass. The server stores its expiry and a separate guest activity identifier. This does not verify a phone or grant access to an account. Guest call feedback remains unverified after account adoption. A legacy random <code>drop_fingerprint</code> remains only for comment attribution, not request ownership. Security headers, JSON-only request handling, restricted production CORS, and rate limits reduce common risks, but no online service can promise absolute security.</p>
       </section>
       <section>
         <h2>Sharing and service providers</h2>
-        <p>Drop does not send account data to advertising networks. When an SMS channel is configured, the destination phone number and one-time verification message are sent to that delivery provider. We may also disclose limited information when required by law, to protect people from credible harm, or to infrastructure providers needed to operate the service.</p>
+        <p>Drop does not send account data to advertising networks. For phone verification and password recovery, the destination phone number and one-time verification message are sent to Messavo at <a href="https://messavo.cloud">messavo.cloud</a>, which routes the message through a connected sending phone. Delivery status and a provider message reference are used to track whether the message was accepted or delivered.</p>
+        <p className="mt-3">If you enable Android push notifications, Drop stores the Firebase Cloud Messaging registration token for that app installation, the associated account session, whether notifications are enabled, and delivery state. Firebase receives the token and a generic “Drop update” notification with an internal notification reference; the push does not include patient, donor, request, or phone details. We may also disclose limited information when required by law, to protect people from credible harm, or to infrastructure providers needed to operate the service.</p>
       </section>
       <section>
         <h2>Verification and OTP</h2>
@@ -40,7 +41,8 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Your choices</h2>
-        <p>You can update donor information, download a server-side account export including your community posts, delete individual posts, and delete your account from profile settings. Account deletion revokes sessions, removes donor and private patient/contact information, removes authored community content and images, cancels active requests, and anonymizes coordination and safety records that must be retained. You can also send an access, correction, or deletion question through the <Link to="/contact">contact page</Link>.</p>
+        <p>You can update donor information, download a server-side account export including your community posts, delete individual posts, and delete your account from profile settings. Account deletion revokes every session, removes your name, phone, date of birth, home location, phone-verification state, password, donor and recipient profiles, push registration tokens, notification inbox, and private patient/contact information. It removes authored community content and images, cancels active requests, and anonymizes retained coordination and safety records. Deleted information can remain in restricted historical backups until those backups are retired.</p>
+        <p className="mt-3">The public <Link to="/delete-account">account deletion page</Link> links to self-service deletion, password recovery, and an operations request for people who cannot sign in. Drop verifies ownership before operations completes a request. Removing an imported donor listing is a separate process available at <Link to="/directory/remove">/directory/remove</Link> without an account.</p>
       </section>
       <section>
         <h2>Operations and activity history</h2>
@@ -49,7 +51,7 @@ export default function PrivacyPage() {
       </section>
       <section>
         <h2>Questions and changes</h2>
-        <p>This policy describes the service as it operates today. Material changes will be reflected on this page with a revised effective date. Send privacy questions or requests through the <Link to="/contact">contact page</Link>.</p>
+        <p>This policy describes the service as it operates today. Material changes will be reflected on this page with a revised effective date. Send privacy questions through the <Link to="/contact">contact page</Link>, or use the <Link to="/delete-account">account deletion page</Link> for a deletion request.</p>
       </section>
     </InfoPage>
   );

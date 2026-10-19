@@ -1,8 +1,9 @@
 import GuidedForm from '../components/GuidedForm';
+import BlockAuthorDialog from '../components/BlockAuthorDialog';
 import Select from '../components/Select';
 import { useEffect, useState, type FormEvent } from 'react';
-import { AlertCircle, ArrowLeft, BookOpenText, Check, Copy, ExternalLink, Flag, HeartHandshake, LoaderCircle, MessageCircle, PenLine, Share2, ShieldCheck } from 'lucide-react';
-import { Link, useParams } from 'react-router';
+import { AlertCircle, ArrowLeft, Ban, BookOpenText, Check, Copy, ExternalLink, Flag, HeartHandshake, LoaderCircle, MessageCircle, PenLine, Share2, ShieldCheck } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router';
 import MarkdownContent from '../components/community/MarkdownContent';
 import { api, type PublicCommunityPostDetail } from '../lib/api';
 import { communityPostTypeLabel, formatCommunityDate } from '../lib/community';
@@ -51,7 +52,7 @@ function useCommunityPostMetadata(post: PublicCommunityPostDetail | null) {
   useEffect(() => {
     if (!post) return;
     const canonicalUrl = `${PUBLIC_SITE_URL}/community/${encodeURIComponent(post.slug)}`;
-    const pageTitle = `${post.title} — Drop Community`;
+    const pageTitle = `${post.title} — drop. community`;
     document.title = pageTitle;
 
     let description = document.querySelector('meta[name="description"]');
@@ -100,7 +101,7 @@ function useCommunityPostMetadata(post: PublicCommunityPostDetail | null) {
       datePublished: post.published_at,
       dateModified: post.updated_at,
       author: { '@type': 'Person', name: post.author.name },
-      publisher: { '@type': 'Organization', name: 'Drop Network', url: PUBLIC_SITE_URL },
+      publisher: { '@type': 'Organization', name: 'drop.', url: PUBLIC_SITE_URL },
       mainEntityOfPage: canonicalUrl,
       isAccessibleForFree: true,
       ...(post.image ? { image: [absolutePublicUrl(post.image.url)] } : {})
@@ -114,6 +115,7 @@ function useCommunityPostMetadata(post: PublicCommunityPostDetail | null) {
 }
 
 export default function CommunityPostPage({ user }: { user: any }) {
+  const navigate = useNavigate();
   const { slug = '' } = useParams();
   const [post, setPost] = useState<PublicCommunityPostDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,10 +123,13 @@ export default function CommunityPostPage({ user }: { user: any }) {
   const [notFound, setNotFound] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [reportOpen, setReportOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<'POST' | 'USER'>('POST');
   const [reportReason, setReportReason] = useState<ReportReason>('OTHER');
   const [reportDetails, setReportDetails] = useState('');
   const [reportBusy, setReportBusy] = useState(false);
   const [reportMessage, setReportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [blockOpen, setBlockOpen] = useState(false);
   const [shareMessage, setShareMessage] = useState('');
   useCommunityPostMetadata(post);
 
@@ -157,7 +162,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
     setReportBusy(true);
     setReportMessage(null);
     try {
-      await api.report('POST', post.id, reportReason, reportDetails.trim() || undefined);
+      await api.report(reportTarget, reportTarget === 'POST' ? post.id : post.author.id, reportReason, reportDetails.trim() || undefined);
       setReportMessage({ type: 'success', text: 'Report sent to the moderation team.' });
       setReportOpen(false);
       setReportDetails('');
@@ -165,6 +170,20 @@ export default function CommunityPostPage({ user }: { user: any }) {
       setReportMessage({ type: 'error', text: reason instanceof Error ? reason.message : 'Could not send the report.' });
     } finally {
       setReportBusy(false);
+    }
+  };
+
+  const blockAuthor = async () => {
+    if (!post || blockBusy) return;
+    setBlockBusy(true);
+    setReportMessage(null);
+    try {
+      await api.blockUser(post.author.id);
+      navigate('/community', { replace: true });
+    } catch (reason) {
+      setReportMessage({ type: 'error', text: reason instanceof Error ? reason.message : 'Could not block this author.' });
+      setBlockBusy(false);
+      setBlockOpen(false);
     }
   };
 
@@ -235,6 +254,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
 
   return (
     <article className="mx-auto max-w-4xl" itemScope itemType="https://schema.org/BlogPosting">
+      {blockOpen && <BlockAuthorDialog name={post.author.name} busy={blockBusy} onClose={() => setBlockOpen(false)} onConfirm={() => void blockAuthor()} />}
       <nav aria-label="Breadcrumb" className="mb-7">
         <Link to="/community" className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-primary">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Community
@@ -304,9 +324,17 @@ export default function CommunityPostPage({ user }: { user: any }) {
             <p className="mt-1 text-xs leading-5 text-slate-500">Reports are reviewed by authorized moderators and are not shown publicly.</p>
           </div>
           {user ? (
-            <button type="button" onClick={() => setReportOpen(current => !current)} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-slate-300">
-              <Flag className="h-4 w-4" aria-hidden="true" /> {reportOpen ? 'Cancel report' : 'Report post'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => { setReportTarget('POST'); setReportOpen(current => reportTarget === 'POST' ? !current : true); }} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-slate-300">
+                <Flag className="h-4 w-4" aria-hidden="true" /> {reportOpen && reportTarget === 'POST' ? 'Cancel report' : 'Report post'}
+              </button>
+              {user.id !== post.author.id && <button type="button" onClick={() => { setReportTarget('USER'); setReportOpen(current => reportTarget === 'USER' ? !current : true); }} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-slate-300"><Flag className="h-4 w-4" aria-hidden="true" /> {reportOpen && reportTarget === 'USER' ? 'Cancel author report' : 'Report author'}</button>}
+              {user.id !== post.author.id && (
+                <button type="button" disabled={blockBusy} onClick={() => setBlockOpen(true)} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 px-4 text-sm font-bold text-red-700 hover:bg-red-50 disabled:opacity-60">
+                  {blockBusy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Ban className="h-4 w-4" aria-hidden="true" />} {blockBusy ? 'Blocking…' : 'Block author'}
+                </button>
+              )}
+            </div>
           ) : (
             <Link to={`/login?returnTo=${encodeURIComponent(`/community/${post.slug}`)}`} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-slate-300">
               <Flag className="h-4 w-4" aria-hidden="true" /> Sign in to report
@@ -315,7 +343,7 @@ export default function CommunityPostPage({ user }: { user: any }) {
         </div>
 
         {reportOpen && user && (
-          <GuidedForm onSubmit={submitReport} className="mt-5 grid gap-4 border-t border-slate-100 pt-5">
+          <GuidedForm aria-label={reportTarget === 'POST' ? 'Report this post' : 'Report this author'} onSubmit={submitReport} className="mt-5 grid gap-4 border-t border-slate-100 pt-5">
             <div>
               <label htmlFor="community-report-reason" className="text-xs font-extrabold uppercase tracking-widest text-slate-500">Reason</label>
               <Select id="community-report-reason" value={reportReason} onChange={event => setReportReason(event.target.value as ReportReason)} className="input mt-2" disabled={reportBusy}>

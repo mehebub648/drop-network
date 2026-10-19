@@ -58,6 +58,7 @@ export type CommunityPostQuery = {
   statuses?: CommunityPostStatus[];
   type?: CommunityPostType;
   authorId?: string;
+  excludeAuthorIds?: string[];
   slug?: string;
   imageKey?: string;
   hasImage?: boolean;
@@ -80,7 +81,7 @@ export type PublicCommunityPostSummary = {
   title: string;
   excerpt: string;
   image?: PublicCommunityPostImage;
-  author: { name: string };
+  author: { id: string; name: string };
   published_at: string;
   updated_at: string;
 };
@@ -326,6 +327,8 @@ export function buildCommunityPostFilter(query: Omit<CommunityPostQuery, 'limit'
   }
   if (query.type && isOneOf(query.type, COMMUNITY_POST_TYPES)) clauses.push(`type = ${stringLiteral(query.type)}`);
   if (query.authorId) clauses.push(`author_id = ${stringLiteral(query.authorId)}`);
+  const excludedAuthors = [...new Set(query.excludeAuthorIds || [])].filter(authorId => SAFE_IDENTIFIER.test(authorId));
+  if (excludedAuthors.length) clauses.push(`author_id NOT IN (${excludedAuthors.map(stringLiteral).join(', ')})`);
   if (query.slug) clauses.push(`slug = ${stringLiteral(query.slug)}`);
   if (query.imageKey) clauses.push(`image_key = ${stringLiteral(query.imageKey)}`);
   if (query.hasImage === true) clauses.push(`image_key <> ''`);
@@ -399,7 +402,7 @@ export function toPublicCommunityPostSummary(post: CommunityPost, authorName: st
     title: post.title,
     excerpt: post.excerpt,
     ...(post.image_key ? { image: publicImage(post) } : {}),
-    author: { name: publicAuthorName(authorName) },
+    author: { id: post.author_id, name: publicAuthorName(authorName) },
     published_at: post.published_at,
     updated_at: post.updated_at
   };

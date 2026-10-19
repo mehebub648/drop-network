@@ -10,6 +10,7 @@ import {
   UserRoundSearch
 } from 'lucide-react';
 import BloodHelpNotice, { useBloodHelpAccess } from '../components/BloodHelpNotice';
+import Doodle from '../components/Doodle';
 import { api, type SearchDonorCard } from '../lib/api';
 import SearchCriteriaForm, { type Criteria } from '../components/search/SearchCriteriaForm';
 import DonorResultCard from '../components/search/DonorResultCard';
@@ -255,7 +256,16 @@ export default function DonorSearchPage({
   return (
     <div className="directory-workspace space-y-6">
       <BloodHelpNotice />
-      {!hasQuery && <header className="web-page-heading"><p className="eyebrow">Blood donor directory</p><h1 className="page-title">Find someone who can help.</h1><p className="page-description">A few details help us find donors near the patient.</p></header>}
+      {!hasQuery && (
+        <header className="web-page-heading web-page-heading-illustrated search-page-heading">
+          <Doodle kind="search" className="page-heading-doodle" />
+          <div>
+            <p className="eyebrow">Donor search</p>
+            <h1 className="page-title">Find a nearby helper.</h1>
+            <p className="page-description">Blood group. Place. Done.</p>
+          </div>
+        </header>
+      )}
       <section className={hasQuery ? 'search-results-heading' : 'search-workspace'}>
         <div>
           {!hasQuery ? (

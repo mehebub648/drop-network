@@ -16,28 +16,29 @@ export const PUBLIC_SITE_URL = (() => {
 })();
 
 const metadata: Record<string, [string, string]> = {
-  '/': ['Drop Network — Find blood donors in Bangladesh', 'Search opted-in blood donors by blood group and district, then coordinate safely through Drop.'],
-  '/requests': ['Live blood requests — Drop Network', 'Browse active verified blood requests across Bangladesh.'],
-  '/community': ['Donation stories and health suggestions — Drop Network', 'Read first-hand blood donation stories and practical community health suggestions from members across Bangladesh.'],
-  '/community/new': ['Write a community post — Drop Network', 'Create a donation story or health suggestion for the Drop community.'],
-  '/login': ['Member sign in — Drop Network', 'Sign in to manage your Drop account and view opted-in donor contacts.'],
-  '/register': ['Become a donor — Drop Network', 'Join the Bangladesh community blood donor network with a verified phone.'],
-  '/forgot-password': ['Reset your password — Drop Network', 'Verify your phone and securely reset your Drop account password.'],
-  '/about': ['About Drop Network', 'How Drop connects requesters with compatible community donors.'],
-  '/safety': ['Blood donation safety — Drop Network', 'Safety guidance for community blood donor coordination.'],
-  '/contact': ['Contact Drop Network operations', 'Submit support, safety, privacy, or partnership questions.'],
-  '/partners': ['Verified blood donation partners — Drop Network', 'Browse reviewed hospitals, blood banks, NGOs, and public donation campaigns.'],
-  '/privacy': ['Privacy Policy — Drop Network', 'How Drop protects donor, requester, account, and contact information.'],
-  '/terms': ['Terms of Use — Drop Network', 'Rules and safety expectations for using Drop responsibly.'],
-  '/directory': ['Find blood donors near you — Drop Network', 'Search donors by blood group, district and upazila. Numbers stay masked until you say who needs blood.'],
-  '/directory/imported': ['Claim an imported donor profile — Drop Network', 'Verify ownership of an imported donor record and bring it under your control.'],
-  '/directory/call': ['Report a donor call — Drop Network', 'Complete the required outcome for a previously revealed donor contact.'],
-  '/directory/remove': ['Remove your number from the directory — Drop Network', 'Take a publicly imported donor listing off Drop by verifying the number. No account needed.'],
-  '/contribute': ['Suggest a blood donor privately — Drop Network', 'Create a private, expiring claim link that only the verified phone owner can publish.'],
-  '/claim': ['Claim a donor profile — Drop Network', 'Verify your phone, confirm every detail, and control your Drop donor profile.'],
-  '/profile': ['My Drop account', 'Manage your donor profile, requests, responses, follow-ups, history, security, and privacy settings.'],
+  '/': ['drop. — Find blood donors in Bangladesh', 'Search opted-in blood donors by blood group and district, then coordinate safely through drop.'],
+  '/requests': ['Live blood requests — drop.', 'Browse active verified blood requests across Bangladesh.'],
+  '/community': ['Donation stories and health suggestions — drop.', 'Read first-hand blood donation stories and practical community health suggestions from members across Bangladesh.'],
+  '/community/new': ['Write a community post — drop.', 'Create a donation story or health suggestion for the drop. community.'],
+  '/login': ['Member sign in — drop.', 'Sign in to manage your drop. account and view opted-in donor contacts.'],
+  '/register': ['Become a donor — drop.', 'Join the Bangladesh community blood donor network with a verified phone.'],
+  '/forgot-password': ['Reset your password — drop.', 'Verify your phone and securely reset your drop. account password.'],
+  '/about': ['About drop.', 'How drop. connects requesters with compatible community donors.'],
+  '/safety': ['Blood donation safety — drop.', 'Safety guidance for community blood donor coordination.'],
+  '/contact': ['Contact drop. operations', 'Submit support, safety, privacy, or partnership questions.'],
+  '/partners': ['Verified blood donation partners — drop.', 'Browse reviewed hospitals, blood banks, NGOs, and public donation campaigns.'],
+  '/privacy': ['Privacy Policy — drop.', 'How drop. protects donor, requester, account, and contact information.'],
+  '/delete-account': ['Delete your drop. account', 'Delete your drop. account in profile settings or request help when you cannot sign in.'],
+  '/terms': ['Terms of Use — drop.', 'Rules and safety expectations for using drop. responsibly.'],
+  '/directory': ['Find blood donors near you — drop.', 'Search donors by blood group, district and upazila. Numbers stay masked until you say who needs blood.'],
+  '/directory/imported': ['Claim an imported donor profile — drop.', 'Verify ownership of an imported donor record and bring it under your control.'],
+  '/directory/call': ['Report a donor call — drop.', 'Complete the required outcome for a previously revealed donor contact.'],
+  '/directory/remove': ['Remove your number from the directory — drop.', 'Take a publicly imported donor listing off drop. by verifying the number. No account needed.'],
+  '/contribute': ['Suggest a blood donor privately — drop.', 'Create a private, expiring claim link that only the verified phone owner can publish.'],
+  '/claim': ['Claim a donor profile — drop.', 'Verify your phone, confirm every detail, and control your drop. donor profile.'],
+  '/profile': ['My drop. account', 'Manage your donor profile, requests, responses, follow-ups, history, security, and privacy settings.'],
   '/follow-up': ['Donation follow-up', 'Privately update whether a planned blood donation was completed.'],
-  '/admin': ['Drop operations workspace', 'Role-aware administration for Drop Network operations.']
+  '/admin': ['drop. operations workspace', 'Role-aware administration for drop. operations.']
 };
 
 export default function RouteMetadata() {
@@ -63,7 +64,7 @@ export default function RouteMetadata() {
             : pathname.startsWith('/profile')
               ? '/profile'
               : pathname;
-    const [title, description] = metadata[key] || ['Drop Network', 'Bangladesh community blood donor matching network.'];
+    const [title, description] = metadata[key] || ['drop.', 'Bangladesh community blood donor matching network.'];
     document.title = title;
     let tag = document.querySelector('meta[name="description"]');
     if (!tag) { tag = document.createElement('meta'); tag.setAttribute('name', 'description'); document.head.appendChild(tag); }

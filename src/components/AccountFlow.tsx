@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router';
 import { api, experienceApi, type OtpDelivery } from '../lib/api';
 import { BLOOD_GROUPS } from '../lib/blood';
 import { BD_LOCATION_NAMES } from '../lib/locations';
@@ -27,6 +28,7 @@ export default function AccountFlow({ onComplete, onBloodHelp, initialPhone, ver
   const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [signIn, setSignIn] = useState(false);
   const set = (patch: Partial<typeof fields>) => setFields((current: typeof empty) => ({ ...current, ...patch }));
   useEffect(() => {
     try { localStorage.setItem('drop_account_flow_v2', JSON.stringify({ fields, until: Date.now() + 30 * 60_000 })); } catch { /* Storage is optional. */ }
@@ -37,13 +39,13 @@ export default function AccountFlow({ onComplete, onBloodHelp, initialPhone, ver
     await onComplete();
   };
   const afterCode = async (result: any) => {
-    if (result.account_exists) {
-      await api.otpLogin(fields.phone, result.verification_token);
+    if (verifyOnly) {
+      await api.verifyAccountPhone(result.verification_token);
       await complete();
     } else { setVerificationToken(result.verification_token); setStage('identity'); }
   };
   const sendCode = async () => {
-    const result = await api.requestOtp(fields.phone, 'SIGN_IN');
+    const result = await api.requestOtp(fields.phone, 'REGISTER');
     setDelivery(result); setCode('');
     if (result.bypass && result.verification_token) await afterCode(result);
     else setStage('code');
@@ -57,10 +59,9 @@ export default function AccountFlow({ onComplete, onBloodHelp, initialPhone, ver
     event.preventDefault();
     void run(async () => {
       if (stage === 'phone') {
-        const next = verifyOnly ? { next_step: 'OTP' } : await experienceApi.authStart(fields.phone);
-        if (next.next_step === 'PASSWORD') setStage('password'); else await sendCode();
-      } else if (stage === 'password') { const result = await api.login(fields.phone, password); if (result.user?.is_verified) await complete(); else await sendCode(); }
-      else if (stage === 'code') { await afterCode(await api.verifyOtp(fields.phone, 'SIGN_IN', code)); }
+        if (signIn && !verifyOnly) setStage('password'); else await sendCode();
+      } else if (stage === 'password') { await api.login(fields.phone, password); await complete(); }
+      else if (stage === 'code') { await afterCode(await api.verifyOtp(fields.phone, 'REGISTER', code)); }
       else if (stage === 'finish') {
         if (password.length < 8 || password !== confirm) throw new Error('Use at least 8 characters and enter the same password twice.');
         await experienceApi.register({ phone: fields.phone, name: fields.name, date_of_birth: fields.dob, district: fields.district, upazila: fields.upazila,
@@ -79,9 +80,9 @@ export default function AccountFlow({ onComplete, onBloodHelp, initialPhone, ver
   const back = () => { setError(''); if (steps.includes(stage)) setStage(steps[Math.max(0, steps.indexOf(stage) - 1)]); else setStage('phone'); };
   const profile = steps.includes(stage);
   return <><BloodHelpNotice onContinue={onBloodHelp} /><StepFlow title={titles[stage]} step={profile ? steps.indexOf(stage) + 1 : stage === 'phone' ? 1 : 2} total={profile ? steps.length : 2} onNext={submit} onBack={stage !== 'phone' && stage !== 'identity' ? back : undefined} busy={busy} error={error} nextLabel={stage === 'finish' ? 'Create account and continue' : stage === 'password' ? 'Sign in and continue' : 'Continue'}>
-    {stage === 'phone' && <><p>This number will not appear on your blood request. Donors call the separate patient contact you approved.</p><label>Account phone<input className="input" type="tel" autoComplete="tel" required value={fields.phone} readOnly={verifyOnly} onChange={event => set({ phone: event.target.value })} /></label></>}
-    {stage === 'password' && <><label>Password<input className="input" autoComplete="current-password" type="password" required value={password} onChange={event => setPassword(event.target.value)} /></label><button className="text-primary text-left underline" type="button" disabled={busy} onClick={() => void run(sendCode)}>Forgot password? Use a verification code</button></>}
-    {stage === 'code' && <><p>Enter the code sent to {fields.phone}.</p><OtpDeliveryStatus delivery={delivery} onDeliveryChange={setDelivery} onResend={() => void run(sendCode)} busy={busy} /><label>Verification code<input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value)} /></label></>}
+    {stage === 'phone' && <><p>{signIn ? 'Sign in with your phone and password to keep your requests together.' : 'Verify your phone to create an account. Your account number stays private on your blood request.'}</p><label>Account phone<input className="input" type="tel" autoComplete="tel" required placeholder="01XXXXXXXXX" value={fields.phone} readOnly={verifyOnly} onChange={event => set({ phone: event.target.value })} /></label>{!verifyOnly && <button type="button" className="auth-text-link" onClick={() => { setSignIn(!signIn); setError(''); }}>{signIn ? 'New to Drop? Create an account' : 'Already have an account? Sign in with a password'}</button>}</>}
+    {stage === 'password' && <><label>Password<input className="input" autoComplete="current-password" type="password" required value={password} onChange={event => setPassword(event.target.value)} /></label><Link className="auth-text-link" to="/forgot-password">Forgot your password? Reset it with SMS</Link></>}
+    {stage === 'code' && <><p>Enter the code sent to {fields.phone} to verify your phone.</p><OtpDeliveryStatus delivery={delivery} onDeliveryChange={setDelivery} onResend={() => void run(sendCode)} busy={busy} /><label>Verification code<input className="input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /></label></>}
     {stage === 'identity' && <><label>Your full name<input className="input" autoComplete="name" required maxLength={100} value={fields.name} onChange={event => set({ name: event.target.value })} /></label><label>Date of birth<DateInput className="input" required min="1900-01-01" max={dhakaDate()} value={fields.dob} onChange={event => set({ dob: event.target.value })} /></label><p className="text-sm text-slate-600">Your date of birth stays private.</p></>}
     {stage === 'location' && <><label>District<Select required value={fields.district} onChange={event => set({ district: event.target.value, upazila: '' })}><option value="">Choose district</option>{BD_LOCATION_NAMES.map(item => <option key={item}>{item}</option>)}</Select></label><label>Upazila / thana<Select required disabled={!fields.district} value={fields.upazila} onChange={event => set({ upazila: event.target.value })}><option value="">Choose upazila</option>{getUpazilasForDistrict(fields.district).map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</Select></label></>}
     {stage === 'donor' && <><label className="!flex items-center gap-3"><input type="checkbox" checked={fields.donor} onChange={event => set({ donor: event.target.checked })} />Save me as a donor</label><p>You can switch this off and continue as a requester. If you join as a donor, requesters with verified or temporary blood-help access may receive your account phone through Drop’s protected contact flow. It is never added to your blood request.</p></>}

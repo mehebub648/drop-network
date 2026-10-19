@@ -6,18 +6,31 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.162`
+Current version: `0.0.163`
 
 The desktop website uses a shared navigation rail and consistent workspace
 across donor search, requests, community, accounts and administration. Phones
-use the app download cover; privacy, safety, support and listing removal remain
+use the app download cover; privacy, safety, support, account deletion and listing removal remain
 available in mobile browsers. Website theme styles live in `src/styles/`.
 
 The native Android app is the primary mobile experience. Desktop browsers use
 the website; mobile browsers show an app-download cover. Privacy, terms, safety,
-support and listing removal remain accessible on every device. A signed APK in
+support, account deletion and listing removal remain accessible on every device. A signed APK in
 `data/releases/drop-android.apk` is served at `/downloads/drop-android.apk`;
 `ANDROID_APP_URL` can instead point to a real HTTPS store/download destination.
+
+Account sign-in uses a phone number and password. Registration verifies the
+phone through Messavo SMS; forgotten-password recovery verifies a separate,
+purpose-bound code and revokes existing sessions. The web and Android clients
+share this policy. The website uses warm paper colours, outlined controls and
+existing doodle illustrations across its shared layouts.
+
+The public `/delete-account` page explains in-app deletion and accepts privacy
+requests when a member cannot sign in. Deletion clears private profile fields,
+push registrations, notification inbox entries and authored request comments,
+and removes the donor profile and authored community posts. Community publishing
+requires explicit Terms and conduct acceptance; members can report content and
+block an author.
 
 The operations workspace at `/admin` includes account and donor-profile editing,
 suspension, reversible administrative deletion, request/post/comment moderation,
@@ -135,8 +148,10 @@ Refresh the district facility files from the public DGHS registry with:
   Production automatically disables a persisted bypass and refuses attempts to
   enable it. `/ready` also stays unavailable until SMS and metrics protection
   are configured.
-- Home shows a pink blood-group card with B+ selected by default, four action
-  shortcuts, and the two most recently published active requests. Male patients
+- Home uses illustrated blood drops that open donor search immediately on tap,
+  action shortcuts, and the two most recently published active requests. No group
+  is preselected and no extra Find button is needed. The visible wordmark is
+  `drop.` with a red full stop. Male patients
   cannot select pregnancy/childbirth; facility is entered only in search and
   remains optional through publication.
 - Donor search starts on `/` with blood group only, then continues on
@@ -269,8 +284,10 @@ at `/c/:slug`; older `/directory/imported/:id` and `/directory/:id` links
 redirect to it. The owner can change the phone before requesting a purpose-
 bound Messavo code, then must confirm name, blood group, district, upazila,
 availability, and consent with no preselected defaults. A matching phone claims
-the stub. A different unique phone creates or updates that person's own
-passwordless profile and leaves the original listing unclaimed.
+the stub. A different unique phone can create a password-protected account and
+profile after the claimant sets at least an eight-character password, leaving
+the original listing unclaimed. A verified claim for an existing account never
+creates a session; the member signs in with the account password afterward.
 Search results show the imported-listing claim option only to guests; signed-in
 members use their existing donor profile instead.
 When a signed-in member's verified, available profile matches the searched

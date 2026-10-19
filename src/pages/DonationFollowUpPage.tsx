@@ -20,6 +20,7 @@ export default function DonationFollowUpPage({ onAuthUpdate }: { onAuthUpdate: (
   const [delivery, setDelivery] = useState<OtpDelivery | null>(null);
   const [verificationToken, setVerificationToken] = useState('');
   const [claimPath, setClaimPath] = useState('');
+  const [signInRequired, setSignInRequired] = useState(false);
   const [donatedOn, setDonatedOn] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -63,6 +64,9 @@ export default function DonationFollowUpPage({ onAuthUpdate }: { onAuthUpdate: (
       if (result.claim_required) {
         sessionStorage.setItem('drop_follow_up_token', token);
         setClaimPath(result.claim_path || '');
+      } else if (result.sign_in_required) {
+        setSignInRequired(true);
+        setVerification({ required: false });
       } else {
         setFollowUp(result.follow_up);
         setVerification({ required: false });
@@ -96,7 +100,17 @@ export default function DonationFollowUpPage({ onAuthUpdate }: { onAuthUpdate: (
         </Surface>
       )}
 
-      {verification.required && !claimPath && (
+      {signInRequired && (
+        <Surface className="p-6 text-center sm:p-8">
+          <ShieldCheck className="mx-auto h-10 w-10 text-primary" aria-hidden="true" />
+          <h2 className="mt-3 text-xl font-extrabold">Phone verified</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">This follow-up belongs to an existing Drop account. Sign in with its password to record the donation outcome.</p>
+          <Link to={`/login?returnTo=${encodeURIComponent(`/follow-up#token=${token}`)}`} className="primary-button mt-5">Sign in to continue</Link>
+          <Link to="/forgot-password" className="mt-4 block text-sm font-bold text-primary underline underline-offset-4">Forgot password?</Link>
+        </Surface>
+      )}
+
+      {verification.required && !claimPath && !signInRequired && (
         <Surface className="p-6 sm:p-8">
           <StatusBadge tone="brand" icon={KeyRound}>Phone verification</StatusBadge>
           <h2 className="mt-4 text-xl font-extrabold">Verify the donor phone</h2>
