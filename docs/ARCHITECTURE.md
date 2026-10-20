@@ -1,6 +1,16 @@
 # Drop Network Architecture
 
-Current application version: `0.0.169`
+Current application version: `0.0.170`
+
+### Website presentation (0.0.170)
+
+`Layout.tsx` shares a horizontal desktop header and keyboard-operable narrow-screen
+navigation across existing website routes. Secondary navigation and help/legal
+links remain in the More menu and footer. `LandingPage.tsx` selects a blood group
+and district, preserves unrelated request-draft answers, clears incompatible
+location fields when the district changes, and continues at the upazila question.
+`src/styles/site-shell.css` and `src/styles/home.css` follow `website.css` in the
+components layer. The native Android UI and mobile app-cover routing are preserved.
 
 ### Administration and donor invitations (0.0.169)
 

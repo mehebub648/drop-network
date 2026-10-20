@@ -1,105 +1,48 @@
 import { Link } from 'react-router';
-import { Activity, Droplet, Mail, ShieldCheck } from 'lucide-react';
+import { Activity, ArrowRight, Droplet, Mail, ShieldCheck } from 'lucide-react';
 
 const columns = [
-  {
-    title: 'Use Drop',
-    links: [
-      { label: 'Find donors', to: '/directory' },
-      { label: 'Blood requests', to: '/requests' },
-      { label: 'Become a donor', to: '/register' }
-    ]
-  },
-  {
-    title: 'About & safety',
-    links: [
-      { label: 'Stories and suggestions', to: '/community' },
-      { label: 'Add donors', to: '/contribute' },
-      { label: 'How Drop works', to: '/about' },
-      { label: 'Safety guidance', to: '/safety' },
-      { label: 'Privacy policy', to: '/privacy' }
-    ]
-  },
-  {
-    title: 'Support',
-    links: [
-      { label: 'Contact operations', to: '/contact' },
-      { label: 'Delete my account', to: '/delete-account' },
-      { label: 'Remove my listing', to: '/directory/remove' },
-      { label: 'Terms of use', to: '/terms' }
-    ]
-  }
+  { title: 'Use drop.', links: [
+    { label: 'Find donors', to: '/directory' }, { label: 'Blood requests', to: '/requests' },
+    { label: 'Become a donor', to: '/register' }, { label: 'My device requests', to: '/device-requests' }
+  ] },
+  { title: 'Community', links: [
+    { label: 'Stories and suggestions', to: '/community' }, { label: 'Add donors', to: '/contribute' },
+    { label: 'Partners', to: '/partners' }, { label: 'How drop. works', to: '/about' }
+  ] },
+  { title: 'Safety & support', links: [
+    { label: 'Donation safety', to: '/safety' }, { label: 'Contact operations', to: '/contact' },
+    { label: 'Delete my account', to: '/delete-account' }, { label: 'Remove my listing', to: '/directory/remove' }
+  ] },
+  { title: 'Legal', links: [
+    { label: 'Privacy policy', to: '/privacy' }, { label: 'Terms of use', to: '/terms' },
+    { label: 'Administration', to: '/admin' }
+  ] }
 ];
 
 export default function Footer({ compact = false }: { compact?: boolean }) {
-  if (compact) {
-    return (
-      <footer className="site-footer site-footer-compact">
-        <div className="site-footer-inner mx-auto flex flex-col items-center justify-between gap-3 px-4 py-4 text-xs text-slate-500 sm:flex-row sm:px-6">
-          <p>© {new Date().getFullYear()} drop<span className="text-primary">.</span></p>
-          <nav className="flex flex-wrap items-center justify-center gap-x-4" aria-label="Help and legal">
-            <Link to="/about">About</Link>
-            <Link to="/safety">Safety</Link>
-            <Link to="/contact">Contact</Link>
-            <Link to="/privacy">Privacy</Link>
-            <Link to="/delete-account">Delete account</Link>
-            <Link to="/terms">Terms</Link>
-          </nav>
-        </div>
-      </footer>
-    );
-  }
-
   return (
-    <footer className="site-footer relative mt-14">
-      <div className="site-footer-inner mx-auto px-4 py-9 sm:px-6 sm:py-11">
-        <div className="grid gap-10 md:grid-cols-[1.1fr_2fr] lg:gap-16">
-          <div className="footer-story">
-            <Link to="/" className="inline-flex min-h-11 items-center gap-3 rounded-xl" aria-label="drop. home">
-              <span className="footer-logo relative flex h-11 w-11 items-center justify-center rounded-2xl bg-primary">
-                <Droplet className="relative h-5 w-5 text-white" aria-hidden="true" />
-              </span>
-              <span className="text-xl font-extrabold tracking-tight text-slate-950">drop<span className="text-primary">.</span></span>
+    <footer className={`site-footer ${compact ? 'site-footer-compact' : ''}`}>
+      <div className="site-footer-inner">
+        <div className="site-footer-lead">
+          <div>
+            <Link to="/" className="site-footer-brand" aria-label="drop. home">
+              <span><Droplet fill="currentColor" aria-hidden="true" /></span><strong>drop<i>.</i></strong>
             </Link>
-            <p className="mt-5 max-w-sm text-sm leading-7 text-slate-600">
-              A community blood-donor matching service helping people across Bangladesh find compatible,
-              available donors and coordinate responsibly.
-            </p>
-            <div className="footer-note mt-5 inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold text-slate-700">
-              <Activity className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-              Coordination, not clinical care
-            </div>
-            <p className="mt-4 max-w-sm text-xs leading-5 text-slate-500">Drop does not collect blood or replace a hospital or licensed blood bank.</p>
+            <p>A community-powered way to find blood donors and coordinate urgent requests responsibly across Bangladesh.</p>
+            <small><Activity aria-hidden="true" /> Coordination, not clinical care</small>
           </div>
-
-          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
-            {columns.map(column => (
-              <div key={column.title}>
-                <h2 className="text-xs font-extrabold uppercase tracking-[0.15em] text-slate-950">{column.title}</h2>
-                <ul className="mt-4 space-y-1">
-                  {column.links.map(link => (
-                    <li key={`${link.to}:${link.label}`}>
-                      <Link to={link.to} className="inline-flex min-h-10 items-center text-sm font-semibold text-slate-600 transition-colors hover:text-primary">
-                        {link.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+          <Link to="/register" className="site-footer-join">Join as a donor<ArrowRight aria-hidden="true" /></Link>
         </div>
-
-        <div className="footer-bottom flex flex-col gap-3 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} drop<span className="text-primary">.</span> All rights reserved.</p>
-          <div className="flex flex-wrap gap-x-5 gap-y-2">
-            <Link to="/safety" className="inline-flex min-h-10 items-center gap-1.5 hover:text-primary">
-              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> Safety first
-            </Link>
-            <Link to="/contact" className="inline-flex min-h-10 items-center gap-1.5 hover:text-primary">
-              <Mail className="h-3.5 w-3.5" aria-hidden="true" /> Contact operations
-            </Link>
-          </div>
+        <div className="site-footer-links">
+          {columns.map(column => <div key={column.title}>
+            <h2>{column.title}</h2>
+            <ul>{column.links.map(link => <li key={`${link.to}:${link.label}`}><Link to={link.to}>{link.label}</Link></li>)}</ul>
+          </div>)}
+        </div>
+        <div className="site-footer-bottom">
+          <p>© {new Date().getFullYear()} drop<span>.</span> Every donor matters.</p>
+          <div><Link to="/safety"><ShieldCheck aria-hidden="true" />Safety first</Link><Link to="/contact"><Mail aria-hidden="true" />Contact operations</Link></div>
         </div>
       </div>
     </footer>

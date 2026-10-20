@@ -37,6 +37,7 @@ const completeDraft = (patch: Partial<SearchDraft> = {}): SearchDraft => ({
 test('a fresh app handoff skips the already selected blood group without stored state', () => {
   assert.equal(startsAfterBloodGroup(new URLSearchParams('blood_group=B%2B')), true);
   assert.equal(startsAfterBloodGroup(new URLSearchParams('blood_group=B%2B&native_start=1')), true);
+  assert.equal(startsAfterBloodGroup(new URLSearchParams('blood_group=B%2B&district=Dhaka')), true);
   assert.equal(startsAfterBloodGroup(new URLSearchParams()), false);
   assert.equal(startsAfterBloodGroup(new URLSearchParams('blood_group=B%2B&district=Dhaka&upazila=Turag')), false);
 });

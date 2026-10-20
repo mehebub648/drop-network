@@ -1,6 +1,11 @@
 # Drop Network Architecture
 
-Current application version: `0.0.169`
+Current application version: `0.0.170`
+
+The website uses a shared horizontal navigation header and the selected Kindred
+Community homepage, with blood-group/district search continuing into the existing
+upazila workflow. Presentation is in `src/styles/site-shell.css` and
+`src/styles/home.css`; the native Android UI and API contracts are unchanged.
 
 The website and API use `https://findadrop.org`. Administration and invitation
 changes passed isolated type checking, 190 unit tests, protected-flow integration

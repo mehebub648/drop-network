@@ -1,0 +1,79 @@
+.home-kindred { --home-ink: #242330; --home-muted: #6b6b80; }
+.home-kindred .home-hero { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 36px; border: 0; border-radius: 0; background: transparent; padding: 0 0 24px; }
+.home-kindred .home-hero::before { content: none; }
+.home-kindred .home-intro { position: relative; align-self: stretch; min-height: 0; padding: 64px 0 18px; }
+.home-kindred .home-eyebrow, .home-kindred .home-search-kicker { display: block; color: var(--color-primary); font-size: 13px; font-weight: 750; letter-spacing: .18em; line-height: 1.6; text-transform: uppercase; }
+.home-kindred .home-intro h1 { position: relative; max-width: 85%; margin: 24px 0 0; color: var(--home-ink); font-size: clamp(42px, 4.85vw, 72px); font-weight: 850; letter-spacing: -.05em; line-height: 1.12; }
+.home-kindred .home-mascot { position: absolute; z-index: 0; top: 78px; right: -3px; width: clamp(170px, 18vw, 258px); height: auto; opacity: 1; object-fit: contain; }
+.home-kindred .home-intro-copy { position: relative; max-width: 90%; margin-top: 26px; color: var(--home-muted); font-size: 20px; line-height: 1.7; }
+.home-trust { display: flex; flex-wrap: wrap; gap: 18px 25px; margin-top: 58px; }
+.home-trust > span { display: flex; align-items: center; gap: 9px; color: var(--home-muted); font-size: 14px; line-height: 1.5; }
+.home-trust svg { width: 25px; height: 25px; flex: 0 0 auto; color: var(--color-primary); stroke-width: 1.5; }
+.home-kindred .home-search-card { align-self: stretch; border: 0; border-radius: 28px; background: #f6f3ff; padding: 28px 32px 24px; }
+.home-kindred .home-search-copy h2 { margin-top: 7px; color: var(--home-ink); font-size: 30px; font-weight: 850; line-height: 1.2; letter-spacing: -.035em; }
+.home-kindred .home-search-copy p:last-child { max-width: none; margin-top: 7px; color: var(--home-muted); font-size: 14px; line-height: 1.6; }
+.home-kindred .home-blood-groups { gap: 2px 12px; margin-top: 16px; }
+.home-kindred .home-blood-groups button { position: relative; display: grid; min-height: 100px; place-items: center; border: 2px solid transparent; border-radius: 14px; padding: 10px 0 0; color: var(--color-primary-dark); font-size: 22px; font-weight: 750; transition: border-color 150ms, background 150ms; }
+.home-kindred .home-blood-groups button::before, .home-kindred .home-blood-groups button::after { content: none; }
+.home-kindred .home-blood-groups button svg { position: absolute; display: block; width: 128px; height: 112px; color: #fce1ea; fill: currentColor; }
+.home-kindred .home-blood-groups button:nth-child(4n + 2) svg { color: #ddf2eb; }
+.home-kindred .home-blood-groups button:nth-child(4n + 3) svg { color: #e2eeff; }
+.home-kindred .home-blood-groups button:nth-child(4n) svg { color: #eae3f7; }
+.home-kindred .home-blood-groups button > span { position: relative; padding-top: 10px; }
+.home-kindred .home-blood-groups button:hover { border-color: #deb5c2; background: #ffffff80; color: var(--color-primary-dark); transform: none; }
+.home-kindred .home-blood-groups button[aria-pressed='true'] { border-color: var(--color-primary); background: white; color: var(--color-primary-dark); }
+.home-district { display: grid; gap: 6px; margin-top: 12px; color: var(--home-ink); font-size: 14px; font-weight: 750; }
+.home-district-select { width: 100%; min-height: 48px; border: 1px solid #d5d2e4; border-radius: 10px; background: #fff; color: #64677d; font-size: 14px; font-weight: 500; }
+.home-kindred .home-find-button { width: 100%; min-height: 52px; margin-top: 16px; border-radius: 14px; font-size: 18px; font-weight: 800; }
+.home-find-button svg { width: 23px; height: 23px; }
+.home-search-error { margin-top: 12px; color: var(--color-primary-dark); font-size: 14px; }
+.home-kindred .home-recent { margin-top: 4px; border-top: 1px solid #e9e7ef; padding-top: 25px; }
+.home-kindred .home-section-heading { align-items: flex-end; margin-bottom: 20px; }
+.home-kindred .home-section-heading h2 { margin-top: 6px; color: var(--home-ink); font-size: clamp(23px, 2.3vw, 31px); font-weight: 850; line-height: 1.3; }
+.home-kindred .home-section-heading > a { flex-shrink: 0; color: var(--color-primary); font-size: 14px; font-weight: 750; }
+.home-kindred .home-request { min-height: 126px; border: 1px solid #e4e1ed; border-radius: 20px; padding: 20px 24px; }
+.home-kindred .home-request-group { position: relative; display: grid; width: 62px; height: 78px; border: 0; border-radius: 0; background: none; font-size: 21px; font-weight: 800; }
+.home-kindred .home-request-group svg { position: absolute; width: 70px; height: 78px; color: #fce1ea; }
+.home-kindred .home-request-group > span { position: relative; padding-top: 10px; color: var(--color-primary-dark); }
+.home-kindred .home-request:nth-child(even) .home-request-group svg { color: #e2eeff; }
+.home-kindred .home-request h3 { color: var(--home-ink); font-size: 15px; font-weight: 800; }
+.home-kindred .home-request-meta span, .home-kindred .home-request-units { color: var(--home-muted); font-size: 13px; }
+.home-kindred .home-request-message { border: 1px solid #e4e1ed; border-radius: 20px; padding: 28px; font-size: 15px; }
+.home-join { display: grid; grid-template-columns: 98px minmax(0, 1.3fr) minmax(0, 1fr) auto; align-items: center; gap: 20px; margin-top: 24px; border-radius: 26px; background: #fff2f6; padding: 18px 28px; }
+.home-join-mascot { display: block; width: 98px; height: 98px; object-fit: contain; }
+.home-join h2 { margin-top: 7px; color: var(--home-ink); font-size: 27px; font-weight: 850; line-height: 1.25; letter-spacing: -.025em; }
+.home-join > p { border-left: 1px solid #e6d4df; padding-left: 25px; color: var(--home-muted); font-size: 14px; line-height: 1.65; }
+.home-join .button { min-height: 54px; border-radius: 14px; padding-inline: 25px; font-size: 16px; font-weight: 800; white-space: nowrap; }
+.home-join .button svg { width: 20px; height: 20px; }
+@media (max-width: 1199px) {
+  .home-kindred .home-hero { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 26px; }
+  .home-kindred .home-intro h1 { max-width: 95%; font-size: 46px; }
+  .home-kindred .home-mascot { top: 145px; right: -4px; width: 145px; }
+  .home-kindred .home-intro-copy { max-width: calc(100% - 110px); font-size: 16px; }
+  .home-trust { gap: 16px; margin-top: 38px; }
+  .home-trust > span { font-size: 12px; }
+  .home-kindred .home-search-card { padding: 25px; }
+  .home-join { grid-template-columns: 80px minmax(0, 1fr) auto; gap: 16px; }
+  .home-join-mascot { width: 80px; height: 80px; }
+  .home-join > p { display: none; }
+}
+@media (max-width: 799px) {
+  .home-kindred .home-hero { grid-template-columns: minmax(0, 1fr); gap: 28px; padding-top: 0; }
+  .home-kindred .home-intro { padding: 0; text-align: center; }
+  .home-kindred .home-intro h1 { max-width: 100%; margin-top: 14px; font-size: clamp(38px, 7vw, 56px); }
+  .home-kindred .home-mascot { position: static; display: block; width: 130px; margin: 0 auto 16px; transform: none; }
+  .home-kindred .home-intro-copy { max-width: 100%; font-size: 16px; }
+  .home-trust { justify-content: center; margin-top: 24px; }
+  .home-kindred .home-search-card { padding: 25px; }
+  .home-kindred .home-section-heading { align-items: flex-start; gap: 12px; }
+  .home-kindred .home-section-heading .home-eyebrow { font-size: 11px; }
+  .home-kindred .home-section-heading > a { font-size: 12px; }
+  .home-kindred .home-request-list { grid-template-columns: 1fr; }
+  .home-join { grid-template-columns: 68px minmax(0, 1fr); gap: 12px; padding: 22px; }
+  .home-join-mascot { width: 68px; height: 80px; }
+  .home-join h2 { font-size: 23px; }
+  .home-join .button { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-kindred button { transition: none; }
+}

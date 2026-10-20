@@ -10,6 +10,9 @@
 - Website theme tokens live in `src/index.css`; desktop presentation lives in
   `src/styles/website.css`, and workflow layouts in `src/styles/components.css`.
   Both stylesheets use the components layer so Tailwind utilities retain precedence.
+- The shared horizontal shell is in `src/styles/site-shell.css`; the selected
+  homepage presentation is in `src/styles/home.css`, imported after `website.css`.
+  Keep the native Android and mobile app-cover boundaries when changing web styles.
 
 ## Plan File (PLAN.md)
 - Read [PLAN.md](./docs/PLAN.md) before starting work and check whether any planned item covers the current task.

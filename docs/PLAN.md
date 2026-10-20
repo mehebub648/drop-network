@@ -4,7 +4,7 @@ This file is the live backlog for the project. Agents must read it before
 starting work, remove items once they are completed, and append any new finding
 that deserves tracking. See the "Plan File" section in `AGENTS.md` for the rules.
 
-Status snapshot taken at version `0.0.169`. Items are grouped by how they can be
+Status snapshot taken at version `0.0.170`. Items are grouped by how they can be
 delivered.
 
 ---
@@ -12,6 +12,16 @@ delivered.
 ## Bucket 1 - Fixable in-repo (no credentials, no external service)
 
 ### Code quality / polish
+
+- [ ] Complete Google Play account/declarations/reviewer access and testing gates
+  before publication. A free `drop.` record now exists in the Personal account;
+  restrict all public/test availability to Bangladesh. The signed Android
+  1.0.45+46 bundle passed current analysis,
+  27 focused tests, signing and 16 KB alignment checks. Google explicitly includes
+  blood donation in its health declaration and requires Organization publishers
+  for health apps; the current Personal account cannot bypass this by choosing
+  Social. New Personal accounts need 12 closed testers for 14 days before applying
+  for production access/open testing. Final physical-device inspection remains.
 
 - [ ] Confirm real Messavo invitation receipt and response history with a
   consented isolated recipient before starting a bulk campaign. Version 0.0.169

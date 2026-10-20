@@ -1,3 +1,52 @@
+# Website redesign - 0.0.170
+
+final result: passed
+
+- Source visual truth: selected first generated design,
+  `C:/Users/Mehebub/.codex/generated_images/01a15a5f-dac1-7550-8019-edffb857f474/exec-8cc15b5b-c70a-4731-aebb-a60ad52a3085.png`
+  (1487 x 1058 pixels).
+- Implementation: isolated site-user rootless Compose preview, exposed only on
+  loopback and viewed through an SSH tunnel in the in-app browser. CSS viewport
+  1488 x 1056, device density 1; the 15-pixel scrollbar produces 1472-pixel-wide
+  full-page captures. Source and capture top regions were placed together at
+  their original density; the small scrollbar difference was treated as framing.
+- Evidence folder:
+  `C:/Users/Mehebub/.codex/visualizations/2026/10/20/01a15a5f-dac1-7550-8019-edffb857f474/`.
+  Full comparison: `drop-v170-comparison-final.jpg`; focused search comparison:
+  `drop-v170-form-comparison.jpg`; desktop: `drop-v170-desktop-final.png`;
+  responsive companion: `drop-v170-narrow-fixed.png` (390 x 844 CSS viewport).
+- State: signed-out homepage. The real empty-request state replaces the mock's
+  explicitly fictional sample requests. No fabricated requests were published.
+- Fonts/typography: existing self-hosted Nunito matches the friendly rounded
+  hierarchy; large two-line title, readable body copy and labelled controls.
+- Spacing/layout: horizontal header, split hero/search, recent requests and donor
+  invitation preserve the selected hierarchy. Shared secondary navigation stays
+  reachable through More and the footer. The user's requested symmetric corners
+  replace the earlier irregular doodle panel shapes.
+- Colors/tokens: white canvas, raspberry actions, lavender search panel and
+  blush/mint/sky/lilac group choices match the reference. Selected and focus states
+  are visible independently of the decorative pastel colors.
+- Images: reuse the existing sharp transparent welcome mascot. Standard Lucide
+  drop icons form the blood-group choices; no hand-drawn code substitutes or new
+  external image dependencies were introduced. The extra blob behind the mascot
+  was intentionally omitted with the request for consistent rounded containers.
+- Copy/content: selected headline, privacy reassurance and main calls to action
+  match; signed-in matching behavior and actual API request content are retained.
+- Comparison history: first full comparison found P2 hero vertical drift and
+  overridden group colors; corrected spacing and icon fill. A 390-pixel companion
+  found P2 mascot/title overlap; stacked the illustration before the title and
+  recaptured it. Latest full and focused comparisons show no actionable P0/P1/P2
+  findings. Minor icon silhouette differences from the raster mock are P3.
+- Interactions: A+ and Dhaka continue to the Dhaka upazila question without
+  repeating blood selection. District search opens correctly. The narrow-screen
+  menu exposes all existing links, closes on Escape and returns focus to its
+  opener. Native Android UI and mobile app-cover routing remain unchanged.
+- Validation: isolated Compose typecheck, five search-draft tests and production
+  bundle passed. The preview tunnel produced development-only Vite websocket
+  errors; the canonical production bundle/console must be checked after deploy.
+
+---
+
 # Home actions, information and Community navigation - 0.0.158
 
 final result: passed

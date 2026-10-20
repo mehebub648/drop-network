@@ -127,11 +127,10 @@ export function clearSearchDraft() {
   }
 }
 
-/** A blood-group-only link has already completed the first search question. */
+/** Home links have already completed blood selection; location still needs an upazila. */
 export function startsAfterBloodGroup(params: URLSearchParams) {
   return Boolean(
     params.get('blood_group')
-    && !params.get('district')
     && !params.get('upazila')
   );
 }

@@ -6,18 +6,27 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.169`
+Current version: `0.0.170`
 
 The live website and API are at `https://findadrop.org`. Version 0.0.168 includes
 the white website palette, claim flow and selected-group donor counts.
 The legacy hosting address remains available for older Android clients, and
 `www.findadrop.org` redirects to the apex. Google Play publication remains on hold.
 
-The desktop website uses a shared navigation rail and consistent workspace
+The desktop website uses a shared horizontal navigation header and consistent workspace
 across donor search, requests, community, accounts and administration. Phones
 use the app download cover; profile invitations and their account-creation flow,
 privacy, safety, support, account deletion and listing removal remain
 available in mobile browsers. Website theme styles live in `src/styles/`.
+
+Version 0.0.170 applies the selected community homepage redesign, with blood group
+and district selection continuing into the existing donor-search flow. Shared web
+controls and panels use consistent symmetric corners. The native
+Android design is unchanged. The signed Android 1.0.45+46 bundle remains prepared
+but unsubmitted to Google Play. The Personal account, mandatory blood-donation
+health-feature declaration, testing eligibility, reviewer access and legal
+agreements must be resolved in Play Console before publication; no new paid
+services are required by this website release.
 
 The website palette uses white and cool neutral surfaces, cherry red
 actions and small blush, mint, sky and lilac accents. Form controls keep visible
