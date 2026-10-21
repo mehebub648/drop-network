@@ -7,6 +7,9 @@
 - Do not run Node, npm, npx, Vite, or TSX directly on the host. If an npm script is needed, run it inside a Docker Compose service.
 - Use PowerShell-safe Docker commands on Windows.
 - Prefer the existing structure and scripts in `package.json` before adding new tooling.
+- Reviewer password sign-in has one fixed non-routable identifier in
+  `server/phone.ts`. Keep general phone validation, OTP, SMS and public donor
+  eligibility strict; never commit reviewer credentials.
 - Website theme tokens live in `src/index.css`; desktop presentation lives in
   `src/styles/website.css`, and workflow layouts in `src/styles/components.css`.
   Both stylesheets use the components layer so Tailwind utilities retain precedence.

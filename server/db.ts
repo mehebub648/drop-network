@@ -1,6 +1,7 @@
 import * as lancedb from '@lancedb/lancedb';
 import path from 'path';
 import fs from 'fs';
+import { isPlayReviewerPhone } from './phone';
 import {
   IMPORTED_ROW_VERSION,
   toImportedDonorRow,
@@ -54,7 +55,7 @@ export async function getPartitionName(district: string, group: string) {
 }
 
 export async function syncDonorToPartition(user: any) {
-  if (!user.donor_profile) return;
+  if (!user.donor_profile || isPlayReviewerPhone(user.phone)) return;
   const pName = await getPartitionName(user.donor_profile.location.area_name, user.donor_profile.blood_group);
   const table = await ensureTable(pName);
   

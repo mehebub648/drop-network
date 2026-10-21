@@ -6,7 +6,12 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.170`
+Current version: `0.0.171`
+
+Google Play reviewer access supports a privately provisioned password account
+with one non-routable identifier, without a SIM or SMS. It has ordinary member
+access, cannot receive SMS, and never appears in public donor search. Review
+credentials are private and must not be committed.
 
 The live website and API are at `https://findadrop.org`. Version 0.0.168 includes
 the white website palette, claim flow and selected-group donor counts.

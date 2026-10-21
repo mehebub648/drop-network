@@ -1,6 +1,15 @@
 # Drop Network Architecture
 
-Current application version: `0.0.170`
+Current application version: `0.0.171`
+
+### Play reviewer sign-in (0.0.171)
+
+`server/phone.ts` keeps ordinary Bangladesh phone normalization strict and offers
+one fixed non-routable identifier only to password sign-in and its start endpoint.
+The account must be provisioned privately with a bcrypt password and ordinary
+member permissions. OTP, registration and recovery retain strict validation;
+SMS providers and public donor search/partition writes reject the identifier.
+The Android client must use its corresponding sign-in-only validation support.
 
 ### Website presentation (0.0.170)
 

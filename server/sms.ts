@@ -1,4 +1,5 @@
 import type { OutageReason } from './emergencyAccess';
+import { isPlayReviewerPhone } from './phone';
 
 export type SmsDeliveryStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'canceled';
 export type SmsDelivery = { status: SmsDeliveryStatus; outageReason?: OutageReason };
@@ -82,6 +83,7 @@ function createHttpProvider(environment: SmsEnvironment): SmsProvider | null {
   return {
     name: 'http',
     async sendMessage(phone, message) {
+      if (isPlayReviewerPhone(phone)) throw new SmsProviderError('The reviewer identifier cannot receive SMS');
       const response = await smsFetch(endpoint, {
         method: 'POST',
         headers: {
@@ -94,6 +96,7 @@ function createHttpProvider(environment: SmsEnvironment): SmsProvider | null {
       return { status: 'sent' };
     },
     async sendOtp(phone, code) {
+      if (isPlayReviewerPhone(phone)) throw new SmsProviderError('The reviewer identifier cannot receive SMS');
       const response = await smsFetch(endpoint, {
         method: 'POST',
         headers: {
@@ -151,6 +154,7 @@ function createMessavoProvider(environment: SmsEnvironment): SmsProvider | null 
   };
   const jobEndpoint = (jobId: string) => new URL(`${messagesEndpoint.toString().replace(/\/+$/, '')}/${encodeURIComponent(jobId)}`);
   const sendMessage = async (phone: string, message: string, idempotencyKey: string) => {
+    if (isPlayReviewerPhone(phone)) throw new SmsProviderError('The reviewer identifier cannot receive SMS');
     const response = await smsFetch(messagesEndpoint, {
       method: 'POST',
       headers: { ...headers, 'idempotency-key': idempotencyKey },

@@ -9,6 +9,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { otpResendRetrySeconds, otpWrongCodeStatus } from './otpPolicy';
+import { normalizeBangladeshPhone, normalizePasswordLoginPhone } from './phone';
 import bcrypt from 'bcryptjs';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { access, readFile } from 'node:fs/promises';
@@ -383,7 +384,7 @@ app.post('/api/guest/requests/adopt', asyncRoute(async (req, res) => {
   res.json({ success: true });
 }));
 app.post('/api/auth/start', (req, res) => {
-  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const phone = normalizePasswordLoginPhone(req.body?.phone);
   if (!phone) return validationError(res, 'Enter a valid Bangladesh mobile number');
   // Retained for older clients, but deliberately does not reveal whether an
   // account or password exists. Account sessions are password-only.
@@ -725,14 +726,6 @@ function cleanString(value: unknown, maxLength: number) {
 function optionalCleanString(value: unknown, maxLength: number) {
   if (value === undefined || value === null || value === '') return undefined;
   return cleanString(value, maxLength);
-}
-
-function normalizeBangladeshPhone(value: unknown) {
-  if (typeof value !== 'string') return null;
-  const digits = value.replace(/\D/g, '');
-  const local = digits.startsWith('880') ? digits.slice(3) : digits.startsWith('0') ? digits.slice(1) : digits;
-  if (!/^1[3-9]\d{8}$/.test(local)) return null;
-  return `+880${local}`;
 }
 
 function isOneOf<T extends readonly string[]>(value: unknown, values: T): value is T[number] {
@@ -3553,7 +3546,7 @@ app.post('/api/admin/accounts/:id/reset-password', asyncRoute(async (req, res) =
 }));
 
 app.post('/api/auth/login', passwordLoginLimiter, asyncRoute((req, res) => accountWrites.run(async () => {
-  const phone = normalizeBangladeshPhone(req.body?.phone);
+  const phone = normalizePasswordLoginPhone(req.body?.phone);
   const password = cleanString(req.body?.password, 128);
   // Only honor a fingerprint the same client also presents as its own header;
   // stops replaying someone else's leaked fingerprint from a different client.

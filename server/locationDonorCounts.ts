@@ -1,7 +1,9 @@
 import type { ImportedDonorLocationCounts } from './db';
 import { matchesPreferenceSearch, type SearchableDonorProfile } from './donorSearch';
+import { isPlayReviewerPhone } from './phone';
 
 export type CountableRegisteredDonor = {
+  phone?: string;
   is_verified?: boolean;
   account_status?: string;
   deleted_at?: string;
@@ -13,6 +15,7 @@ const normalized = (value: string) => value.trim().toLocaleLowerCase('en-US');
 /** Verification is a trust signal, not a condition for being a donor. */
 export function isSearchableRegisteredDonor(donor: CountableRegisteredDonor) {
   return Boolean(donor.donor_profile) &&
+    !isPlayReviewerPhone(donor.phone) &&
     donor.account_status !== 'SUSPENDED' &&
     !donor.deleted_at &&
     !donor.donor_profile?.contact_suspended_at;

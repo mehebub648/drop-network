@@ -39,6 +39,12 @@ test('verification never controls donor search eligibility', () => {
   assert.equal(isSearchableRegisteredDonor({ donor_profile: available({ contact_suspended_at: '2026-10-19T00:00:00.000Z' }) }), false);
 });
 
+test('the review-only password account never appears as a public donor', () => {
+  const reviewer = { phone: '+8801000000046', is_verified: true, donor_profile: available() };
+  assert.equal(isSearchableRegisteredDonor(reviewer), false);
+  assert.equal(countRegisteredDonorsForLocation([reviewer], 'B+', 'Dhaka', ['Savar'], now), 0);
+});
+
 test('imported counts match canonical districts and stored upazila variants', () => {
   const counts = {
     districts: { Dhaka: 4, Rajshahi: 2 },

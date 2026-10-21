@@ -6,6 +6,25 @@ function environment(values: SmsEnvironment): SmsEnvironment {
   return values;
 }
 
+test('reviewer identifiers never reach any SMS gateway', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; throw new Error('Unexpected SMS request'); };
+  try {
+    const providers = [
+      getSmsProvider({ SMS_PROVIDER: 'http', SMS_HTTP_ENDPOINT: 'https://sms.example.test', SMS_HTTP_TOKEN: 'fixture' }),
+      getSmsProvider({ SMS_PROVIDER: 'messavo', SMS_API_BASE_URL: 'https://sms.example.test', SMS_API_TOKEN: 'fixture' }),
+      createRankedMessavoProvider([{ id: 'fixture', baseUrl: 'https://sms.example.test', token: 'fixture', priority: 1 }])
+    ];
+    for (const provider of providers) {
+      assert.ok(provider);
+      await assert.rejects(provider.sendOtp('+8801000000046', '123456', 'reviewer-otp'), /reviewer identifier cannot receive SMS/);
+      await assert.rejects(provider.sendMessage('01000000046', 'Fixture', 'reviewer-message'), /reviewer identifier cannot receive SMS/);
+    }
+    assert.equal(calls, 0);
+  } finally { globalThis.fetch = original; }
+});
+
 test('only confirmed service and sender failures qualify for blood-help access', () => {
   for (const code of ['device_offline', 'active_sync_device_required', 'subscription_unavailable', 'device_disconnected', 'device_disconnected_while_sending', 'radio_off', 'no_service']) {
     assert.equal(smsOutageReason(409, code), 'SENDER_UNAVAILABLE');

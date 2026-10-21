@@ -1,6 +1,10 @@
 # Drop Network Architecture
 
-Current application version: `0.0.170`
+Current application version: `0.0.171`
+
+The privately provisioned Play reviewer account uses one fixed non-routable
+identifier for password sign-in. Registration/recovery phone validation stays
+strict, and the identifier is excluded from SMS delivery and public donor search.
 
 The website uses a shared horizontal navigation header and the selected Kindred
 Community homepage, with blood-group/district search continuing into the existing
