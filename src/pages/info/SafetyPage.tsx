@@ -30,6 +30,12 @@ export default function SafetyPage() {
         <p>Community health suggestions are member-written general information, not diagnosis, treatment, or a substitute for advice from a qualified clinician. Do not delay urgent care because of a post. Report content that asks for payment, exposes private details, or makes unsafe medical claims.</p>
       </section>
       <section>
+        <h2 id="child-safety">Child safety standards for drop.</h2>
+        <p>drop. has zero tolerance for child sexual abuse and exploitation (CSAE). Users must not create, upload, share, or distribute content or behavior that sexually abuses, exploits, or endangers a child. This includes child sexual abuse material (CSAM), grooming a child for sexual exploitation, sexual extortion (sextortion), trafficking a child for sex, or otherwise facilitating the sexual exploitation of a child.</p>
+        <p className="mt-3">To report a child safety concern in the app, use <strong>Report post</strong> on community content or open <Link to="/contact">Contact operations</Link>, choose <strong>Safety or abuse</strong>, and describe the concern. Do not upload, copy, or forward suspected CSAM as evidence.</p>
+        <p className="mt-3">Drop reviews reported concerns, removes prohibited content after becoming aware of it, restricts accounts when needed, preserves evidence only as required by law, and reports confirmed CSAM to competent regional or national authorities in accordance with applicable law. If a child may be in immediate danger, contact local emergency services or law enforcement directly.</p>
+      </section>
+      <section>
         <h2>After donating</h2>
         <p>Rest as instructed, drink fluids, avoid strenuous activity for the recommended period, and seek clinical help if you feel unwell. Update your donation history so the app’s next-eligibility reminder is based on the latest known donation.</p>
       </section>

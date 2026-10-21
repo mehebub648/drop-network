@@ -22,7 +22,7 @@ export default function TermsPage() {
       </section>
       <section>
         <h2>Content and account action</h2>
-        <p>You remain responsible for information you submit and must have permission to publish every story, name, and image. You allow Drop to store, process, display, and index published content as needed to operate the service. Health suggestions are general community information, not medical advice. We may hide or remove content, limit access, or suspend accounts when reasonably necessary to address abuse, privacy, safety, legal, or security concerns.</p>
+        <p>You remain responsible for information you submit and must have permission to publish every story, name, and image. You allow Drop to store, process, display, and index published content as needed to operate the service. Health suggestions are general community information, not medical advice. Our <Link to="/safety#child-safety">child safety standards</Link> prohibit child sexual abuse and exploitation and explain how to report a concern. We may hide or remove content, limit access, or suspend accounts when reasonably necessary to address abuse, privacy, safety, legal, or security concerns.</p>
       </section>
       <section>
         <h2>Availability and liability</h2>

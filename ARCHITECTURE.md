@@ -1,6 +1,10 @@
 # Drop Network Architecture
 
-Current application version: `0.0.171`
+Current application version: `0.0.172`
+
+The public `/safety#child-safety` standard documents the existing native safety
+ticket path and community report path. Authorized operations staff review those
+queues and can remove community content, restrict accounts and record outcomes.
 
 The privately provisioned Play reviewer account uses one fixed non-routable
 identifier for password sign-in. Registration/recovery phone validation stays

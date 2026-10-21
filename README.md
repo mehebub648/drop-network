@@ -6,7 +6,12 @@
 
 This contains everything you need to run your app locally.
 
-Current version: `0.0.171`
+Current version: `0.0.172`
+
+The public child safety standard is at `/safety#child-safety`. It explicitly
+prohibits child sexual abuse and exploitation, points to the in-app safety
+reporting route, and describes content removal, account restriction, limited
+evidence preservation and lawful authority reporting.
 
 Google Play reviewer access supports a privately provisioned password account
 with one non-routable identifier, without a SIM or SMS. It has ordinary member
