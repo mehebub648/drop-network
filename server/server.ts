@@ -9,7 +9,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { otpResendRetrySeconds, otpWrongCodeStatus } from './otpPolicy';
-import { normalizeBangladeshPhone, normalizePasswordLoginPhone } from './phone';
+import { isPlayReviewerPhone, normalizeBangladeshPhone, normalizePasswordLoginPhone } from './phone';
 import bcrypt from 'bcryptjs';
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { access, readFile } from 'node:fs/promises';
@@ -3813,7 +3813,8 @@ app.patch('/api/me', async (req, res) => {
   if (!hasName && !hasPhone) return validationError(res, 'Name or phone is required');
 
   const name = hasName ? cleanString(req.body.name, 100) : auth.user.name;
-  const phone = hasPhone ? normalizeBangladeshPhone(req.body.phone) : auth.user.phone;
+  const unchangedReviewerPhone = isPlayReviewerPhone(auth.user.phone) && req.body?.phone === auth.user.phone;
+  const phone = hasPhone && !unchangedReviewerPhone ? normalizeBangladeshPhone(req.body.phone) : auth.user.phone;
   if (!name || !phone) return validationError(res, 'Valid name and phone are required');
 
   const duplicate = users.find(user => user.id !== auth.user.id && user.phone === phone);

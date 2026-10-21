@@ -38,9 +38,9 @@ server.stdout.on('data', chunk => { logs = (logs + chunk).slice(-6000); });
 server.stderr.on('data', chunk => { logs = (logs + chunk).slice(-6000); });
 let cookie = '';
 let requestNumber = 0;
-async function call(route: string, body?: unknown, expected = 200) {
+async function call(route: string, body?: unknown, expected = 200, method = body === undefined ? 'GET' : 'POST') {
   const response = await fetch(`http://127.0.0.1:18560${route}`, {
-    signal: AbortSignal.timeout(15000), method: body === undefined ? 'GET' : 'POST',
+    signal: AbortSignal.timeout(15000), method,
     headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:18560',
       'x-forwarded-for': `198.18.0.${++requestNumber}`, cookie },
     ...(body === undefined ? {} : { body: JSON.stringify(body) })
@@ -66,6 +66,11 @@ try {
   assert.equal(login.user.id, reviewer.id);
   assert.deepEqual(login.user.roles, ['MEMBER']);
   assert.equal((await call('/api/v1/me')).id, reviewer.id);
+  const updated = await call('/api/v1/me', { name: 'Updated review fixture', phone: PLAY_REVIEWER_PHONE }, 200, 'PATCH');
+  assert.equal(updated.name, 'Updated review fixture');
+  assert.equal(updated.phone, PLAY_REVIEWER_PHONE);
+  await call('/api/v1/me', { phone: '+8801000000047' }, 400, 'PATCH');
+  await call('/api/v1/me', { phone: '+8801712345678' }, 403, 'PATCH');
   await call('/api/admin/session', undefined, 401);
   for (const purpose of ['REGISTER', 'RESET_PASSWORD']) {
     await call('/api/v1/auth/otp/request', { phone: PLAY_REVIEWER_PHONE, purpose }, 400);
